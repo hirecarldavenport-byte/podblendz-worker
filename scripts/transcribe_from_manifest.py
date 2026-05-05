@@ -13,6 +13,7 @@ import json
 import time
 import traceback
 import subprocess
+import argparse
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -27,18 +28,18 @@ from tqdm import tqdm
 
 WORKSPACE_ROOT = Path("/workspace/podblendz-backend")
 
-MANIFEST_PATH = WORKSPACE_ROOT / "episode_manifest_phase1.jsonl"
+DEFAULT_MANIFEST_PATH = WORKSPACE_ROOT / "episode_manifest_phase1.jsonl"
 AUDIO_DIR = WORKSPACE_ROOT / "audio"
 TRANSCRIPTS_DIR = WORKSPACE_ROOT / "transcripts"
 LEDGER_PATH = WORKSPACE_ROOT / "transcription_ledger.jsonl"
 
-WHISPER_MODEL = "medium"        # memory-safe
+WHISPER_MODEL = "medium"
 DEVICE = "cuda"
 COMPUTE_TYPE = "float16"
 LANGUAGE = "en"
 
 FFMPEG_PROBE_TIMEOUT_SEC = 45
-MAX_ALLOWED_EPISODES = 750      # hard safety guard
+MAX_ALLOWED_EPISODES = 750
 
 
 # =========================
@@ -49,9 +50,6 @@ s3 = boto3.client("s3")
 
 
 def parse_s3_uri(uri: str):
-    """
-    Parse s3://bucket/key into (bucket, key)
-    """
     parsed = urlparse(uri)
     if parsed.scheme != "s3":
         raise ValueError(f"Invalid S3 URI: {uri}")
@@ -83,20 +81,20 @@ def load_completed_episode_ids() -> set:
 # MANIFEST
 # =========================
 
-def load_manifest() -> list:
-    if not MANIFEST_PATH.exists():
+def load_manifest(manifest_path: Path) -> list:
+    if not manifest_path.exists():
         raise RuntimeError(
-            f"Manifest not found: {MANIFEST_PATH}\n"
-            "Generate episode_manifest_phase1.jsonl before transcription."
+            f"Manifest not found: {manifest_path}\n"
+            "Generate the manifest before transcription."
         )
 
-    with MANIFEST_PATH.open("r", encoding="utf-8") as f:
+    with manifest_path.open("r", encoding="utf-8") as f:
         manifest = [json.loads(line) for line in f]
 
     if len(manifest) > MAX_ALLOWED_EPISODES:
         raise RuntimeError(
-            f"Manifest contains {len(manifest)} episodes which exceeds safety "
-            f"limit of {MAX_ALLOWED_EPISODES}"
+            f"Manifest contains {len(manifest)} episodes which exceeds "
+            f"safety limit of {MAX_ALLOWED_EPISODES}"
         )
 
     return manifest
@@ -133,25 +131,19 @@ def transcribe_episode(model: WhisperModel, episode: dict):
     s3_uri = episode["audio"]["s3_url"]
     bucket, key = parse_s3_uri(s3_uri)
 
-    # ✅ CRITICAL: derive filename from the actual S3 key
     filename = Path(key).name
     audio_path = AUDIO_DIR / podcast_id / filename
 
-    # Outputs
     json_out = TRANSCRIPTS_DIR / podcast_id / f"{episode_id}.json"
     txt_out = TRANSCRIPTS_DIR / podcast_id / f"{episode_id}.txt"
 
-    # ✅ MUST happen before download
     audio_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Download if missing
     if not audio_path.exists():
         s3.download_file(bucket, key, str(audio_path))
 
-    # Guard against hangs / corrupt audio
     ffmpeg_probe_or_fail(audio_path)
 
-    # Whisper inference
     segments, _ = model.transcribe(
         str(audio_path),
         language=LANGUAGE,
@@ -194,10 +186,19 @@ def transcribe_episode(model: WhisperModel, episode: dict):
 # =========================
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=DEFAULT_MANIFEST_PATH,
+        help="Path to episode manifest JSONL file"
+    )
+    args = parser.parse_args()
+
     print("🚀 Starting transcription driver", flush=True)
 
     completed = load_completed_episode_ids()
-    manifest = load_manifest()
+    manifest = load_manifest(args.manifest)
 
     print(f"✅ Episodes already completed: {len(completed)}", flush=True)
     print(f"📦 Episodes in manifest: {len(manifest)}", flush=True)
@@ -231,6 +232,34 @@ def main():
             "timestamp": time.time(),
         })
 
+        try:
+            transcribe_episode(model, episode)
+
+            append_ledger({
+                "episode_id": episode_id,
+                "podcast_id": podcast_id,
+                "status": "done",
+                "timestamp": time.time(),
+            })
+
+        except Exception as e:
+            append_ledger({
+                "episode_id": episode_id,
+                "podcast_id": podcast_id,
+                "status": "error",
+                "error": str(e),
+                "traceback": traceback.format_exc(),
+                "timestamp": time.time(),
+            })
+
+            print(
+                f"⚠️ Error on episode {episode_id}: {e}",
+                flush=True,
+            )
+
+
+if __name__ == "__main__":
+    main()
 
 
 
