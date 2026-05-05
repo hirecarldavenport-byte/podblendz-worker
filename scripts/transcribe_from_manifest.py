@@ -34,8 +34,8 @@ TRANSCRIPTS_DIR = WORKSPACE_ROOT / "transcripts"
 LEDGER_PATH = WORKSPACE_ROOT / "transcription_ledger.jsonl"
 
 WHISPER_MODEL = "medium"
-DEVICE = "cuda"
-COMPUTE_TYPE = "float16"
+DEVICE = "cpu"
+COMPUTE_TYPE = "int8"
 LANGUAGE = "en"
 
 FFMPEG_PROBE_TIMEOUT_SEC = 45
