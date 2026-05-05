@@ -1,3 +1,6 @@
+
+
+
 """
 Fully hardened batch transcription driver using faster-whisper.
 
@@ -186,6 +189,7 @@ def transcribe_episode(model: WhisperModel, episode: dict):
 # =========================
 
 def main():
+    print(f"🧪 DEVICE={DEVICE}, COMPUTE_TYPE={COMPUTE_TYPE}", flush=True)
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--manifest",
