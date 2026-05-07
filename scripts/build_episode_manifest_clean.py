@@ -1,3 +1,5 @@
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import sys
 from pathlib import Path
 
@@ -30,7 +32,7 @@ DEFAULT_MODEL = "medium"
 # =========================
 
 def fetch_rss(feed_url: str):
-    resp = requests.get(feed_url, timeout=10)
+    resp = requests.get(feed_url, timeout=10, verify=False)
     return ET.fromstring(resp.content)
 
 
@@ -116,8 +118,8 @@ def build_manifest():
             manifest_entries.append(entry)
 
     if not manifest_entries:
-        raise RuntimeError("No episodes found from registry.")
-
+        print("⚠️ No valid episodes found.")
+        return
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         for entry in manifest_entries:
             f.write(json.dumps(entry) + "\n")
