@@ -133,4 +133,3 @@ def build_manifest():
 
 if __name__ == "__main__":
     build_manifest()
-
