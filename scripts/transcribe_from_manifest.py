@@ -1,15 +1,9 @@
-
-
-
 """
 Fully hardened batch transcription driver using faster-whisper.
 
-Production guarantees:
-- Manifest-driven
-- Resume-safe via append-only ledger
-- One episode failure never stops the batch
-- Robust handling of real-world S3 filenames
-- FFmpeg decode guarded with timeout
+Updated:
+- Supports BOTH S3-based and direct URL audio (source_url)
+- Maintains resume-safe + ledger guarantees
 """
 
 import json
@@ -21,6 +15,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import boto3
+import requests
 from faster_whisper import WhisperModel
 from tqdm import tqdm
 
@@ -104,6 +99,33 @@ def load_manifest(manifest_path: Path) -> list:
 
 
 # =========================
+# DOWNLOAD HELPERS
+# =========================
+
+def download_http_audio(url: str, output_path: Path):
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with requests.get(url, stream=True, timeout=60) as r:
+        r.raise_for_status()
+        with open(output_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+
+
+def resolve_audio_source(episode: dict):
+    audio = episode.get("audio", {})
+
+    if "s3_url" in audio:
+        return "s3", audio["s3_url"]
+
+    if "source_url" in audio:
+        return "http", audio["source_url"]
+
+    raise RuntimeError("No audio URL found in manifest")
+
+
+# =========================
 # FFMPEG SAFETY GUARD
 # =========================
 
@@ -131,10 +153,9 @@ def transcribe_episode(model: WhisperModel, episode: dict):
     episode_id = episode["episode_id"]
     podcast_id = episode["podcast_id"]
 
-    s3_uri = episode["audio"]["s3_url"]
-    bucket, key = parse_s3_uri(s3_uri)
+    source_type, audio_url = resolve_audio_source(episode)
 
-    filename = Path(key).name
+    filename = Path(audio_url).name.split("?")[0]
     audio_path = AUDIO_DIR / podcast_id / filename
 
     json_out = TRANSCRIPTS_DIR / podcast_id / f"{episode_id}.json"
@@ -142,10 +163,29 @@ def transcribe_episode(model: WhisperModel, episode: dict):
 
     audio_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # =========================
+    # DOWNLOAD
+    # =========================
+
     if not audio_path.exists():
-        s3.download_file(bucket, key, str(audio_path))
+        if source_type == "s3":
+            bucket, key = parse_s3_uri(audio_url)
+            print("⬇️ Downloading from S3...", flush=True)
+            s3.download_file(bucket, key, str(audio_path))
+
+        elif source_type == "http":
+            print("⬇️ Downloading from URL...", flush=True)
+            download_http_audio(audio_url, audio_path)
+
+    # =========================
+    # VALIDATE
+    # =========================
 
     ffmpeg_probe_or_fail(audio_path)
+
+    # =========================
+    # TRANSCRIBE
+    # =========================
 
     segments, _ = model.transcribe(
         str(audio_path),
@@ -190,6 +230,7 @@ def transcribe_episode(model: WhisperModel, episode: dict):
 
 def main():
     print(f"🧪 DEVICE={DEVICE}, COMPUTE_TYPE={COMPUTE_TYPE}", flush=True)
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--manifest",
@@ -264,6 +305,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
