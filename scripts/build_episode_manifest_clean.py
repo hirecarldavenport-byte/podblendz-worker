@@ -45,7 +45,7 @@ def extract_episodes(feed_root, podcast_id):
 
         url = enclosure.attrib.get("url")
 
-        if not url or not url.endswith(".mp3"):
+        if not url or ".mp3" not in url:
             continue
 
         title_elem = item.find("title")
