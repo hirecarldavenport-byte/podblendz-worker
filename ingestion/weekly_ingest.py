@@ -7,7 +7,7 @@ Weekly Ingestion Pipeline
 ✅ Full debug visibility
 ✅ Safe against missing data
 """
-
+print("***** NEW WEEKLY INGEST VERSION RUNNING *****")
 import sys
 from pathlib import Path
 from datetime import datetime, UTC
