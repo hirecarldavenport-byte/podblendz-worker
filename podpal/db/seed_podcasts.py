@@ -1,8 +1,14 @@
 """
 Seed Podcasts into Database
-
-Creates initial Podcast records from master registry
 """
+
+import sys
+from pathlib import Path
+
+# ✅ Fix module path
+ROOT_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT_DIR))
+
 
 from podpal.topics.master_topic_podcasters import TOP_PODCASTERS_BY_MASTER_TOPIC
 from podpal.db.session import get_session
@@ -10,6 +16,7 @@ from podpal.db.models import Podcast
 
 
 def seed_podcasts():
+
     session = get_session()
     created = 0
 
@@ -35,6 +42,7 @@ def seed_podcasts():
             created += 1
 
     session.commit()
+
     print(f"✅ Seeded {created} podcasts into database")
 
 
