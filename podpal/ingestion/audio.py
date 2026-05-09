@@ -20,7 +20,7 @@ from typing import Dict
 import boto3
 import requests
 
-from podpal.config.settings import AWS_REGION, EPISODE_AUDIO_BUCKET
+from config.settings import AWS_REGION, EPISODE_AUDIO_BUCKET
 
 
 # -------------------------------------------------
