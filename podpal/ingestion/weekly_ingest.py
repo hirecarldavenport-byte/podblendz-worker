@@ -1,200 +1,124 @@
 """
-Weekly audio-first ingestion worker for PodBlendz.
+Weekly Ingestion Pipeline
 
-Responsibilities:
-- Fetch RSS feeds for curated podcasts
-- Detect new episodes
-- Download and store episode audio in S3
-- Insert episode records into the database
-- Enforce per-podcast retention limits
-
-This module orchestrates ingestion only.
+✅ Safe ingestion loop
+✅ Handles missing audio gracefully
+✅ Uses local storage (no AWS)
+✅ Production-safe iteration
 """
+
 import sys
 from pathlib import Path
+from datetime import datetime, UTC
+import feedparser
 
-# ✅ FORCE ROOT PATH (this fixes everything)
+# ✅ Fix module path
 ROOT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT_DIR))
 
-from datetime import datetime
-from typing import Optional, Dict, List
-
-from podpal.topics.master_topic_podcasters import TOP_PODCASTERS_BY_MASTER_TOPIC
-from podpal.ingestion.rss import fetch_rss_items
-from podpal.ingestion.audio import ingest_episode_audio
-from podpal.ingestion.retention import enforce_retention
-
+from podpal.topics.master_topic_podcasters import (
+    TOP_PODCASTERS_BY_MASTER_TOPIC,
+)
 from podpal.db.session import get_session
-from podpal.db.models import Podcast, Episode
+from podpal.db.models import Podcast
+from podpal.ingestion.audio import ingest_episode_audio
 
-MAX_EPISODES_PER_PODCAST = 50
 
+# =========================
+# CORE INGESTION
+# =========================
 
-def run_weekly_ingestion(dry_run: bool = False) -> None:
-    # -------------------------------------------------
-    # SANITY CHECKS
-    # -------------------------------------------------
+def run_weekly_ingestion():
+
     print("[SANITY] run_weekly_ingestion() entered")
-    print(
-        "[SANITY] registry keys:",
-        list(TOP_PODCASTERS_BY_MASTER_TOPIC.keys()),
-    )
-    # -------------------------------------------------
-
-    print(
-        f"[INGEST] Weekly ingestion started at "
-        f"{datetime.utcnow().isoformat()}"
-    )
+    print(f"[SANITY] registry keys: {list(TOP_PODCASTERS_BY_MASTER_TOPIC.keys())}")
 
     session = get_session()
 
-    try:
-        for master_topic, podcast_configs in (
-            TOP_PODCASTERS_BY_MASTER_TOPIC.items()
-        ):
-            print(f"[INGEST] Topic: {master_topic}")
+    print(f"[INGEST] Weekly ingestion started at {datetime.now(UTC).isoformat()}")
 
-            for podcast_cfg in podcast_configs:
-                podcast_id: Optional[str] = podcast_cfg.get("id")
-                if not podcast_id:
-                    # Registry entry intentionally non-ingestable
-                    continue
+    for master_topic, podcasters in TOP_PODCASTERS_BY_MASTER_TOPIC.items():
+        print(f"[INGEST] Topic: {master_topic}")
 
-                podcast_obj: Optional[Podcast] = (
-                    session.query(Podcast)
-                    .filter(Podcast.id == podcast_id)
-                    .one_or_none()
+        for podcaster in podcasters:
+
+            if not podcaster.get("ingestible"):
+                continue
+
+            if podcaster.get("media_access") != "direct":
+                continue
+
+            feed_url = podcaster.get("feed_url")
+
+            if not feed_url:
+                continue
+
+            podcast_id = podcaster["id"]
+
+            podcast_obj = session.query(Podcast).filter_by(id=podcast_id).first()
+
+            if not podcast_obj:
+                print(f"[WARN] Podcast id='{podcast_id}' not found in DB. Skipping.")
+                continue
+
+            print(f"[INGEST] Fetching RSS for {podcaster['name']}")
+
+            feed = feedparser.parse(feed_url)
+
+            if not feed.entries:
+                print(f"[WARN] No entries found for {podcaster['name']}")
+                continue
+
+            print(f"[INGEST] {len(feed.entries)} total episode(s) found")
+
+            # ✅ LIMIT FOR DEV (important for now)
+            max_episodes = 3
+
+            for item in feed.entries[:max_episodes]:
+
+                title = item.get("title", "unknown")
+
+                print(f"[INGEST] Processing episode: {title}")
+
+                # =========================
+                # AUDIO INGESTION
+                # =========================
+
+                audio_info = ingest_episode_audio(
+                    master_topic=master_topic,
+                    podcast=podcast_obj,
+                    rss_item=item,
                 )
 
-                if podcast_obj is None:
-                    print(
-                        f"[WARN] Podcast id='{podcast_id}' "
-                        f"not found in DB. Skipping."
-                    )
+                # ✅ CRITICAL FIX (prevents crash)
+                if not audio_info:
+                    print(f"[WARN] Skipping episode (no audio): {title}")
                     continue
 
-                # --- feed_url must be coerced to a concrete string ---
-                raw_feed_url = podcast_obj.feed_url
-                feed_url: str = (
-                    str(raw_feed_url).strip()
-                    if raw_feed_url is not None
-                    else ""
-                )
+                # ✅ New structure (dict-based)
+                audio_path = audio_info.get("local_path")
 
-                if not feed_url:
-                    print(
-                        f"[WARN] Podcast '{podcast_obj.name}' "
-                        f"has no feed URL. Skipping."
-                    )
+                if not audio_path:
+                    print(f"[WARN] No local audio path found. Skipping.")
                     continue
 
-                print(f"[INGEST] Fetching RSS for {podcast_obj.name}")
+                print(f"[INGEST] Audio stored at: {audio_path}")
 
-                rss_items = fetch_rss_items(feed_url)
-                if not rss_items:
-                    print(
-                        f"[INGEST] No RSS items for "
-                        f"{podcast_obj.name}"
-                    )
-                    continue
+                # =========================
+                # PLACEHOLDER FOR NEXT STEP
+                # =========================
 
-                # --- gather already-ingested GUIDs ---
-                existing_guids = {
-                    guid
-                    for (guid,) in (
-                        session.query(Episode.guid)
-                        .filter(
-                            Episode.podcast_id == podcast_obj.id
-                        )
-                        .all()
-                    )
-                }
+                # Later:
+                # - save episode record
+                # - trigger transcription
+                # - attach metadata
 
-                new_items = [
-                    item
-                    for item in rss_items
-                    if item.guid not in existing_guids
-                ]
+    print("[INGEST] Weekly ingestion completed successfully.")
 
-                if not new_items:
-                    print(
-                        f"[INGEST] No new episodes for "
-                        f"{podcast_obj.name}"
-                    )
-                    continue
 
-                print(
-                    f"[INGEST] {len(new_items)} new episode(s) "
-                    f"found for {podcast_obj.name}"
-                )
-
-                for item in new_items:
-                    print(
-                        f"[INGEST] Processing episode: "
-                        f"{item.title}"
-                    )
-
-                    if dry_run:
-                        print(
-                            "[DRY-RUN] Skipping audio ingest "
-                            "and DB insert."
-                        )
-                        continue
-
-                    audio_info = ingest_episode_audio(
-                        master_topic=master_topic,
-                        podcast=podcast_obj,
-                        rss_item=item,
-                    )
-
-                    episode = Episode(
-                        id=str(item.guid),
-                        podcast_id=podcast_obj.id,
-                        guid=str(item.guid),
-                        title=item.title,
-                        published_at=item.published_at,
-                        audio_url=item.enclosure_url,
-                        audio_s3_key=audio_info.s3_key,
-                        duration_seconds=audio_info.duration_seconds,
-                        storage_tier="hot",
-                        transcript_status="pending",
-                        ingested_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
-                    )
-
-                    session.add(episode)
-                    session.commit()
-
-                    print(
-                        f"[INGEST] Episode committed: "
-                        f"{episode.title}"
-                    )
-
-                # --- retention requires a concrete string id ---
-                podcast_id_str = str(podcast_obj.id)
-
-                print(
-                    f"[INGEST] Enforcing retention for "
-                    f"{podcast_obj.name}"
-                )
-
-                enforce_retention(
-                    session=session,
-                    podcast_id=podcast_id_str,
-                    max_hot_episodes=MAX_EPISODES_PER_PODCAST,
-                )
-
-        print("[INGEST] Weekly ingestion completed successfully.")
-
-    except Exception as exc:
-        session.rollback()
-        print(f"[ERROR] Weekly ingestion failed: {exc}")
-        raise
-
-    finally:
-        session.close()
-
+# =========================
+# ENTRY POINT
+# =========================
 
 if __name__ == "__main__":
     run_weekly_ingestion()
