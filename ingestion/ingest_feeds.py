@@ -1,16 +1,23 @@
 """
 Podcast Feed Ingestion Script
 
-✅ Safe RSS parsing
-✅ Type-safe validation
-✅ Clean MP3 filtering
+✅ Clean RSS ingestion
+✅ Type-safe audio extraction
+✅ MP3 validation (no art19, megaphone, etc.)
+✅ Duplicate protection
 ✅ JSONL manifest output
 """
+
+import sys
+from pathlib import Path
+
+# ✅ Ensure project root is visible to Python
+ROOT_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT_DIR))
 
 import feedparser
 import json
 import hashlib
-from pathlib import Path
 from typing import Optional
 
 from config.podcast_registry import PODCAST_REGISTRY
@@ -20,7 +27,7 @@ from config.podcast_registry import PODCAST_REGISTRY
 # CONFIG
 # =========================
 
-OUTPUT_FILE = Path("manifests/episode_manifest_clean.jsonl")
+OUTPUT_FILE = ROOT_DIR / "manifests" / "episode_manifest_clean.jsonl"
 
 MAX_EPISODES_PER_FEED = 3
 
@@ -37,12 +44,12 @@ BLOCKED_PATTERNS = [
 # =========================
 
 def stable_id(url: str) -> str:
-    """Generate stable ID for each episode"""
+    """Generate stable episode ID"""
     return hashlib.md5(url.encode("utf-8")).hexdigest()
 
 
 def is_valid_audio_url(url: Optional[str]) -> bool:
-    """Validate audio URL based on rules"""
+    """Validate audio URL"""
 
     if not url:
         return False
@@ -59,10 +66,6 @@ def is_valid_audio_url(url: Optional[str]) -> bool:
 
     return True
 
-
-# =========================
-# EXTRACTION
-# =========================
 
 def extract_audio_url(entry) -> Optional[str]:
     """Safely extract audio URL from RSS entry"""
@@ -93,7 +96,7 @@ def extract_audio_url(entry) -> Optional[str]:
 # =========================
 
 def extract_episodes(feed_key: str, feed_url: str) -> list:
-    """Extract valid episodes from a feed"""
+    """Extract episodes from a feed"""
 
     print(f"\n🔍 Processing: {feed_key}")
 
@@ -113,6 +116,8 @@ def extract_episodes(feed_key: str, feed_url: str) -> list:
 
         if not is_valid_audio_url(audio_url):
             continue
+
+        # ✅ Guarantee type (fixes Pylance error)
         assert isinstance(audio_url, str)
 
         if audio_url in seen_urls:
@@ -143,12 +148,13 @@ def extract_episodes(feed_key: str, feed_url: str) -> list:
 # MANIFEST BUILDER
 # =========================
 
-def build_manifest():
-    """Main entry point"""
+def build_manifest() -> None:
+    """Main ingestion entry point"""
 
     all_episodes = []
 
     for key, config in PODCAST_REGISTRY.items():
+
         feed_url = config["feed_url"]
 
         episodes = extract_episodes(key, feed_url)
@@ -176,3 +182,4 @@ def build_manifest():
 
 if __name__ == "__main__":
     build_manifest()
+
