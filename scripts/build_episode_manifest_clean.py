@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 from tqdm import tqdm
 from pathlib import Path
 
-from podpal.master_topic_podcasters import iter_ingestible_podcasters
+from podpal.topics.master_topic_podcasters import iter_ingestible_podcasters
 
 
 # =========================

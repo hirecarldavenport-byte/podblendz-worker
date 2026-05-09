@@ -14,7 +14,7 @@ This module orchestrates ingestion only.
 from datetime import datetime
 from typing import Optional
 
-from podpal.master_topic_podcasters import TOP_PODCASTERS_BY_MASTER_TOPIC
+from podpal.topics.master_topic_podcasters import TOP_PODCASTERS_BY_MASTER_TOPIC
 from podpal.ingestion.rss import fetch_rss_items
 from podpal.ingestion.audio import ingest_episode_audio
 from podpal.ingestion.retention import enforce_retention
