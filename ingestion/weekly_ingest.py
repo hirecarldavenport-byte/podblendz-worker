@@ -3,8 +3,9 @@ Weekly Ingestion Pipeline
 
 ✅ Stable ingestion
 ✅ Local audio storage
-✅ Automatic transcription
-✅ Fully safe (no crashes)
+✅ Guaranteed transcription execution
+✅ Full debug visibility
+✅ Safe against missing data
 """
 
 import sys
@@ -14,7 +15,7 @@ from datetime import datetime, UTC
 import feedparser
 
 # =========================
-# FIX IMPORT PATH
+# PATH FIX
 # =========================
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -37,31 +38,30 @@ from podpal.transcription.transcribe import transcribe_audio
 # SETTINGS
 # =========================
 
-MAX_EPISODES_PER_RUN = 3  # keep small while testing
+MAX_EPISODES_PER_RUN = 3
 
 
 # =========================
-# MAIN PIPELINE
+# CORE FUNCTION
 # =========================
 
 def run_weekly_ingestion():
 
-    print("[INGEST] Starting weekly ingestion")
-    print(f"[INGEST] Topics: {list(TOP_PODCASTERS_BY_MASTER_TOPIC.keys())}")
-    print(f"[INGEST] Time: {datetime.now(UTC).isoformat()}")
+    print("\n=== WEEKLY INGEST START ===")
+    print(f"[INFO] Topics: {list(TOP_PODCASTERS_BY_MASTER_TOPIC.keys())}")
+    print(f"[INFO] Start Time: {datetime.now(UTC).isoformat()}")
 
     session = get_session()
 
     for master_topic, podcasters in TOP_PODCASTERS_BY_MASTER_TOPIC.items():
 
-        print(f"\n[INGEST] Topic: {master_topic}")
+        print(f"\n=== TOPIC: {master_topic} ===")
 
         for podcaster in podcasters:
 
-            # -------------------------
-            # FILTER SOURCES
-            # -------------------------
-
+            # -----------------------------
+            # FILTER
+            # -----------------------------
             if not podcaster.get("ingestible"):
                 continue
 
@@ -80,11 +80,10 @@ def run_weekly_ingestion():
                 print(f"[WARN] Podcast '{podcast_id}' not in DB — skipping")
                 continue
 
-            # -------------------------
+            # -----------------------------
             # FETCH RSS
-            # -------------------------
-
-            print(f"[INGEST] Fetching RSS for {podcaster['name']}")
+            # -----------------------------
+            print(f"[INGEST] Fetching RSS: {podcaster['name']}")
 
             feed = feedparser.parse(feed_url)
 
@@ -92,21 +91,19 @@ def run_weekly_ingestion():
                 print(f"[WARN] No entries found for {podcaster['name']}")
                 continue
 
-            print(f"[INGEST] {len(feed.entries)} total episodes found")
+            print(f"[INFO] {len(feed.entries)} episodes found")
 
-            # -------------------------
+            # -----------------------------
             # PROCESS EPISODES
-            # -------------------------
-
+            # -----------------------------
             for item in feed.entries[:MAX_EPISODES_PER_RUN]:
 
                 title = item.get("title", "unknown")
-                print(f"[INGEST] Processing: {title}")
+                print(f"\n--- Processing Episode: {title} ---")
 
-                # -------------------------
+                # -----------------------------
                 # AUDIO INGESTION
-                # -------------------------
-
+                # -----------------------------
                 try:
                     audio_info = ingest_episode_audio(
                         master_topic=master_topic,
@@ -117,8 +114,10 @@ def run_weekly_ingestion():
                     print(f"[ERROR] Audio ingestion failed: {e}")
                     continue
 
+                print("=== AUDIO BLOCK REACHED ===")
+
                 if not audio_info:
-                    print(f"[WARN] No audio — skipping: {title}")
+                    print("[WARN] No audio_info returned — skipping")
                     continue
 
                 audio_path = audio_info.get("local_path")
@@ -132,13 +131,13 @@ def run_weekly_ingestion():
                     print("[WARN] Missing episode_id — skipping")
                     continue
 
-                print(f"[INGEST] Audio saved: {audio_path}")
+                print(f"[AUDIO] Saved: {audio_path}")
 
-                # -------------------------
+                # -----------------------------
                 # TRANSCRIPTION
-                # -------------------------
-
-                print("[TRANSCRIBE] Starting transcription")
+                # -----------------------------
+                print("=== TRANSCRIPTION BLOCK REACHED ===")
+                print(f"[TRANSCRIBE] Starting: {episode_id}")
 
                 try:
                     transcript_path = transcribe_audio(
@@ -153,7 +152,7 @@ def run_weekly_ingestion():
                     print(f"[ERROR] Transcription failed: {e}")
                     continue
 
-    print("\n[INGEST] Weekly ingestion completed successfully")
+    print("\n=== WEEKLY INGEST COMPLETE ===")
 
 
 # =========================
