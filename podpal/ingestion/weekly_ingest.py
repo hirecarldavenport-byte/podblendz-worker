@@ -10,6 +10,12 @@ Responsibilities:
 
 This module orchestrates ingestion only.
 """
+import sys
+from pathlib import Path
+
+# ✅ FORCE ROOT PATH (this fixes everything)
+ROOT_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT_DIR))
 
 from datetime import datetime
 from typing import Optional, Dict, List
