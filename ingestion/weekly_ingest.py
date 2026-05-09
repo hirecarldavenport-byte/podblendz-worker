@@ -1,33 +1,36 @@
 """
-Weekly Ingestion Pipeline
+WEEKLY INGEST (CLEAN DEBUG VERSION)
 
-✅ Stable ingestion
-✅ Local audio storage
-✅ Guaranteed transcription execution
-✅ Full debug visibility
-✅ Safe against missing data
+✅ Confirms correct file execution
+✅ Ensures transcription runs
+✅ No silent failures
 """
-print("***** NEW WEEKLY INGEST VERSION RUNNING *****")
+
+# =========================
+# DEBUG MARKER (CRITICAL)
+# =========================
+print("##### UPDATED WEEKLY INGEST RUNNING #####")
+
 import sys
+import os
 from pathlib import Path
-from datetime import datetime, UTC
+from datetime import datetime
 
 import feedparser
 
-# =========================
-# PATH FIX
-# =========================
+# ✅ Confirm exact file being executed
+print("RUNNING FILE:", os.path.abspath(__file__))
 
+# =========================
+# FIX IMPORT PATH
+# =========================
 ROOT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT_DIR))
 
 # =========================
 # IMPORTS
 # =========================
-
-from podpal.topics.master_topic_podcasters import (
-    TOP_PODCASTERS_BY_MASTER_TOPIC,
-)
+from podpal.topics.master_topic_podcasters import TOP_PODCASTERS_BY_MASTER_TOPIC
 from podpal.db.session import get_session
 from podpal.db.models import Podcast
 from podpal.ingestion.audio import ingest_episode_audio
@@ -37,31 +40,26 @@ from podpal.transcription.transcribe import transcribe_audio
 # =========================
 # SETTINGS
 # =========================
-
-MAX_EPISODES_PER_RUN = 3
+MAX_EPISODES = 2   # keep small while debugging
 
 
 # =========================
-# CORE FUNCTION
+# MAIN FUNCTION
 # =========================
-
 def run_weekly_ingestion():
 
-    print("\n=== WEEKLY INGEST START ===")
-    print(f"[INFO] Topics: {list(TOP_PODCASTERS_BY_MASTER_TOPIC.keys())}")
-    print(f"[INFO] Start Time: {datetime.now(UTC).isoformat()}")
+    print("\n=== INGEST START ===")
+    print("Topics:", list(TOP_PODCASTERS_BY_MASTER_TOPIC.keys()))
+    print("Time:", datetime.utcnow().isoformat())
 
     session = get_session()
 
-    for master_topic, podcasters in TOP_PODCASTERS_BY_MASTER_TOPIC.items():
+    for topic, podcasters in TOP_PODCASTERS_BY_MASTER_TOPIC.items():
 
-        print(f"\n=== TOPIC: {master_topic} ===")
+        print(f"\n=== TOPIC: {topic} ===")
 
         for podcaster in podcasters:
 
-            # -----------------------------
-            # FILTER
-            # -----------------------------
             if not podcaster.get("ingestible"):
                 continue
 
@@ -74,90 +72,78 @@ def run_weekly_ingestion():
 
             podcast_id = podcaster["id"]
 
-            podcast_obj = session.query(Podcast).filter_by(id=podcast_id).first()
+            podcast = session.query(Podcast).filter_by(id=podcast_id).first()
 
-            if not podcast_obj:
-                print(f"[WARN] Podcast '{podcast_id}' not in DB — skipping")
+            if not podcast:
+                print("[WARN] Podcast not in DB:", podcast_id)
                 continue
 
-            # -----------------------------
-            # FETCH RSS
-            # -----------------------------
-            print(f"[INGEST] Fetching RSS: {podcaster['name']}")
+            print(f"[INGEST] Fetching: {podcaster['name']}")
 
             feed = feedparser.parse(feed_url)
 
             if not feed.entries:
-                print(f"[WARN] No entries found for {podcaster['name']}")
+                print("[WARN] No entries found")
                 continue
 
-            print(f"[INFO] {len(feed.entries)} episodes found")
-
-            # -----------------------------
-            # PROCESS EPISODES
-            # -----------------------------
-            for item in feed.entries[:MAX_EPISODES_PER_RUN]:
+            for item in feed.entries[:MAX_EPISODES]:
 
                 title = item.get("title", "unknown")
-                print(f"\n--- Processing Episode: {title} ---")
+                print("\n--- Episode:", title, "---")
 
-                # -----------------------------
-                # AUDIO INGESTION
-                # -----------------------------
+                # =========================
+                # AUDIO
+                # =========================
                 try:
                     audio_info = ingest_episode_audio(
-                        master_topic=master_topic,
-                        podcast=podcast_obj,
+                        master_topic=topic,
+                        podcast=podcast,
                         rss_item=item,
                     )
                 except Exception as e:
-                    print(f"[ERROR] Audio ingestion failed: {e}")
+                    print("[ERROR] Audio failed:", e)
                     continue
 
-                print("=== AUDIO BLOCK REACHED ===")
+                print(">>> AUDIO BLOCK REACHED")
 
                 if not audio_info:
-                    print("[WARN] No audio_info returned — skipping")
+                    print("[WARN] No audio_info returned")
                     continue
 
                 audio_path = audio_info.get("local_path")
                 episode_id = audio_info.get("episode_id")
 
-                if not audio_path:
-                    print("[WARN] Missing audio_path — skipping")
+                if not audio_path or not episode_id:
+                    print("[WARN] Missing audio_path or episode_id")
                     continue
 
-                if not episode_id:
-                    print("[WARN] Missing episode_id — skipping")
-                    continue
+                print("[AUDIO] Path:", audio_path)
 
-                print(f"[AUDIO] Saved: {audio_path}")
-
-                # -----------------------------
+                # =========================
                 # TRANSCRIPTION
-                # -----------------------------
-                print("=== TRANSCRIPTION BLOCK REACHED ===")
-                print(f"[TRANSCRIBE] Starting: {episode_id}")
+                # =========================
+                print(">>> TRANSCRIPTION BLOCK REACHED")
 
                 try:
+                    print("[TRANSCRIBE] Starting:", episode_id)
+
                     transcript_path = transcribe_audio(
                         audio_path=audio_path,
                         podcast_id=podcast_id,
                         episode_id=episode_id,
                     )
 
-                    print(f"[TRANSCRIBE] Saved: {transcript_path}")
+                    print("[TRANSCRIBE] Saved:", transcript_path)
 
                 except Exception as e:
-                    print(f"[ERROR] Transcription failed: {e}")
+                    print("[ERROR] Transcription failed:", e)
                     continue
 
-    print("\n=== WEEKLY INGEST COMPLETE ===")
+    print("\n=== INGEST COMPLETE ===")
 
 
 # =========================
-# ENTRY POINT
+# RUN
 # =========================
-
 if __name__ == "__main__":
     run_weekly_ingestion()
