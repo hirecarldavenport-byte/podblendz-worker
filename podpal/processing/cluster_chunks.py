@@ -1,31 +1,29 @@
 """
-Chunk Clustering Module
+Cluster Chunks
 
-✅ Groups✅ Uses embedding similarity✅ Groups similar ideas across podcasts
-✅ Outputs clusters of related insights
+✅ Groups similar ideas across podcasts
+✅ Filters low-quality chunks
+✅ Produces meaningful multi-item clusters
+✅ Ready for GPT labeling layer
 """
 
 import json
 from pathlib import Path
-from collections import defaultdict
 
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
 
 
 INPUT_DIR = Path("processed_chunks")
 OUTPUT_FILE = Path("clusters.json")
 
-
-# ✅ Load embedding model (fast + free)
+# ✅ Load embedding model (light + fast)
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
 
 # =========================
 # LOAD CHUNKS
 # =========================
-
 def load_all_chunks():
     all_chunks = []
 
@@ -42,22 +40,34 @@ def load_all_chunks():
                         "podcast": data["podcast_id"],
                         "episode": data["episode_id"],
                         "text": chunk["text"],
-                        "tag": chunk["tag"]
+                        "tag": chunk["tag"],
                     })
 
     return all_chunks
 
 
+# =========================
+# FILTER HIGH-SIGNAL CHUNKS
+# =========================
+def filter_chunks(chunks):
+    return [
+        c for c in chunks
+        if c["tag"] in ("insight", "reflection", "example")
+        and len(c["text"].split()) > 20
+    ]
+
 
 # =========================
-# CLUSTERING LOGIC
+# CLUSTERING
 # =========================
+def cluster_chunks(chunks, threshold=0.45):
 
-def cluster_chunks(chunks, threshold=0.50):
+    # ✅ Shorten text for better embeddings
+    texts = [c["text"][:300] for c in chunks]
 
-    texts = [c["text"] for c in chunks]
-
+    # ✅ Convert to numpy (fixes sklearn error)
     embeddings = model.encode(texts, convert_to_numpy=True)
+
     similarity_matrix = cosine_similarity(embeddings)
 
     visited = set()
@@ -72,6 +82,7 @@ def cluster_chunks(chunks, threshold=0.50):
         visited.add(i)
 
         for j in range(i + 1, len(chunks)):
+
             if j in visited:
                 continue
 
@@ -79,15 +90,16 @@ def cluster_chunks(chunks, threshold=0.50):
                 cluster.append(chunks[j])
                 visited.add(j)
 
-        clusters.append(cluster)
+        # ✅ Only keep real clusters
+        if len(cluster) >= 3:
+            clusters.append(cluster)
 
     return clusters
 
 
 # =========================
-# SAVE OUTPUT
+# SAVE CLUSTERS
 # =========================
-
 def save_clusters(clusters):
 
     output = []
@@ -95,8 +107,9 @@ def save_clusters(clusters):
     for cluster in clusters:
 
         output.append({
-            "size": len(cluster),
-            "examples": [c["text"] for c in cluster[:3]]
+            "cluster_size": len(cluster),
+            "sample_texts": [c["text"] for c in cluster[:3]],
+            "sources": list({c["podcast"] for c in cluster}),
         })
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
@@ -108,16 +121,19 @@ def save_clusters(clusters):
 # =========================
 # MAIN
 # =========================
-
 def run():
 
     print("[CLUSTER] Loading chunks...")
+
     chunks = load_all_chunks()
 
-    print(f"[CLUSTER] Loaded {len(chunks)} chunks")
+    print(f"[CLUSTER] Loaded {len(chunks)} raw chunks")
+
+    chunks = filter_chunks(chunks)
+
+    print(f"[CLUSTER] Filtered to {len(chunks)} high-signal chunks")
 
     clusters = cluster_chunks(chunks)
-    chunks = [c for c in chunks if c["tag"] not in ("filler", "context")]
 
     print(f"[CLUSTER] Created {len(clusters)} clusters")
 
