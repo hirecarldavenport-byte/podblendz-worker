@@ -1,6 +1,19 @@
 print("##### CORRECT WEEKLY INGEST NOW RUNNING #####")
 
+print("##### CORRECT WEEKLY INGEST NOW RUNNING #####")
+
+import sys
 import os
+from pathlib import Path
+
+# ✅ FIX: Add project root to Python path
+ROOT_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT_DIR))
+
+print("RUNNING FILE:", os.path.abspath(__file__))
+
+# ✅ NOW imports work
+from podpal.transcription.transcribe import transcribe_audio
 print("RUNNING FILE:", os.path.abspath(__file__))
 
 from podpal.transcription.transcribe import transcribe_audio
