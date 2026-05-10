@@ -1,10 +1,6 @@
-print("##### NEW PIPELINE FILE RUNNING #####")
-
-import os
-print("RUNNING FILE:", os.path.abspath(__file__))
-
 
 from podpal.transcription.transcribe import transcribe_audio
+from podpal.processing.chunk_and_tag import process_transcript
 
 def test_transcription():
 
@@ -22,6 +18,11 @@ def test_transcription():
 
     print("[SUCCESS] Transcript saved:", transcript_path)
 
+    # ✅ CORRECT LOCATION (inside function)
+    process_transcript(transcript_path)
+
 
 if __name__ == "__main__":
     test_transcription()
+
+
