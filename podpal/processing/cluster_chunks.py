@@ -52,7 +52,7 @@ def load_all_chunks():
 # CLUSTERING LOGIC
 # =========================
 
-def cluster_chunks(chunks, threshold=0.7):
+def cluster_chunks(chunks, threshold=0.55):
 
     texts = [c["text"] for c in chunks]
 
