@@ -1,53 +1,29 @@
-"""
-FULL PIPELINE INGEST
-
-✅ Downloads audio
-✅ Transcribes each episode
-✅ Chunks + tags automatically
-✅ Works on ALL downloaded episodes
-"""
+print("##### FULL PIPELINE RUNNING #####")
 
 import sys
 from pathlib import Path
-from datetime import datetime, UTC
 import feedparser
 
-# =========================
-# FIX PATH
-# =========================
-
+# ✅ FIX PATH
 ROOT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT_DIR))
 
-print("##### FULL PIPELINE INGEST RUNNING #####")
-
-# =========================
-# IMPORTS
-# =========================
-
+# ✅ IMPORTS
 from podpal.topics.master_topic_podcasters import TOP_PODCASTERS_BY_MASTER_TOPIC
 from podpal.db.session import get_session
 from podpal.db.models import Podcast
 from podpal.ingestion.audio import ingest_episode_audio
+from ingestion.feed_utils import fetch_feed
 from podpal.transcription.transcribe import transcribe_audio
 from podpal.processing.chunk_and_tag import process_transcript
 
 
-# =========================
-# SETTINGS
-# =========================
+MAX_EPISODES = 2
 
-MAX_EPISODES = 3   # adjust later
-
-
-# =========================
-# MAIN
-# =========================
 
 def run_ingest():
 
     print("\n=== STARTING FULL PIPELINE ===")
-    print("Time:", datetime.now(UTC).isoformat())
 
     session = get_session()
 
@@ -72,35 +48,28 @@ def run_ingest():
             podcast = session.query(Podcast).filter_by(id=podcast_id).first()
 
             if not podcast:
-                print("[WARN] Podcast not in DB:", podcast_id)
+                print("[WARN] Podcast not found:", podcast_id)
                 continue
 
-            print(f"[INGEST] Fetching: {podcaster['name']}")
+            print(f"[INGEST] {podcaster['name']}")
 
-            feed = feedparser.parse(feed_url)
+            feed = fetch_feed(feed_url)
 
-            if not feed.entries:
-                print("[WARN] No entries found")
+            if not feed or not feed.entries:
+                print(f"[WARN] No entries for {podcaster['name']}")
                 continue
 
             for item in feed.entries[:MAX_EPISODES]:
 
                 title = item.get("title", "unknown")
-                print("\n--- Episode:", title, "---")
+                print("\n---", title)
 
-                # =========================
-                # AUDIO
-                # =========================
-
-                try:
-                    audio_info = ingest_episode_audio(
-                        master_topic=topic,
-                        podcast=podcast,
-                        rss_item=item,
-                    )
-                except Exception as e:
-                    print("[ERROR] Audio failed:", e)
-                    continue
+                # ✅ AUDIO
+                audio_info = ingest_episode_audio(
+                    master_topic=topic,
+                    podcast=podcast,
+                    rss_item=item,
+                )
 
                 if not audio_info:
                     continue
@@ -113,46 +82,22 @@ def run_ingest():
 
                 print("[AUDIO]", audio_path)
 
-                # =========================
-                # TRANSCRIPTION
-                # =========================
+                # ✅ TRANSCRIBE
+                transcript_path = transcribe_audio(
+                    audio_path=audio_path,
+                    podcast_id=podcast_id,
+                    episode_id=episode_id,
+                )
 
-                try:
-                    transcript_path = transcribe_audio(
-                        audio_path=audio_path,
-                        podcast_id=podcast_id,
-                        episode_id=episode_id,
-                    )
+                print("[TRANSCRIPT]", transcript_path)
 
-                    print("[TRANSCRIBE]", transcript_path)
+                # ✅ CHUNK
+                chunk_path = process_transcript(transcript_path)
 
-                except Exception as e:
-                    print("[ERROR] Transcribe failed:", e)
-                    continue
+                print("[CHUNK]", chunk_path)
 
-                # =========================
-                # CHUNKING
-                # =========================
-
-                try:
-                    chunk_path = process_transcript(transcript_path)
-
-                    print("[CHUNK]", chunk_path)
-
-                except Exception as e:
-                    print("[ERROR] Chunking failed:", e)
-                    continue
-
-
-    print("\n=== PIPELINE COMPLETE ===")
-
-
-# =========================
-# RUN
-# =========================
 
 if __name__ == "__main__":
     run_ingest()
-
 
 
