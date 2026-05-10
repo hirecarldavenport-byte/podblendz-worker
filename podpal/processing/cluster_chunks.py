@@ -48,11 +48,12 @@ def load_all_chunks():
     return all_chunks
 
 
+
 # =========================
 # CLUSTERING LOGIC
 # =========================
 
-def cluster_chunks(chunks, threshold=0.55):
+def cluster_chunks(chunks, threshold=0.50):
 
     texts = [c["text"] for c in chunks]
 
@@ -116,6 +117,7 @@ def run():
     print(f"[CLUSTER] Loaded {len(chunks)} chunks")
 
     clusters = cluster_chunks(chunks)
+    chunks = [c for c in chunks if c["tag"] not in ("filler", "context")]
 
     print(f"[CLUSTER] Created {len(clusters)} clusters")
 
