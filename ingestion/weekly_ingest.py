@@ -1,18 +1,13 @@
-# 🔥 CONFIRM THIS IS CORRECT FILE# 🔥 CONFIRM THIS IS🔥 FULL PIPELINE VERSION FIXED 🔥")
-
-import sys
+print(" FULL PIPELINE ACTIVE ")
+print("FULL PIPELINE ACTIVE pathlib import Path")
 from pathlib import Path
 import feedparser
 
-# =========================
-# FIX PATH
-# =========================
+# ✅ Fix path
 ROOT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT_DIR))
 
-# =========================
-# IMPORTS
-# =========================
+# ✅ Imports
 from podpal.topics.master_topic_podcasters import TOP_PODCASTERS_BY_MASTER_TOPIC
 from podpal.db.session import get_session
 from podpal.db.models import Podcast
@@ -21,15 +16,9 @@ from podpal.ingestion.feed_utils import fetch_feed
 from podpal.transcription.transcribe import transcribe_audio
 from podpal.processing.chunk_and_tag import process_transcript
 
-# =========================
-# SETTINGS
-# =========================
 MAX_EPISODES = 2
 
 
-# =========================
-# MAIN
-# =========================
 def run_ingest():
 
     print("\n=== STARTING FULL PIPELINE ===")
@@ -62,7 +51,6 @@ def run_ingest():
 
             print(f"[INGEST] {podcaster['name']}")
 
-            # ✅ FIXED FEED FETCH
             feed = fetch_feed(feed_url)
 
             if not feed or not feed.entries:
@@ -71,12 +59,9 @@ def run_ingest():
 
             for item in feed.entries[:MAX_EPISODES]:
 
-                title = item.get("title", "unknown")
-                print("\n--- Episode:", title)
+                print("\n---", item.get("title", "unknown"))
 
-                # =========================
-                # AUDIO
-                # =========================
+                # ✅ AUDIO
                 audio_info = ingest_episode_audio(
                     master_topic=topic,
                     podcast=podcast,
@@ -94,38 +79,22 @@ def run_ingest():
 
                 print("[AUDIO]", audio_path)
 
-                # =========================
-                # TRANSCRIPTION
-                # =========================
-                try:
-                    transcript_path = transcribe_audio(
-                        audio_path=audio_path,
-                        podcast_id=podcast_id,
-                        episode_id=episode_id,
-                    )
+                # ✅ TRANSCRIPTION
+                transcript_path = transcribe_audio(
+                    audio_path=audio_path,
+                    podcast_id=podcast_id,
+                    episode_id=episode_id,
+                )
 
-                    print("[TRANSCRIPT]", transcript_path)
+                print("[TRANSCRIPT]", transcript_path)
 
-                except Exception as e:
-                    print("[ERROR] Transcribe failed:", e)
-                    continue
+                # ✅ CHUNKING
+                chunk_path = process_transcript(transcript_path)
 
-                # =========================
-                # CHUNKING
-                # =========================
-                try:
-                    chunk_path = process_transcript(transcript_path)
-
-                    print("[CHUNK]", chunk_path)
-
-                except Exception as e:
-                    print("[ERROR] Chunking failed:", e)
-                    continue
+                print("[CHUNK]", chunk_path)
 
 
-# =========================
-# RUN
-# =========================
 if __name__ == "__main__":
     run_ingest()
 
+import sys
