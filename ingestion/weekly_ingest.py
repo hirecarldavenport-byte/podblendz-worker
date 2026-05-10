@@ -1,10 +1,17 @@
-print("##### FULL PIPELINE RUNNING #####")
+"""
+FULL PIPELINE INGEST
+
+Downloads audio
+Transcribes episodes
+Chunks + tags content
+"""
+print("FULL PIPELINE RUNNING")
 
 import sys
 from pathlib import Path
 import feedparser
 
-# ✅ FIX PATH
+# ✅ PATH FIX
 ROOT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT_DIR))
 
@@ -13,10 +20,9 @@ from podpal.topics.master_topic_podcasters import TOP_PODCASTERS_BY_MASTER_TOPIC
 from podpal.db.session import get_session
 from podpal.db.models import Podcast
 from podpal.ingestion.audio import ingest_episode_audio
-from ingestion.feed_utils import fetch_feed
+from podpal.ingestion.feed_utils import fetch_feed
 from podpal.transcription.transcribe import transcribe_audio
 from podpal.processing.chunk_and_tag import process_transcript
-
 
 MAX_EPISODES = 2
 
@@ -48,7 +54,7 @@ def run_ingest():
             podcast = session.query(Podcast).filter_by(id=podcast_id).first()
 
             if not podcast:
-                print("[WARN] Podcast not found:", podcast_id)
+                print("[WARN] Missing podcast in DB:", podcast_id)
                 continue
 
             print(f"[INGEST] {podcaster['name']}")
@@ -61,10 +67,8 @@ def run_ingest():
 
             for item in feed.entries[:MAX_EPISODES]:
 
-                title = item.get("title", "unknown")
-                print("\n---", title)
+                print("\n---", item.get("title", "unknown"))
 
-                # ✅ AUDIO
                 audio_info = ingest_episode_audio(
                     master_topic=topic,
                     podcast=podcast,
@@ -82,7 +86,6 @@ def run_ingest():
 
                 print("[AUDIO]", audio_path)
 
-                # ✅ TRANSCRIBE
                 transcript_path = transcribe_audio(
                     audio_path=audio_path,
                     podcast_id=podcast_id,
@@ -91,7 +94,6 @@ def run_ingest():
 
                 print("[TRANSCRIPT]", transcript_path)
 
-                # ✅ CHUNK
                 chunk_path = process_transcript(transcript_path)
 
                 print("[CHUNK]", chunk_path)
@@ -99,5 +101,3 @@ def run_ingest():
 
 if __name__ == "__main__":
     run_ingest()
-
-
