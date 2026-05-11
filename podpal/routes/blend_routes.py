@@ -7,6 +7,9 @@ from podpal.services.rss_test import fetch_rss_feed
 
 from podpal.blending.round_robin import round_robin_blend
 
+# ✅ NEW: AI pipeline
+from podpal.ai.pipeline import process_clusters
+
 
 router = APIRouter()
 
@@ -15,13 +18,15 @@ router = APIRouter()
 def preview_blend(
     query: Optional[str] = Body(default=None),
     podcaster_feed: Optional[str] = Body(default=None),
+    enable_ai: bool = Body(default=True),  # ✅ toggle AI on/off
 ) -> Dict[str, Any]:
     """
     Generate either:
     - a SUBJECT blend (fair, per-podcaster, latest-first)
     - a PODCASTER blend (direct, no scoring)
 
-    Podcaster mode is triggered when `podcaster_feed` is provided.
+    NEW:
+    - Optional AI enrichment (label + narration)
     """
 
     # =================================================
@@ -95,7 +100,7 @@ def preview_blend(
     feeds = feeds[:25]  # safety cap
 
     # -------------------------------------------------
-    # 2. Fetch latest episodes PER podcast (NO SCORING)
+    # 2. Fetch latest episodes PER podcast
     # -------------------------------------------------
     episodes_by_feed: Dict[str, List[Any]] = {}
 
@@ -119,7 +124,7 @@ def preview_blend(
         }
 
     # -------------------------------------------------
-    # 3. Fair round-robin blend (STRUCTURAL FIX)
+    # 3. Fair round-robin blend
     # -------------------------------------------------
     blended_episodes = round_robin_blend(
         episodes_by_podcaster=episodes_by_feed,
@@ -128,7 +133,42 @@ def preview_blend(
     )
 
     # -------------------------------------------------
-    # 4. Response
+    # ✅ 4. AI ENRICHMENT (NEW)
+    # -------------------------------------------------
+    ai_output = None
+
+    if enable_ai:
+        try:
+            # ✅ Extract text segments from episodes
+            segments = []
+
+            for ep in blended_episodes:
+                # try common transcript fields safely
+                text = (
+                    ep.get("transcript")
+                    or ep.get("summary")
+                    or ep.get("description")
+                )
+
+                if text:
+                    segments.append(text)
+
+            # ✅ Only run AI if we have usable text
+            if segments:
+                clusters = [
+                    {
+                        "id": 1,
+                        "segments": segments[:5],  # keep token safe
+                    }
+                ]
+
+                ai_output = process_clusters(clusters)
+
+        except Exception as e:
+            print(f"⚠️ AI processing failed: {e}")
+
+    # -------------------------------------------------
+    # 5. Response
     # -------------------------------------------------
     return {
         "mode": "subject",
@@ -137,4 +177,5 @@ def preview_blend(
             "Showing the latest relevant episode from each creator."
         ),
         "results": blended_episodes,
+        "ai": ai_output,  # ✅ NEW FIELD
     }
