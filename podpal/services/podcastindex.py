@@ -4,22 +4,30 @@ import time
 import requests
 import os
 
+from dotenv import load_dotenv
 
-# -------------------------------------------------
-# Load PodcastIndex credentials
-# -------------------------------------------------
-
-PODCASTINDEX_API_KEY = os.environ.get("PODCASTINDEX_API_KEY")
-PODCASTINDEX_API_SECRET = os.environ.get("PODCASTINDEX_API_SECRET")
-
-if not PODCASTINDEX_API_KEY or not PODCASTINDEX_API_SECRET:
-    raise RuntimeError(
-        "PodcastIndex API credentials are not set. "
-        "Please set PODCASTINDEX_API_KEY and PODCASTINDEX_API_SECRET."
-    )
+# ✅ Load env
+load_dotenv()
 
 
 BASE_URL = "https://api.podcastindex.org/api/1.0"
+
+
+# -------------------------------------------------
+# Get credentials SAFELY (no crash at import time)
+# -------------------------------------------------
+
+def _get_credentials():
+    api_key = os.getenv("PODCASTINDEX_API_KEY")
+    api_secret = os.getenv("PODCASTINDEX_API_SECRET")
+
+    if not api_key or not api_secret:
+        raise RuntimeError(
+            "PodcastIndex API credentials are not set. "
+            "Please set PODCASTINDEX_API_KEY and PODCASTINDEX_API_SECRET."
+        )
+
+    return api_key, api_secret
 
 
 # -------------------------------------------------
@@ -27,18 +35,16 @@ BASE_URL = "https://api.podcastindex.org/api/1.0"
 # -------------------------------------------------
 
 def _auth_headers() -> dict:
-    # ✅ Strong type guarantee for Pylance *and* runtime
-    assert PODCASTINDEX_API_SECRET is not None
-    assert PODCASTINDEX_API_KEY is not None
+    api_key, api_secret = _get_credentials()
 
     epoch = str(int(time.time()))
 
-    auth_string = PODCASTINDEX_API_KEY + PODCASTINDEX_API_SECRET + epoch
+    auth_string = api_key + api_secret + epoch
     digest = hashlib.sha1(auth_string.encode("utf-8")).hexdigest()
 
     return {
         "X-Auth-Date": epoch,
-        "X-Auth-Key": PODCASTINDEX_API_KEY,
+        "X-Auth-Key": api_key,
         "Authorization": digest,
         "User-Agent": "PodBlendz/1.0",
     }
@@ -53,6 +59,7 @@ def search_podcasts(query: str, limit: int = 20) -> list:
     Search PodcastIndex by term and return RSS feed URLs.
     """
     url = f"{BASE_URL}/search/byterm"
+
     params = {
         "q": query,
         "max": limit,
@@ -65,18 +72,24 @@ def search_podcasts(query: str, limit: int = 20) -> list:
         params=params,
         timeout=10,
     )
+
     response.raise_for_status()
 
     data = response.json()
     feeds = data.get("feeds", [])
 
-    return [f["url"] for f in feeds if isinstance(f, dict) and "url" in f]
+    return [
+        f["url"] for f in feeds
+        if isinstance(f, dict) and "url" in f
+    ]
+
+
 def search_podcasts_by_title(query: str, limit: int = 10) -> list:
     """
-    Search PodcastIndex by podcast TITLE only and return RSS feed URLs.
-    High-precision, low-noise search.
+    Search PodcastIndex by podcast TITLE only.
     """
     url = f"{BASE_URL}/search/bytitle"
+
     params = {
         "q": query,
         "max": limit,
@@ -89,9 +102,13 @@ def search_podcasts_by_title(query: str, limit: int = 10) -> list:
         params=params,
         timeout=10,
     )
+
     response.raise_for_status()
 
     data = response.json()
     feeds = data.get("feeds", [])
 
-    return [f["url"] for f in feeds if isinstance(f, dict) and "url" in f]
+    return [
+        f["url"] for f in feeds
+        if isinstance(f, dict) and "url" in f
+    ]
