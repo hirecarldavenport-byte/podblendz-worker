@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Body
 from typing import Dict, Any, List, Optional
+import re
 
 from podpal.search.resolve import resolve_search_term
 from podpal.rss.resolver import resolve_podcast_source
@@ -7,26 +8,44 @@ from podpal.services.rss_test import fetch_rss_feed
 
 from podpal.blending.round_robin import round_robin_blend
 
-# ✅ NEW: AI pipeline
+# ✅ AI pipeline
 from podpal.ai.pipeline import process_clusters
 
 
 router = APIRouter()
 
 
+# -------------------------------------------------
+# ✅ Utility: Clean HTML from RSS content
+# -------------------------------------------------
+def clean_text(text: str) -> str:
+    if not text:
+        return ""
+
+    # remove HTML tags
+    text = re.sub(r"<.*?>", "", text)
+
+    # collapse whitespace
+    text = re.sub(r"\s+", " ", text).strip()
+
+    return text
+
+
+# -------------------------------------------------
+# ✅ BLEND ENDPOINT
+# -------------------------------------------------
 @router.post("/blend")
 def preview_blend(
     query: Optional[str] = Body(default=None),
     podcaster_feed: Optional[str] = Body(default=None),
-    enable_ai: bool = Body(default=True),  # ✅ toggle AI on/off
+    enable_ai: bool = Body(default=True),
 ) -> Dict[str, Any]:
     """
-    Generate either:
-    - a SUBJECT blend (fair, per-podcaster, latest-first)
-    - a PODCASTER blend (direct, no scoring)
+    Generate:
+    - SUBJECT blend (search-based)
+    - PODCASTER blend (direct)
 
-    NEW:
-    - Optional AI enrichment (label + narration)
+    Includes optional AI narration.
     """
 
     # =================================================
@@ -63,7 +82,7 @@ def preview_blend(
         }
 
     # =================================================
-    # SUBJECT MODE (FAIR BLENDING)
+    # SUBJECT MODE
     # =================================================
     if not query:
         return {
@@ -76,7 +95,7 @@ def preview_blend(
         }
 
     # -------------------------------------------------
-    # 1. Resolve query → podcast feeds
+    # 1. Resolve query → feeds
     # -------------------------------------------------
     feed_urls = resolve_search_term(query)
 
@@ -97,10 +116,10 @@ def preview_blend(
             "results": [],
         }
 
-    feeds = feeds[:25]  # safety cap
+    feeds = feeds[:25]
 
     # -------------------------------------------------
-    # 2. Fetch latest episodes PER podcast
+    # 2. Fetch episodes
     # -------------------------------------------------
     episodes_by_feed: Dict[str, List[Any]] = {}
 
@@ -124,7 +143,7 @@ def preview_blend(
         }
 
     # -------------------------------------------------
-    # 3. Fair round-robin blend
+    # 3. Round robin blend
     # -------------------------------------------------
     blended_episodes = round_robin_blend(
         episodes_by_podcaster=episodes_by_feed,
@@ -133,36 +152,44 @@ def preview_blend(
     )
 
     # -------------------------------------------------
-    # ✅ 4. AI ENRICHMENT (NEW)
+    # ✅ 4. AI ENRICHMENT (IMPROVED)
     # -------------------------------------------------
     ai_output = None
 
     if enable_ai:
         try:
-            # ✅ Extract text segments from episodes
             segments = []
 
             for ep in blended_episodes:
-                # try common transcript fields safely
-                text = (
+                raw_text = (
                     ep.get("transcript")
                     or ep.get("summary")
                     or ep.get("description")
                 )
 
-                if text:
-                    segments.append(text)
+                cleaned = clean_text(raw_text)
 
-            # ✅ Only run AI if we have usable text
+                # ✅ Skip junk / too short
+                if cleaned and len(cleaned) > 100:
+                    segments.append(cleaned)
+
+            # ✅ Multi-cluster instead of one blob
             if segments:
-                clusters = [
-                    {
-                        "id": 1,
-                        "segments": segments[:5],  # keep token safe
-                    }
-                ]
+                clusters = []
+
+                for i, segment in enumerate(segments[:3]):  # limit clusters
+                    clusters.append({
+                        "id": i + 1,
+                        "segments": [segment]
+                    })
+
+                print("\n--- CLUSTERS ---")
+                print(clusters)
 
                 ai_output = process_clusters(clusters)
+
+                print("\n--- AI OUTPUT ---")
+                print(ai_output)
 
         except Exception as e:
             print(f"⚠️ AI processing failed: {e}")
@@ -173,9 +200,7 @@ def preview_blend(
     return {
         "mode": "subject",
         "query": query,
-        "guidance": (
-            "Showing the latest relevant episode from each creator."
-        ),
+        "guidance": "Showing the latest relevant episode from each creator.",
         "results": blended_episodes,
-        "ai": ai_output,  # ✅ NEW FIELD
+        "ai": ai_output,
     }
