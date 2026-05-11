@@ -5,11 +5,13 @@ import re
 from podpal.search.resolve import resolve_search_term
 from podpal.rss.resolver import resolve_podcast_source
 from podpal.services.rss_test import fetch_rss_feed
-
 from podpal.blending.round_robin import round_robin_blend
 
 # ✅ AI pipeline
 from podpal.ai.pipeline import process_clusters
+
+# ✅ Audio ingestion
+from podpal.audio.ingest import download_episode_audio
 
 
 router = APIRouter()
@@ -22,7 +24,7 @@ def clean_text(text: str) -> str:
     if not text:
         return ""
 
-    # remove HTML tags
+    # ✅ FIX: use real HTML tag regex (not escaped)
     text = re.sub(r"<.*?>", "", text)
 
     # collapse whitespace
@@ -40,13 +42,6 @@ def preview_blend(
     podcaster_feed: Optional[str] = Body(default=None),
     enable_ai: bool = Body(default=True),
 ) -> Dict[str, Any]:
-    """
-    Generate:
-    - SUBJECT blend (search-based)
-    - PODCASTER blend (direct)
-
-    Includes optional AI narration.
-    """
 
     # =================================================
     # PODCASTER MODE (UNCHANGED)
@@ -152,7 +147,36 @@ def preview_blend(
     )
 
     # -------------------------------------------------
-    # ✅ 4. AI ENRICHMENT (IMPROVED)
+    # ✅ 4. AUDIO INGESTION (NEW + CRITICAL)
+    # -------------------------------------------------
+    for ep in blended_episodes:
+        try:
+            audio_url = None
+
+            links = ep.get("links", [])
+
+            # ✅ safer extraction of audio link
+            for link in links:
+                if link.get("type") == "audio/mpeg":
+                    audio_url = link.get("href")
+                    break
+
+            if audio_url:
+                filename = download_episode_audio(audio_url)
+
+                if filename:
+                    ep["local_audio"] = f"/audio/{filename}"
+                else:
+                    ep["local_audio"] = None
+            else:
+                ep["local_audio"] = None
+
+        except Exception as e:
+            print(f"⚠️ Audio ingestion failed: {e}")
+            ep["local_audio"] = None
+
+    # -------------------------------------------------
+    # ✅ 5. AI ENRICHMENT (MULTI-CLUSTER)
     # -------------------------------------------------
     ai_output = None
 
@@ -169,15 +193,14 @@ def preview_blend(
 
                 cleaned = clean_text(raw_text)
 
-                # ✅ Skip junk / too short
                 if cleaned and len(cleaned) > 100:
                     segments.append(cleaned)
 
-            # ✅ Multi-cluster instead of one blob
             if segments:
                 clusters = []
 
-                for i, segment in enumerate(segments[:3]):  # limit clusters
+                # ✅ multi-cluster: each episode becomes a perspective
+                for i, segment in enumerate(segments[:3]):
                     clusters.append({
                         "id": i + 1,
                         "segments": [segment]
@@ -195,7 +218,7 @@ def preview_blend(
             print(f"⚠️ AI processing failed: {e}")
 
     # -------------------------------------------------
-    # 5. Response
+    # 6. FINAL RESPONSE
     # -------------------------------------------------
     return {
         "mode": "subject",
