@@ -4,7 +4,12 @@ def build_cluster_label_prompt(text_samples):
     return f"""
 You are organizing podcast content into themes.
 
+IMPORTANT:
+
+
 Here are excerpts:
+- Always respond in English
+- Ignore the original language of the content
 
 {text_samples}
 
@@ -18,7 +23,12 @@ Return JSON:
 
 def build_narration_prompt(label, description, segments):
     return f"""
-You are a podcast narrator.
+You are a professional podcast narrator.
+
+IMPORTANT:
+- Always write in English
+- Translate ideas if needed
+- Do not use any other language
 
 Theme: {label}
 Description: {description}
