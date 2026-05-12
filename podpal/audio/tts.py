@@ -11,65 +11,91 @@ from typing import Optional
 import edge_tts
 import logging
 
-# Silence edge-tts and aiohttp debug chatter
+
+# -------------------------------------------------
+# ✅ Logging cleanup
+# -------------------------------------------------
 logging.getLogger("edge_tts").setLevel(logging.WARNING)
 logging.getLogger("aiohttp").setLevel(logging.WARNING)
 
 
+# -------------------------------------------------
+# ✅ Helper: Safe async execution (FIXES FastAPI crash)
+# -------------------------------------------------
+async def _run_save(communicate: edge_tts.Communicate, output_path: str) -> None:
+    await communicate.save(output_path)
+
+
+def _run_async_task(coro):
+    """
+    Safely run async code from sync context (FastAPI-safe)
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        # ✅ already in event loop → run task properly
+        return loop.create_task(coro)
+    except RuntimeError:
+        # ✅ no loop → safe to run
+        return asyncio.run(coro)
+
+
+# -------------------------------------------------
+# ✅ MAIN TTS FUNCTION
+# -------------------------------------------------
 def generate_audio(
     text: str,
     voice: str = "en-US-GuyNeural",
-    output_dir: str = "media",
+    output_dir: str = "audio/tts",   # ✅ FIXED path
     filename_prefix: str = "blend",
 ) -> str:
     """
-    Generate TTS audio using Microsoft Edge TTS and return the written file path.
-
-    This implementation uses edge_tts.Communicate(...).save(path) which is async.
-    We call it from a sync function via asyncio.run(...).
-
-    Args:
-        text: The text to synthesize.
-        voice: TTS voice (e.g., 'en-US-GuyNeural').
-        output_dir: Output directory for the generated mp3.
-        filename_prefix: Prefix for the generated filename.
+    Generate TTS audio using Microsoft Edge TTS.
 
     Returns:
-        Absolute path to the generated MP3 file.
-
-    Raises:
-        RuntimeError: If the file could not be written or is empty.
+        Absolute path to generated MP3 file.
     """
-    # Ensure output directory exists
+
+    # ✅ Ensure directory exists
     os.makedirs(output_dir, exist_ok=True)
 
-    # Unique filename
+    # ✅ Unique filename
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     unique_id = uuid.uuid4().hex[:8]
     filename = f"{filename_prefix}_{timestamp}_{unique_id}.mp3"
+
     output_path = os.path.abspath(os.path.join(output_dir, filename))
 
-    # Use edge-tts to synthesize and save directly
-    communicate = edge_tts.Communicate(text=text, voice=voice)
+    print(f"🔊 Generating TTS → {output_path}")
 
-    async def _run_save() -> None:
-        await communicate.save(output_path)
-
-    # Run the async save from this sync function
-    asyncio.run(_run_save())
-
-    # Sanity check: ensure non-empty file
     try:
-        if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
-            raise RuntimeError("TTS produced no audio; output file is missing or empty.")
-    except Exception:
-        # Clean up if a zero-byte file was created
-        if os.path.exists(output_path) and os.path.getsize(output_path) == 0:
-            try:
-                os.remove(output_path)
-            except Exception:
-                pass
-        raise
+        # ✅ Create TTS communicate object
+        communicate = edge_tts.Communicate(text=text, voice=voice)
 
-    print(f"🟢 TTS — wrote audio to: {output_path}")
+        # ✅ Run async safely (NO asyncio.run crash)
+        coro = _run_save(communicate, output_path)
+        result = _run_async_task(coro)
+
+        # ✅ If task returned, wait for it
+        if asyncio.isfuture(result):
+            asyncio.get_event_loop().run_until_complete(result)
+
+    except Exception as e:
+        print(f"🔥 TTS ERROR: {e}")
+        raise RuntimeError("TTS generation failed") from e
+
+    # -------------------------------------------------
+    # ✅ Validate output
+    # -------------------------------------------------
+    if not os.path.exists(output_path):
+        raise RuntimeError("TTS file was not created")
+
+    if os.path.getsize(output_path) == 0:
+        try:
+            os.remove(output_path)
+        except Exception:
+            pass
+        raise RuntimeError("TTS output file is empty")
+
+    print(f"✅ TTS complete → {output_path}")
+
     return output_path
