@@ -8,11 +8,13 @@ from podpal.rss.resolver import resolve_podcast_source
 from podpal.services.rss_test import fetch_rss_feed
 from podpal.blending.round_robin import round_robin_blend
 
-# ✅ AI pipeline
+# ✅ AI
 from podpal.ai.pipeline import process_clusters
 
-# ✅ Audio ingestion
+# ✅ Audio pipeline
 from podpal.audio.ingest import download_episode_audio
+from podpal.audio.tts import generate_audio
+from podpal.audio.stitch import stitch_blendz
 
 
 router = APIRouter()
@@ -25,7 +27,6 @@ def clean_text(text: str) -> str:
     if not text:
         return ""
 
-    # ✅ FIX: correct HTML stripping
     text = re.sub(r"<.*?>", "", text)
     text = re.sub(r"\s+", " ", text).strip()
 
@@ -42,38 +43,34 @@ def preview_blend(
     enable_ai: bool = Body(default=True),
 ) -> Dict[str, Any]:
 
+    BASE_DIR = Path(__file__).resolve().parent.parent.parent
+    RAW_DIR = BASE_DIR / "audio" / "raw"
+
     # =================================================
-    # PODCASTER MODE
+    # ✅ PODCASTER MODE
     # =================================================
     if podcaster_feed:
         from podpal.retrieval.podcasters import fetch_podcaster_episodes
 
         episodes = fetch_podcaster_episodes(podcaster_feed)
 
-        if not episodes:
-            return {
-                "mode": "podcaster",
-                "guidance": "No recent episodes with transcripts.",
-                "results": [],
-            }
-
         return {
             "mode": "podcaster",
-            "episode_count": len(episodes),
-            "results": episodes,
+            "results": episodes or [],
+            "episode_count": len(episodes) if episodes else 0,
         }
 
     # =================================================
-    # SUBJECT MODE
+    # ✅ SUBJECT MODE
     # =================================================
     if not query:
         return {
             "mode": "subject",
-            "guidance": "Provide a query or podcaster_feed.",
+            "guidance": "Provide a query.",
             "results": [],
         }
 
-    print(f"\n🔍 [SEARCH] Incoming query: '{query}'")
+    print(f"\n🔍 QUERY: {query}")
 
     # -------------------------------------------------
     # 1. Resolve feeds
@@ -87,15 +84,7 @@ def preview_blend(
             if feed:
                 feeds.append(feed)
         except Exception as e:
-            print(f"⚠️ Feed resolution failed: {e}")
-
-    if not feeds:
-        return {
-            "mode": "subject",
-            "query": query,
-            "guidance": "No podcasts resolved.",
-            "results": [],
-        }
+            print(f"⚠️ Feed fail: {e}")
 
     feeds = feeds[:25]
 
@@ -109,18 +98,11 @@ def preview_blend(
             rss = fetch_rss_feed(feed.feed_url)
             episodes_by_feed[feed.feed_url] = rss.get("items", []) if rss else []
         except Exception as e:
-            print(f"⚠️ RSS issue: {e}")
+            print(f"⚠️ RSS fail: {e}")
             episodes_by_feed[feed.feed_url] = []
 
-    if not episodes_by_feed:
-        return {
-            "mode": "subject",
-            "query": query,
-            "results": [],
-        }
-
     # -------------------------------------------------
-    # 3. Blend episodes
+    # 3. Blend
     # -------------------------------------------------
     blended_episodes = round_robin_blend(
         episodes_by_podcaster=episodes_by_feed,
@@ -129,9 +111,9 @@ def preview_blend(
     )
 
     # -------------------------------------------------
-    # 4. Download audio (resilient)
+    # 4. AUDIO INGESTION
     # -------------------------------------------------
-    clip_paths = []
+    clip_paths: List[str] = []
 
     for ep in blended_episodes:
         try:
@@ -149,26 +131,19 @@ def preview_blend(
             filename = download_episode_audio(audio_url)
 
             if filename:
-                local_path = f"/audio/{filename}"
-                ep["local_audio"] = local_path
+                ep["local_audio"] = f"/audio/{filename}"
 
-                # ✅ convert to full path for later stitching
-                full_path = str(
-                    Path(__file__).resolve().parent.parent.parent
-                    / "audio"
-                    / "raw"
-                    / filename
-                )
+                full_path = str(RAW_DIR / filename)
                 clip_paths.append(full_path)
             else:
                 ep["local_audio"] = None
 
         except Exception as e:
-            print(f"⚠️ Audio ingestion failed: {e}")
+            print(f"⚠️ Download fail: {e}")
             ep["local_audio"] = None
 
     # -------------------------------------------------
-    # 5. AI enrichment
+    # 5. AI ENRICHMENT
     # -------------------------------------------------
     ai_output = None
 
@@ -194,25 +169,67 @@ def preview_blend(
                     for i, seg in enumerate(segments[:3])
                 ]
 
-                print("\n🧠 --- CLUSTERS ---")
+                print("\n🧠 CLUSTERS:")
                 print(clusters)
 
                 ai_output = process_clusters(clusters)
-
-                print("\n🧠 --- AI OUTPUT ---")
-                print(ai_output)
 
         except Exception as e:
             print(f"⚠️ AI error: {e}")
 
     # -------------------------------------------------
-    # 6. RESPONSE (no audio yet guaranteed)
+    # ✅ 6. AUDIO GENERATION + FALLBACK
+    # -------------------------------------------------
+    final_audio = None
+
+    try:
+        narration_paths: List[str] = []
+        audio_sequence: List[str] = []
+
+        # ✅ Generate narration audio
+        if ai_output:
+            for cluster in ai_output:
+                narration = cluster.get("narration")
+
+                if narration:
+                    try:
+                        path = generate_audio(narration)
+                        narration_paths.append(path)
+                    except Exception as e:
+                        print(f"⚠️ TTS error: {e}")
+
+        # ✅ Build final sequence
+        if narration_paths:
+
+            if clip_paths:
+                print(f"🎧 Using clips + narration")
+
+                for i in range(len(narration_paths)):
+                    audio_sequence.append(narration_paths[i])
+
+                    if i < len(clip_paths):
+                        audio_sequence.append(clip_paths[i])
+
+            else:
+                print("⚠️ No clips → narration ONLY")
+                audio_sequence = narration_paths
+
+            # ✅ Stitch
+            final_filename = stitch_blendz(audio_sequence)
+            final_audio = f"/audio/final/{final_filename}"
+
+    except Exception as e:
+        print(f"🔥 Audio pipeline error: {e}")
+        final_audio = None
+
+    # -------------------------------------------------
+    # ✅ FINAL RESPONSE
     # -------------------------------------------------
     return {
         "mode": "subject",
         "query": query,
         "results": blended_episodes,
         "ai": ai_output,
-        "clip_count": len(clip_paths),  # ✅ useful debug
+        "clip_count": len(clip_paths),
+        "final_audio": final_audio,
     }
-
