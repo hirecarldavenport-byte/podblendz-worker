@@ -4,21 +4,22 @@ import requests
 from pathlib import Path
 import uuid
 from typing import Optional
+import time
+
 
 # -------------------------------------------------
-# Base directory for audio storage
+# ✅ Base directory for audio storage
 # -------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 AUDIO_DIR = BASE_DIR / "audio"
-
 RAW_DIR = AUDIO_DIR / "raw"
 
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # -------------------------------------------------
-# Download episode audio
+# ✅ Download episode audio (HARDENED)
 # -------------------------------------------------
 
 def download_episode_audio(audio_url: str) -> Optional[str]:
@@ -26,24 +27,71 @@ def download_episode_audio(audio_url: str) -> Optional[str]:
     Downloads audio from a remote URL and saves locally.
 
     Returns:
-        filename (str)
+        filename (str) OR None if download fails
     """
 
-    # ✅ Unique filename (avoid collisions)
+    # ✅ Unique filename
     filename = f"{uuid.uuid4().hex}.mp3"
     filepath = RAW_DIR / filename
 
-    try:
-        response = requests.get(audio_url, stream=True, timeout=15)
-        response.raise_for_status()
+    # ✅ Browser-like headers (FIXES 403 issues)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "*/*",
+        "Connection": "keep-alive",
+    }
 
-        with open(filepath, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
+    max_retries = 2
 
-        return filename
+    for attempt in range(max_retries):
+        try:
+            print(f"\n⬇️ Attempt {attempt+1} downloading audio:")
+            print(audio_url)
 
-    except Exception as e:
-        print(f"⚠️ Failed to download audio: {e}")
-        return None
+            response = requests.get(
+                audio_url,
+                headers=headers,
+                stream=True,
+                timeout=20,
+                allow_redirects=True,
+            )
+
+            response.raise_for_status()
+
+            # ✅ Prevent downloading huge files accidentally
+            content_length = response.headers.get("content-length")
+
+            if content_length and int(content_length) > 50_000_000:  # ~50MB cap
+                print("⚠️ Skipping large file (>50MB)")
+                return None
+
+            # ✅ Write file
+            with open(filepath, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+
+            # ✅ Validate file
+            if not filepath.exists() or filepath.stat().st_size == 0:
+                raise RuntimeError("Downloaded file is empty")
+
+            print(f"✅ Audio downloaded → {filepath}")
+
+            return filename
+
+        except Exception as e:
+            print(f"⚠️ Download failed (attempt {attempt+1}): {e}")
+
+            # slight delay before retry
+            time.sleep(1)
+
+    # ✅ cleanup if failed
+    if filepath.exists():
+        try:
+            filepath.unlink()
+        except Exception:
+            pass
+
+    print("❌ Failed to download audio after retries")
+
+    return None

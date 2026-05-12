@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Body
 from typing import Dict, Any, List, Optional
 import re
+from pathlib import Path
 
 from podpal.search.resolve import resolve_search_term
 from podpal.rss.resolver import resolve_podcast_source
@@ -18,16 +19,14 @@ router = APIRouter()
 
 
 # -------------------------------------------------
-# ✅ Utility: Clean HTML from RSS content
+# ✅ Utility: Clean HTML
 # -------------------------------------------------
 def clean_text(text: str) -> str:
     if not text:
         return ""
 
-    # ✅ FIX: use real HTML tag regex (not escaped)
+    # ✅ FIX: correct HTML stripping
     text = re.sub(r"<.*?>", "", text)
-
-    # collapse whitespace
     text = re.sub(r"\s+", " ", text).strip()
 
     return text
@@ -44,7 +43,7 @@ def preview_blend(
 ) -> Dict[str, Any]:
 
     # =================================================
-    # PODCASTER MODE (UNCHANGED)
+    # PODCASTER MODE
     # =================================================
     if podcaster_feed:
         from podpal.retrieval.podcasters import fetch_podcaster_episodes
@@ -54,24 +53,12 @@ def preview_blend(
         if not episodes:
             return {
                 "mode": "podcaster",
-                "podcaster_feed": podcaster_feed,
-                "guidance": (
-                    "No recent episodes with transcripts were available "
-                    "for this podcaster."
-                ),
+                "guidance": "No recent episodes with transcripts.",
                 "results": [],
             }
 
         return {
             "mode": "podcaster",
-            "podcaster_feed": podcaster_feed,
-            "vibe": {
-                "type": "creator",
-                "description": (
-                    "Latest episodes from this creator, "
-                    "presented in order of release."
-                ),
-            },
             "episode_count": len(episodes),
             "results": episodes,
         }
@@ -82,15 +69,14 @@ def preview_blend(
     if not query:
         return {
             "mode": "subject",
-            "guidance": (
-                "Provide either a query (subject blend) "
-                "or a podcaster_feed (creator mode)."
-            ),
+            "guidance": "Provide a query or podcaster_feed.",
             "results": [],
         }
 
+    print(f"\n🔍 [SEARCH] Incoming query: '{query}'")
+
     # -------------------------------------------------
-    # 1. Resolve query → feeds
+    # 1. Resolve feeds
     # -------------------------------------------------
     feed_urls = resolve_search_term(query)
 
@@ -101,13 +87,13 @@ def preview_blend(
             if feed:
                 feeds.append(feed)
         except Exception as e:
-            print(f"⚠️ Feed resolution failed for {url}: {e}")
+            print(f"⚠️ Feed resolution failed: {e}")
 
     if not feeds:
         return {
             "mode": "subject",
             "query": query,
-            "guidance": "No podcasts could be resolved for this topic.",
+            "guidance": "No podcasts resolved.",
             "results": [],
         }
 
@@ -119,26 +105,22 @@ def preview_blend(
     episodes_by_feed: Dict[str, List[Any]] = {}
 
     for feed in feeds:
-        feed_url = feed.feed_url
         try:
-            rss_data = fetch_rss_feed(feed_url)
-            episodes_by_feed[feed_url] = (
-                rss_data.get("items", []) if rss_data else []
-            )
+            rss = fetch_rss_feed(feed.feed_url)
+            episodes_by_feed[feed.feed_url] = rss.get("items", []) if rss else []
         except Exception as e:
-            print(f"⚠️ RSS feed issue for {feed_url}: {e}")
-            episodes_by_feed[feed_url] = []
+            print(f"⚠️ RSS issue: {e}")
+            episodes_by_feed[feed.feed_url] = []
 
     if not episodes_by_feed:
         return {
             "mode": "subject",
             "query": query,
-            "guidance": "No usable episodes were found.",
             "results": [],
         }
 
     # -------------------------------------------------
-    # 3. Round robin blend
+    # 3. Blend episodes
     # -------------------------------------------------
     blended_episodes = round_robin_blend(
         episodes_by_podcaster=episodes_by_feed,
@@ -147,27 +129,37 @@ def preview_blend(
     )
 
     # -------------------------------------------------
-    # ✅ 4. AUDIO INGESTION (NEW + CRITICAL)
+    # 4. Download audio (resilient)
     # -------------------------------------------------
+    clip_paths = []
+
     for ep in blended_episodes:
         try:
             audio_url = None
 
-            links = ep.get("links", [])
-
-            # ✅ safer extraction of audio link
-            for link in links:
+            for link in ep.get("links", []):
                 if link.get("type") == "audio/mpeg":
                     audio_url = link.get("href")
                     break
 
-            if audio_url:
-                filename = download_episode_audio(audio_url)
+            if not audio_url:
+                ep["local_audio"] = None
+                continue
 
-                if filename:
-                    ep["local_audio"] = f"/audio/{filename}"
-                else:
-                    ep["local_audio"] = None
+            filename = download_episode_audio(audio_url)
+
+            if filename:
+                local_path = f"/audio/{filename}"
+                ep["local_audio"] = local_path
+
+                # ✅ convert to full path for later stitching
+                full_path = str(
+                    Path(__file__).resolve().parent.parent.parent
+                    / "audio"
+                    / "raw"
+                    / filename
+                )
+                clip_paths.append(full_path)
             else:
                 ep["local_audio"] = None
 
@@ -176,7 +168,7 @@ def preview_blend(
             ep["local_audio"] = None
 
     # -------------------------------------------------
-    # ✅ 5. AI ENRICHMENT (MULTI-CLUSTER)
+    # 5. AI enrichment
     # -------------------------------------------------
     ai_output = None
 
@@ -185,45 +177,42 @@ def preview_blend(
             segments = []
 
             for ep in blended_episodes:
-                raw_text = (
+                raw = (
                     ep.get("transcript")
                     or ep.get("summary")
                     or ep.get("description")
                 )
 
-                cleaned = clean_text(raw_text)
+                cleaned = clean_text(raw)
 
                 if cleaned and len(cleaned) > 100:
                     segments.append(cleaned)
 
             if segments:
-                clusters = []
+                clusters = [
+                    {"id": i + 1, "segments": [seg]}
+                    for i, seg in enumerate(segments[:3])
+                ]
 
-                # ✅ multi-cluster: each episode becomes a perspective
-                for i, segment in enumerate(segments[:3]):
-                    clusters.append({
-                        "id": i + 1,
-                        "segments": [segment]
-                    })
-
-                print("\n--- CLUSTERS ---")
+                print("\n🧠 --- CLUSTERS ---")
                 print(clusters)
 
                 ai_output = process_clusters(clusters)
 
-                print("\n--- AI OUTPUT ---")
+                print("\n🧠 --- AI OUTPUT ---")
                 print(ai_output)
 
         except Exception as e:
-            print(f"⚠️ AI processing failed: {e}")
+            print(f"⚠️ AI error: {e}")
 
     # -------------------------------------------------
-    # 6. FINAL RESPONSE
+    # 6. RESPONSE (no audio yet guaranteed)
     # -------------------------------------------------
     return {
         "mode": "subject",
         "query": query,
-        "guidance": "Showing the latest relevant episode from each creator.",
         "results": blended_episodes,
         "ai": ai_output,
+        "clip_count": len(clip_paths),  # ✅ useful debug
     }
+
