@@ -2,32 +2,80 @@
 Audio stitching utilities for PodBlendz.
 
 Purpose:
-- Concatenate real podcast audio clips and narration audio
-- Preserve original audio quality (no re-encoding)
-- Create a single, listenable Blendz audio artifact
+- Normalize narration + podcast clips
+- Concatenate into a single audio file
+- Produce stable, high-quality podcast output
 
 Implementation:
-- Uses FFmpeg concat demuxer (industry standard)
+- Uses FFmpeg (via imageio_ffmpeg)
+- Normalization ensures compatibility between sources
 """
 
 from pathlib import Path
 import subprocess
-import imageio_ffmpeg
+import uuid
 from typing import List
 
+import imageio_ffmpeg
 
-def create_concat_file(
-    audio_files: List[str],
-    concat_file: str,
-) -> None:
+
+# -------------------------------------------------
+# ✅ Directory setup
+# -------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+AUDIO_DIR = BASE_DIR / "audio"
+FINAL_DIR = AUDIO_DIR / "final"
+TEMP_DIR = AUDIO_DIR / "temp"
+
+FINAL_DIR.mkdir(parents=True, exist_ok=True)
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# -------------------------------------------------
+# ✅ Normalize audio (CRITICAL)
+# -------------------------------------------------
+def normalize_audio(input_file: str) -> str:
     """
-    Create a FFmpeg-compatible concat file.
+    Convert audio into a consistent format:
+    - mp3
+    - 44100 Hz
+    - stereo
 
-    Each line must be in the form:
-        file 'path/to/audio.ext'
+    Returns:
+        Path to normalized file
     """
 
-    lines = []
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+
+    output_file = TEMP_DIR / f"{uuid.uuid4().hex}.mp3"
+
+    subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-i", input_file,
+            "-ar", "44100",  # sample rate
+            "-ac", "2",      # stereo
+            "-b:a", "192k",  # quality
+            str(output_file),
+        ],
+        check=True,
+    )
+
+    return str(output_file)
+
+
+# -------------------------------------------------
+# ✅ Create concat file
+# -------------------------------------------------
+def create_concat_file(audio_files: List[str], concat_file: str | Path) -> None:
+    """
+    Create FFmpeg concat input file.
+    """
+
+    lines: List[str] = []
+
     for audio in audio_files:
         path = Path(audio).resolve()
         lines.append(f"file '{path.as_posix()}'")
@@ -35,23 +83,51 @@ def create_concat_file(
     Path(concat_file).write_text("\n".join(lines), encoding="utf-8")
 
 
-def stitch_blendz(
-    audio_files: List[str],
-    output_file: str,
-    temp_concat_file: str = "blendz_concat.txt",
-) -> None:
+# -------------------------------------------------
+# ✅ Main stitching function
+# -------------------------------------------------
+def stitch_blendz(audio_files: List[str]) -> str:
     """
-    Stitch multiple audio files into a single Blendz output.
+    Stitch narration and clips into one final podcast.
 
-    Parameters:
-    - audio_files: ordered list of audio file paths
-                   (e.g. clip, narration, clip, narration)
-    - output_file: final Blendz audio file
+    Expected ordering:
+        [narration1, clip1, narration2, clip2, ...]
+
+    Returns:
+        Final filename (string)
     """
-
-    create_concat_file(audio_files, temp_concat_file)
 
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+
+    if not audio_files:
+        raise RuntimeError("No audio files provided for stitching")
+
+    print("\n🔄 Normalizing audio...")
+
+    normalized_files: List[str] = []
+
+    for audio in audio_files:
+        try:
+            normalized = normalize_audio(audio)
+            normalized_files.append(normalized)
+        except Exception as e:
+            print(f"⚠️ Failed to normalize: {audio} → {e}")
+
+    if not normalized_files:
+        raise RuntimeError("No valid audio after normalization")
+
+    # -------------------------------------------------
+    # Create concat file
+    # -------------------------------------------------
+    concat_file = TEMP_DIR / f"concat_{uuid.uuid4().hex}.txt"
+    create_concat_file(normalized_files, str(concat_file))
+
+    # -------------------------------------------------
+    # Output file
+    # -------------------------------------------------
+    output_file = FINAL_DIR / f"{uuid.uuid4().hex}.mp3"
+
+    print("\n🎧 Stitching final audio...")
 
     subprocess.run(
         [
@@ -59,11 +135,14 @@ def stitch_blendz(
             "-y",
             "-f", "concat",
             "-safe", "0",
-            "-i", temp_concat_file,
-            "-c", "copy",
-            output_file,
+            "-i", str(concat_file),
+            "-c:a", "libmp3lame",  # re-encode safely
+            "-q:a", "2",           # high quality
+            str(output_file),
         ],
         check=True,
     )
 
-    print(f"✅ Blendz audio created → {output_file}")
+    print(f"\n✅ Final podcast created → {output_file}")
+
+    return output_file.name
