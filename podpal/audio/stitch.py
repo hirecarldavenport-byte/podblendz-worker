@@ -1,14 +1,10 @@
 """
-Audio stitching utilities for PodBlendz.
+Audio stitching utilities for PodBlendz (UPGRADED)
 
-Purpose:
-- Normalize narration + podcast clips
-- Concatenate into a single audio file
-- Produce stable, high-quality podcast output
-
-Implementation:
-- Uses FFmpeg (via imageio_ffmpeg)
-- Normalization ensures compatibility between sources
+✅ Normalize narration + podcast clips
+✅ Trim clips dynamically based on target duration
+✅ Control total runtime (5, 10, 25 min)
+✅ Produce balanced audio experience
 """
 
 from pathlib import Path
@@ -20,10 +16,9 @@ import imageio_ffmpeg
 
 
 # -------------------------------------------------
-# ✅ Directory setup
+# ✅ DIRECTORY SETUP
 # -------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-
 AUDIO_DIR = BASE_DIR / "audio"
 FINAL_DIR = AUDIO_DIR / "final"
 TEMP_DIR = AUDIO_DIR / "temp"
@@ -33,17 +28,37 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # -------------------------------------------------
-# ✅ Normalize audio (CRITICAL)
+# ✅ CLIP DURATION BASED ON FINAL LENGTH
 # -------------------------------------------------
-def normalize_audio(input_file: str) -> str:
-    """
-    Convert audio into a consistent format:
-    - mp3
-    - 44100 Hz
-    - stereo
+def get_clip_duration(target_minutes: int) -> int:
+    if target_minutes <= 5:
+        return 12
+    elif target_minutes <= 10:
+        return 15
+    elif target_minutes <= 25:
+        return 20
+    else:
+        return 25
 
-    Returns:
-        Path to normalized file
+
+# -------------------------------------------------
+# ✅ MAX SEGMENTS CALCULATOR
+# -------------------------------------------------
+def calculate_max_segments(target_minutes: int, clip_duration: int) -> int:
+    total_seconds = target_minutes * 60
+
+    # narration ~ same length as clip
+    segment_duration = clip_duration * 2
+
+    return max(1, total_seconds // segment_duration)
+
+
+# -------------------------------------------------
+# ✅ NORMALIZE + TRIM AUDIO
+# -------------------------------------------------
+def process_audio(input_file: str, clip_duration: int) -> str:
+    """
+    Normalize audio and trim clip length
     """
 
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
@@ -54,10 +69,15 @@ def normalize_audio(input_file: str) -> str:
         [
             ffmpeg,
             "-y",
+
+            # ✅ TRIM
+            "-ss", "0",
+            "-t", str(clip_duration),
+
             "-i", input_file,
-            "-ar", "44100",  # sample rate
-            "-ac", "2",      # stereo
-            "-b:a", "192k",  # quality
+            "-ar", "44100",
+            "-ac", "2",
+            "-b:a", "192k",
             str(output_file),
         ],
         check=True,
@@ -67,67 +87,80 @@ def normalize_audio(input_file: str) -> str:
 
 
 # -------------------------------------------------
-# ✅ Create concat file
+# ✅ CREATE CONCAT FILE
 # -------------------------------------------------
-def create_concat_file(audio_files: List[str], concat_file: str | Path) -> None:
-    """
-    Create FFmpeg concat input file.
-    """
-
-    lines: List[str] = []
+def create_concat_file(audio_files: List[str], concat_file: Path) -> None:
+    lines = []
 
     for audio in audio_files:
         path = Path(audio).resolve()
         lines.append(f"file '{path.as_posix()}'")
 
-    Path(concat_file).write_text("\n".join(lines), encoding="utf-8")
+    concat_file.write_text("\n".join(lines), encoding="utf-8")
 
 
 # -------------------------------------------------
-# ✅ Main stitching function
+# ✅ MAIN STITCH FUNCTION (UPDATED)
 # -------------------------------------------------
-def stitch_blendz(audio_files: List[str]) -> str:
+def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
     """
-    Stitch narration and clips into one final podcast.
+    Stitch narration + clips into final output
 
-    Expected ordering:
-        [narration1, clip1, narration2, clip2, ...]
-
-    Returns:
-        Final filename (string)
+    NEW:
+    ✅ Controls duration based on target_minutes
+    ✅ Trims clips intelligently
+    ✅ Limits number of segments
     """
 
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
 
     if not audio_files:
-        raise RuntimeError("No audio files provided for stitching")
+        raise RuntimeError("No audio files provided")
 
-    print("\n🔄 Normalizing audio...")
+    print(f"\n🎯 Target duration: {target_minutes} minutes")
 
-    normalized_files: List[str] = []
+    # ✅ Determine clip length
+    clip_duration = get_clip_duration(target_minutes)
+    max_segments = calculate_max_segments(target_minutes, clip_duration)
 
-    for audio in audio_files:
+    print(f"🎧 Clip duration: {clip_duration}s")
+    print(f"🎚 Max segments: {max_segments}")
+
+    processed_files = []
+
+    count = 0
+
+    print("\n🔄 Processing audio...")
+
+    for i, audio in enumerate(audio_files):
+
+        # ✅ LIMIT TOTAL SEGMENTS
+        if count >= max_segments * 2:
+            break
+
         try:
-            normalized = normalize_audio(audio)
-            normalized_files.append(normalized)
-        except Exception as e:
-            print(f"⚠️ Failed to normalize: {audio} → {e}")
+            processed = process_audio(audio, clip_duration)
+            processed_files.append(processed)
+            count += 1
 
-    if not normalized_files:
-        raise RuntimeError("No valid audio after normalization")
+        except Exception as e:
+            print(f"⚠️ Failed processing: {audio} → {e}")
+
+    if not processed_files:
+        raise RuntimeError("No audio files after processing")
 
     # -------------------------------------------------
-    # Create concat file
+    # concat file
     # -------------------------------------------------
     concat_file = TEMP_DIR / f"concat_{uuid.uuid4().hex}.txt"
-    create_concat_file(normalized_files, str(concat_file))
+    create_concat_file(processed_files, concat_file)
 
     # -------------------------------------------------
-    # Output file
+    # output
     # -------------------------------------------------
     output_file = FINAL_DIR / f"{uuid.uuid4().hex}.mp3"
 
-    print("\n🎧 Stitching final audio...")
+    print("\n🎧 Stitching final output...")
 
     subprocess.run(
         [
@@ -136,8 +169,8 @@ def stitch_blendz(audio_files: List[str]) -> str:
             "-f", "concat",
             "-safe", "0",
             "-i", str(concat_file),
-            "-c:a", "libmp3lame",  # re-encode safely
-            "-q:a", "2",           # high quality
+            "-c:a", "libmp3lame",
+            "-q:a", "2",
             str(output_file),
         ],
         check=True,
