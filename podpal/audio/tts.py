@@ -6,17 +6,19 @@ import os
 import uuid
 from pathlib import Path
 from datetime import datetime
-
 from typing import Optional
-from dotenv import load_dotenv
 
+from dotenv import load_dotenv
 import azure.cognitiveservices.speech as speechsdk
 
 
 # -------------------------------------------------
-# ✅ LOAD ENV
+# ✅ FORCE LOAD ENV FROM PROJECT ROOT
 # -------------------------------------------------
-load_dotenv()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+env_path = BASE_DIR / ".env"
+load_dotenv(env_path)
 
 AZURE_SPEECH_KEY = os.getenv("AZURE_SPEECH_KEY")
 AZURE_SPEECH_REGION = os.getenv("AZURE_SPEECH_REGION")
@@ -25,9 +27,7 @@ AZURE_SPEECH_REGION = os.getenv("AZURE_SPEECH_REGION")
 # -------------------------------------------------
 # ✅ DIRECTORIES
 # -------------------------------------------------
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
 TTS_DIR = BASE_DIR / "audio" / "tts"
-
 TTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -46,10 +46,16 @@ def generate_audio(
         Absolute path to MP3 file.
     """
 
+    # ✅ HARD DEBUG (remove later if you want)
+    print(f"🔐 AZURE KEY LOADED: {bool(AZURE_SPEECH_KEY)}")
+    print(f"🌍 AZURE REGION: {AZURE_SPEECH_REGION}")
+
     if not AZURE_SPEECH_KEY or not AZURE_SPEECH_REGION:
         raise RuntimeError("❌ Azure Speech is not configured (missing env vars)")
 
-    # ✅ Generate unique filename
+    # -------------------------------------------------
+    # ✅ FILENAME
+    # -------------------------------------------------
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     unique_id = uuid.uuid4().hex[:8]
     filename = f"{filename_prefix}_{timestamp}_{unique_id}.mp3"
@@ -60,11 +66,11 @@ def generate_audio(
 
     try:
         # -------------------------------------------------
-        # ✅ CONFIGURE AZURE SPEECH
+        # ✅ CONFIGURE SPEECH
         # -------------------------------------------------
         speech_config = speechsdk.SpeechConfig(
             subscription=AZURE_SPEECH_KEY,
-            region=AZURE_SPEECH_REGION,
+            region=AZURE_SPEECH_REGION
         )
 
         speech_config.speech_synthesis_voice_name = voice
@@ -75,21 +81,19 @@ def generate_audio(
 
         synthesizer = speechsdk.SpeechSynthesizer(
             speech_config=speech_config,
-            audio_config=audio_config,
+            audio_config=audio_config
         )
 
         # -------------------------------------------------
-        # ✅ RUN SYNTHESIS
+        # ✅ SYNTHESIS
         # -------------------------------------------------
         result: Optional[speechsdk.SpeechSynthesisResult] = (
             synthesizer.speak_text_async(text).get()
         )
 
-        # ✅ Safety: ensure result exists
         if not result:
             raise RuntimeError("Azure TTS returned no result")
 
-        # ✅ Check success
         if result.reason != speechsdk.ResultReason.SynthesizingAudioCompleted:
             print(f"⚠️ Azure TTS unexpected result: {result.reason}")
 
@@ -105,7 +109,7 @@ def generate_audio(
         raise RuntimeError("Azure TTS generation failed") from e
 
     # -------------------------------------------------
-    # ✅ VALIDATE OUTPUT FILE
+    # ✅ VALIDATE FILE
     # -------------------------------------------------
     if not output_path.exists():
         raise RuntimeError("TTS file was not created")
