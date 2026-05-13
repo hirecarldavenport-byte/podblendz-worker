@@ -4,39 +4,31 @@ from __future__ import annotations
 
 import os
 import uuid
-import asyncio
+from pathlib import Path
 from datetime import datetime
+
 from typing import Optional
+from dotenv import load_dotenv
 
-import edge_tts
-import logging
-
-
-# -------------------------------------------------
-# ✅ Logging cleanup
-# -------------------------------------------------
-logging.getLogger("edge_tts").setLevel(logging.WARNING)
-logging.getLogger("aiohttp").setLevel(logging.WARNING)
+import azure.cognitiveservices.speech as speechsdk
 
 
 # -------------------------------------------------
-# ✅ Helper: Safe async execution (FIXES FastAPI crash)
+# ✅ LOAD ENV
 # -------------------------------------------------
-async def _run_save(communicate: edge_tts.Communicate, output_path: str) -> None:
-    await communicate.save(output_path)
+load_dotenv()
+
+AZURE_SPEECH_KEY = os.getenv("AZURE_SPEECH_KEY")
+AZURE_SPEECH_REGION = os.getenv("AZURE_SPEECH_REGION")
 
 
-def _run_async_task(coro):
-    """
-    Safely run async code from sync context (FastAPI-safe)
-    """
-    try:
-        loop = asyncio.get_running_loop()
-        # ✅ already in event loop → run task properly
-        return loop.create_task(coro)
-    except RuntimeError:
-        # ✅ no loop → safe to run
-        return asyncio.run(coro)
+# -------------------------------------------------
+# ✅ DIRECTORIES
+# -------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+TTS_DIR = BASE_DIR / "audio" / "tts"
+
+TTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # -------------------------------------------------
@@ -44,58 +36,88 @@ def _run_async_task(coro):
 # -------------------------------------------------
 def generate_audio(
     text: str,
-    voice: str = "en-US-GuyNeural",
-    output_dir: str = "audio/tts",   # ✅ FIXED path
+    voice: str = "en-US-JennyNeural",
     filename_prefix: str = "blend",
 ) -> str:
     """
-    Generate TTS audio using Microsoft Edge TTS.
+    Generate TTS audio using Azure Speech Service.
 
     Returns:
-        Absolute path to generated MP3 file.
+        Absolute path to MP3 file.
     """
 
-    # ✅ Ensure directory exists
-    os.makedirs(output_dir, exist_ok=True)
+    if not AZURE_SPEECH_KEY or not AZURE_SPEECH_REGION:
+        raise RuntimeError("❌ Azure Speech is not configured (missing env vars)")
 
-    # ✅ Unique filename
+    # ✅ Generate unique filename
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     unique_id = uuid.uuid4().hex[:8]
     filename = f"{filename_prefix}_{timestamp}_{unique_id}.mp3"
 
-    output_path = os.path.abspath(os.path.join(output_dir, filename))
+    output_path = TTS_DIR / filename
 
-    print(f"🔊 Generating TTS → {output_path}")
+    print(f"🔊 Azure TTS generating → {output_path}")
 
     try:
-        # ✅ Create TTS communicate object
-        communicate = edge_tts.Communicate(text=text, voice=voice)
+        # -------------------------------------------------
+        # ✅ CONFIGURE AZURE SPEECH
+        # -------------------------------------------------
+        speech_config = speechsdk.SpeechConfig(
+            subscription=AZURE_SPEECH_KEY,
+            region=AZURE_SPEECH_REGION,
+        )
 
-        # ✅ Run async safely (NO asyncio.run crash)
-        coro = _run_save(communicate, output_path)
-        result = _run_async_task(coro)
+        speech_config.speech_synthesis_voice_name = voice
 
-        # ✅ If task returned, wait for it
-        if asyncio.isfuture(result):
-            asyncio.get_event_loop().run_until_complete(result)
+        audio_config = speechsdk.audio.AudioOutputConfig(
+            filename=str(output_path)
+        )
+
+        synthesizer = speechsdk.SpeechSynthesizer(
+            speech_config=speech_config,
+            audio_config=audio_config,
+        )
+
+        # -------------------------------------------------
+        # ✅ RUN SYNTHESIS
+        # -------------------------------------------------
+        result: Optional[speechsdk.SpeechSynthesisResult] = (
+            synthesizer.speak_text_async(text).get()
+        )
+
+        # ✅ Safety: ensure result exists
+        if not result:
+            raise RuntimeError("Azure TTS returned no result")
+
+        # ✅ Check success
+        if result.reason != speechsdk.ResultReason.SynthesizingAudioCompleted:
+            print(f"⚠️ Azure TTS unexpected result: {result.reason}")
+
+            if result.reason == speechsdk.ResultReason.Canceled:
+                cancellation = result.cancellation_details
+                print(f"❌ Cancellation reason: {cancellation.reason}")
+                print(f"❌ Error details: {cancellation.error_details}")
+
+            raise RuntimeError("Azure TTS synthesis failed")
 
     except Exception as e:
-        print(f"🔥 TTS ERROR: {e}")
-        raise RuntimeError("TTS generation failed") from e
+        print(f"🔥 Azure TTS ERROR: {e}")
+        raise RuntimeError("Azure TTS generation failed") from e
 
     # -------------------------------------------------
-    # ✅ Validate output
+    # ✅ VALIDATE OUTPUT FILE
     # -------------------------------------------------
-    if not os.path.exists(output_path):
+    if not output_path.exists():
         raise RuntimeError("TTS file was not created")
 
-    if os.path.getsize(output_path) == 0:
+    if output_path.stat().st_size == 0:
         try:
-            os.remove(output_path)
+            output_path.unlink()
         except Exception:
             pass
         raise RuntimeError("TTS output file is empty")
 
-    print(f"✅ TTS complete → {output_path}")
+    print(f"✅ Azure TTS complete → {output_path}")
 
-    return output_path
+    return str(output_path)
+
