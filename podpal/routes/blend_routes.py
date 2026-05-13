@@ -56,7 +56,7 @@ def split_into_chunks(text: str, max_len: int = 300):
 
 
 # -------------------------------------------------
-# ✅ STRONG RELEVANCE FILTER
+# ✅ RELEVANCE FILTER (UPGRADED)
 # -------------------------------------------------
 def is_relevant_episode(ep: Dict[str, Any], query: str) -> bool:
     text = (
@@ -67,26 +67,32 @@ def is_relevant_episode(ep: Dict[str, Any], query: str) -> bool:
 
     query_lower = query.lower()
 
-    # ✅ Exact phrase wins immediately
     if query_lower in text:
         return True
 
     query_terms = query_lower.split()
-
     matches = sum(1 for word in query_terms if word in text)
 
-    # ✅ Strict for short queries
+    # ✅ SHORT QUERY STRICT MATCH
     if len(query_terms) <= 2:
         return matches == len(query_terms)
 
-    # ✅ Stronger threshold for longer queries
-    return matches >= max(2, len(query_terms) // 2)
+    # ✅ STRONG THRESHOLD
+    if matches < max(2, len(query_terms) // 2):
+        return False
+
+    # ✅ BLOCK NAME COLLISION ("Gene Quinn")
+    if "gene " in text and not any(x in text for x in ["dna", "genetic", "crispr"]):
+        return False
+
+    return True
 
 
 # -------------------------------------------------
-# ✅ DOMAIN FILTER (MAJOR FIX HERE 🔥)
+# ✅ DOMAIN FILTER (SCORING SYSTEM 🔥)
 # -------------------------------------------------
 def enforce_domain_filter(ep: Dict[str, Any], query: str) -> bool:
+
     text = (
         ep.get("title", "") + " " +
         ep.get("summary", "") + " " +
@@ -95,31 +101,46 @@ def enforce_domain_filter(ep: Dict[str, Any], query: str) -> bool:
 
     query_lower = query.lower()
 
-    # ✅ GENETICS / BIOTECH (STRICT)
+    # -------------------------
+    # GENETICS / BIOTECH
+    # -------------------------
     if any(term in query_lower for term in ["genetics", "crispr", "gene", "biotech"]):
-        required_terms = [
-            "dna", "gene", "genetic", "crispr",
-            "biology", "genome", "molecular", "cells", "biotech"
+
+        strong_signals = [
+            "dna", "gene editing", "genetic",
+            "crispr", "genome", "cell",
+            "molecular", "biotech", "protein",
+            "antibody", "rna", "enzyme"
         ]
 
-        if not any(term in text for term in required_terms):
-            return False
+        weak_signals = [
+            "research", "lab", "biology", "science"
+        ]
 
-    # ✅ AI DOMAIN
+        score = 0
+
+        for term in strong_signals:
+            if term in text:
+                score += 2
+
+        for term in weak_signals:
+            if term in text:
+                score += 1
+
+        return score >= 3
+
+    # -------------------------
+    # AI DOMAIN
+    # -------------------------
     if "ai" in query_lower:
-        ai_terms = [
-            "ai", "machine learning", "model",
-            "artificial intelligence", "algorithm"
-        ]
-
-        if not any(term in text for term in ai_terms):
-            return False
+        ai_terms = ["ai", "machine learning", "model", "algorithm"]
+        return sum(1 for t in ai_terms if t in text) >= 2
 
     return True
 
 
 # -------------------------------------------------
-# ✅ LOW-QUALITY FILTER
+# ✅ LOW-QUALITY FILTER (UPGRADED)
 # -------------------------------------------------
 def exclude_low_quality(ep: Dict[str, Any]) -> bool:
     text = (
@@ -134,10 +155,25 @@ def exclude_low_quality(ep: Dict[str, Any]) -> bool:
         "random topics",
         "two friends",
         "variety podcast",
-        "new episode every",
     ]
 
-    return not any(bad in text for bad in bad_phrases)
+    bad_domains = [
+        "torah",
+        "idol worship",
+        "politics",
+        "trump",
+        "economics",
+        "basketball",
+        "sports",
+    ]
+
+    if any(b in text for b in bad_phrases):
+        return False
+
+    if any(b in text for b in bad_domains):
+        return False
+
+    return True
 
 
 # -------------------------------------------------
@@ -178,7 +214,6 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
         max_total=5,
     )
 
-    # ✅ CRITICAL FILTER PIPELINE
     filtered = [
         ep for ep in blended
         if is_relevant_episode(ep, query)
