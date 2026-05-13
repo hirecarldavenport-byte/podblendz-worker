@@ -52,7 +52,7 @@ def split_into_chunks(text: str, max_len: int = 300):
 
 
 # -------------------------------------------------
-# ✅ STRONG RELEVANCE FILTER
+# ✅ RELEVANCE FILTER
 # -------------------------------------------------
 def is_relevant_episode(ep: Dict[str, Any], query: str) -> bool:
     text = (ep.get("title", "") + " " +
@@ -64,16 +64,15 @@ def is_relevant_episode(ep: Dict[str, Any], query: str) -> bool:
     if query_lower in text:
         return True
 
-    query_terms = query_lower.split()
-    matches = sum(1 for word in query_terms if word in text)
+    terms = query_lower.split()
+    matches = sum(1 for t in terms if t in text)
 
-    if len(query_terms) <= 2:
-        return matches == len(query_terms)
+    if len(terms) <= 2:
+        return matches == len(terms)
 
-    if matches < max(2, len(query_terms) // 2):
+    if matches < max(2, len(terms) // 2):
         return False
 
-    # ✅ block "Gene Quinn" issue
     if "gene " in text and not any(x in text for x in ["dna", "genetic", "crispr"]):
         return False
 
@@ -81,33 +80,32 @@ def is_relevant_episode(ep: Dict[str, Any], query: str) -> bool:
 
 
 # -------------------------------------------------
-# ✅ DOMAIN FILTER (SCORING)
+# ✅ DOMAIN FILTER
 # -------------------------------------------------
 def enforce_domain_filter(ep: Dict[str, Any], query: str) -> bool:
     text = (ep.get("title", "") + " " +
             ep.get("summary", "") + " " +
             ep.get("description", "")).lower()
 
-    query_lower = query.lower()
+    q = query.lower()
 
-    if any(x in query_lower for x in ["genetics", "crispr", "gene", "biotech"]):
-
+    if any(x in q for x in ["genetics", "crispr", "gene", "biotech"]):
         strong = [
             "dna", "gene editing", "genetic", "crispr",
             "genome", "cell", "molecular",
             "protein", "rna", "antibody"
         ]
 
-        weak = ["research", "lab", "biology", "science"]
+        weak = ["research", "lab", "biology"]
 
         score = sum(2 for x in strong if x in text)
         score += sum(1 for x in weak if x in text)
 
         return score >= 3
 
-    if "ai" in query_lower:
-        terms = ["ai", "machine learning", "model", "algorithm"]
-        return sum(1 for t in terms if t in text) >= 2
+    if "ai" in q:
+        ai_terms = ["ai", "machine learning", "model", "algorithm"]
+        return sum(1 for t in ai_terms if t in text) >= 2
 
     return True
 
@@ -125,7 +123,6 @@ def exclude_low_quality(ep: Dict[str, Any]) -> bool:
         "we talk about",
         "random topics",
         "two friends",
-        "variety podcast",
     ]
 
     bad_domains = [
@@ -147,6 +144,24 @@ def exclude_low_quality(ep: Dict[str, Any]) -> bool:
 
 
 # -------------------------------------------------
+# ✅ MULTI-QUERY ENGINE
+# -------------------------------------------------
+def get_queries(query: str) -> List[str]:
+    q = query.lower()
+
+    if "genetics" in q:
+        return [
+            "CRISPR gene editing podcast",
+            "genomics dna sequencing",
+            "biotechnology research podcast",
+            "molecular biology genetics discussion",
+            "genetic mutation disease research"
+        ]
+
+    return [query]
+
+
+# -------------------------------------------------
 # ✅ CORE BLEND FUNCTION
 # -------------------------------------------------
 def run_blend(query: str, target_minutes: int, enable_ai: bool):
@@ -156,7 +171,18 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
     print(f"\n🔍 QUERY: {query}")
 
-    feed_urls = resolve_search_term(query)
+    queries = get_queries(query)
+
+    feed_urls = []
+
+    for q in queries:
+        try:
+            results = resolve_search_term(q)
+            feed_urls.extend(results)
+        except Exception:
+            continue
+
+    feed_urls = list(set(feed_urls))[:30]
 
     feeds = []
     for url in feed_urls:
@@ -164,10 +190,8 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
             feed = resolve_podcast_source(url)
             if feed:
                 feeds.append(feed)
-        except:
+        except Exception:
             continue
-
-    feeds = feeds[:25]
 
     episodes_by_feed = {}
 
@@ -175,13 +199,13 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
         try:
             rss = fetch_rss_feed(feed.feed_url)
             episodes_by_feed[feed.feed_url] = rss.get("items", [])
-        except:
+        except Exception:
             episodes_by_feed[feed.feed_url] = []
 
     blended = round_robin_blend(
         episodes_by_podcaster=episodes_by_feed,
         max_per_podcaster=1,
-        max_total=5,
+        max_total=6,
     )
 
     filtered = [
@@ -191,10 +215,7 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
         and exclude_low_quality(ep)
     ]
 
-    if filtered:
-        blended = filtered[:3]
-        print(f"✅ Filtered to {len(blended)} episodes")
-    else:
+    if not filtered:
         print("⚠️ No relevant content → stopping")
         return {
             "query": query,
@@ -204,7 +225,10 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
             "final_audio": None,
         }
 
-    # AUDIO INGEST
+    blended = filtered[:3]
+    print(f"✅ Filtered to {len(blended)} episodes")
+
+    # ---------------- AUDIO ----------------
     clip_paths = []
 
     for ep in blended:
@@ -222,7 +246,7 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
             if filename:
                 clip_paths.append(str(RAW_DIR / filename))
-        except:
+        except Exception:
             continue
 
     print("🎧 clip_paths:", clip_paths)
@@ -232,7 +256,8 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
     if enable_ai:
         try:
-            segments = []
+            segments = []  # ✅ FIXED missing variable
+
             for ep in blended:
                 raw = ep.get("summary") or ep.get("description")
                 cleaned = clean_text(raw)
@@ -241,13 +266,16 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
                     segments.extend(split_into_chunks(cleaned)[:2])
 
             if segments:
-                clusters = [{"id": i + 1, "segments": [seg]} for i, seg in enumerate(segments[:5])]
+                clusters = [
+                    {"id": i + 1, "segments": [seg]}
+                    for i, seg in enumerate(segments[:5])
+                ]  # ✅ FIXED bracket
+
                 ai_output = process_clusters(clusters)
 
                 for cluster in ai_output:
                     narration = cluster.get("narration")
 
-                    # ✅ SAFE NARRATION HANDLING
                     if not narration:
                         continue
 
@@ -308,9 +336,7 @@ def preview_blend(
     if not query:
         return {"error": "Query required"}
 
-    result = run_blend(query, target_minutes, enable_ai)
-
-    return {"mode": "subject", **result}
+    return {"mode": "subject", **run_blend(query, target_minutes, enable_ai)}
 
 
 # -------------------------------------------------
@@ -332,15 +358,9 @@ def get_board(board_id: str, minutes: Optional[int] = None):
 
     print(f"\n📌 BOARD: {board_id}")
 
-    result = run_blend(query, target_minutes, True)
-
     return {
         "mode": "board",
         "board_id": board_id,
         "title": board["title"],
-        **result
+        **run_blend(query, target_minutes, True)
     }
-
-
-
-
