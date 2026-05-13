@@ -56,7 +56,7 @@ def split_into_chunks(text: str, max_len: int = 300):
 
 
 # -------------------------------------------------
-# ✅ RELEVANCE FILTER
+# ✅ STRONG RELEVANCE FILTER
 # -------------------------------------------------
 def is_relevant_episode(ep: Dict[str, Any], query: str) -> bool:
     text = (
@@ -67,20 +67,24 @@ def is_relevant_episode(ep: Dict[str, Any], query: str) -> bool:
 
     query_lower = query.lower()
 
+    # ✅ Exact phrase wins immediately
     if query_lower in text:
         return True
 
     query_terms = query_lower.split()
+
     matches = sum(1 for word in query_terms if word in text)
 
+    # ✅ Strict for short queries
     if len(query_terms) <= 2:
         return matches == len(query_terms)
 
-    return matches >= 2
+    # ✅ Stronger threshold for longer queries
+    return matches >= max(2, len(query_terms) // 2)
 
 
 # -------------------------------------------------
-# ✅ DOMAIN FILTER
+# ✅ DOMAIN FILTER (MAJOR FIX HERE 🔥)
 # -------------------------------------------------
 def enforce_domain_filter(ep: Dict[str, Any], query: str) -> bool:
     text = (
@@ -91,21 +95,31 @@ def enforce_domain_filter(ep: Dict[str, Any], query: str) -> bool:
 
     query_lower = query.lower()
 
-    if "genetics" in query_lower or "biology" in query_lower:
-        return any(term in text for term in [
-            "dna", "gene", "genetic", "biology", "cells"
-        ])
+    # ✅ GENETICS / BIOTECH (STRICT)
+    if any(term in query_lower for term in ["genetics", "crispr", "gene", "biotech"]):
+        required_terms = [
+            "dna", "gene", "genetic", "crispr",
+            "biology", "genome", "molecular", "cells", "biotech"
+        ]
 
+        if not any(term in text for term in required_terms):
+            return False
+
+    # ✅ AI DOMAIN
     if "ai" in query_lower:
-        return any(term in text for term in [
-            "ai", "machine learning", "model", "algorithm"
-        ])
+        ai_terms = [
+            "ai", "machine learning", "model",
+            "artificial intelligence", "algorithm"
+        ]
+
+        if not any(term in text for term in ai_terms):
+            return False
 
     return True
 
 
 # -------------------------------------------------
-# ✅ LOW QUALITY FILTER
+# ✅ LOW-QUALITY FILTER
 # -------------------------------------------------
 def exclude_low_quality(ep: Dict[str, Any]) -> bool:
     text = (
@@ -114,7 +128,7 @@ def exclude_low_quality(ep: Dict[str, Any]) -> bool:
         ep.get("description", "")
     ).lower()
 
-    bad_signals = [
+    bad_phrases = [
         "weekly podcast",
         "we talk about",
         "random topics",
@@ -123,11 +137,11 @@ def exclude_low_quality(ep: Dict[str, Any]) -> bool:
         "new episode every",
     ]
 
-    return not any(bad in text for bad in bad_signals)
+    return not any(bad in text for bad in bad_phrases)
 
 
 # -------------------------------------------------
-# ✅ MAIN BLEND LOGIC (REUSABLE CORE)
+# ✅ CORE BLEND FUNCTION
 # -------------------------------------------------
 def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
@@ -136,9 +150,6 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
     print(f"\n🔍 QUERY: {query}")
 
-    # --------------------
-    # SEARCH
-    # --------------------
     feed_urls = resolve_search_term(query)
 
     feeds = []
@@ -147,21 +158,18 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
             feed = resolve_podcast_source(url)
             if feed:
                 feeds.append(feed)
-        except Exception:
+        except:
             continue
 
     feeds = feeds[:25]
 
-    # --------------------
-    # FETCH EPISODES
-    # --------------------
     episodes_by_feed: Dict[str, List[Any]] = {}
 
     for feed in feeds:
         try:
             rss = fetch_rss_feed(feed.feed_url)
             episodes_by_feed[feed.feed_url] = rss.get("items", [])
-        except Exception:
+        except:
             episodes_by_feed[feed.feed_url] = []
 
     blended = round_robin_blend(
@@ -170,9 +178,7 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
         max_total=5,
     )
 
-    # --------------------
-    # FILTER
-    # --------------------
+    # ✅ CRITICAL FILTER PIPELINE
     filtered = [
         ep for ep in blended
         if is_relevant_episode(ep, query)
@@ -184,7 +190,7 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
         blended = filtered
         print(f"✅ Filtered to {len(blended)} episodes")
     else:
-        print("⚠️ No strong matches")
+        print("⚠️ No relevant content found")
 
     if not blended:
         return {
@@ -193,9 +199,7 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
             "final_audio": None,
         }
 
-    # --------------------
     # AUDIO INGEST
-    # --------------------
     clip_paths = []
 
     for ep in blended:
@@ -215,14 +219,11 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
             if filename:
                 clip_paths.append(str(RAW_DIR / filename))
 
-        except Exception:
+        except:
             continue
 
     print("🎧 clip_paths:", clip_paths)
 
-    # --------------------
-    # AI + TTS
-    # --------------------
     narration_paths = []
     ai_output = None
 
@@ -235,8 +236,7 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
                 cleaned = clean_text(raw)
 
                 if cleaned:
-                    chunks = split_into_chunks(cleaned)
-                    segments.extend(chunks[:2])
+                    segments.extend(split_into_chunks(cleaned)[:2])
 
             if segments:
                 clusters = [
@@ -254,9 +254,6 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
         except Exception as e:
             print("⚠️ AI error:", e)
 
-    # --------------------
-    # STITCH
-    # --------------------
     final_audio = None
 
     try:
@@ -285,7 +282,7 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
 
 # -------------------------------------------------
-# ✅ BLEND ENDPOINT
+# ✅ BLEND
 # -------------------------------------------------
 @router.post("/blend")
 def preview_blend(
@@ -305,7 +302,7 @@ def preview_blend(
 
 
 # -------------------------------------------------
-# ✅ BOARD ENDPOINT (NEW 🎯)
+# ✅ BOARD
 # -------------------------------------------------
 @router.get("/board/{board_id}")
 def get_board(board_id: str, minutes: Optional[int] = None):
@@ -331,5 +328,6 @@ def get_board(board_id: str, minutes: Optional[int] = None):
         "title": board["title"],
         **result
     }
+
 
 
