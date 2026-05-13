@@ -47,3 +47,9 @@ ingestion_output/
 .DS_Store
 workspace/
 episode_manifest*.jsonl
+
+.env
+audio/
+processed_chunks/
+clusters.json
+audio/temp/
