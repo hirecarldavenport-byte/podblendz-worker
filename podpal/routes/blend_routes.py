@@ -16,21 +16,36 @@ from podpal.audio.ingest import download_episode_audio
 from podpal.audio.tts import generate_audio
 from podpal.audio.stitch import stitch_blendz
 
-
 router = APIRouter()
 
 
 # -------------------------------------------------
-# ✅ Utility: Clean HTML
+# ✅ Utility
 # -------------------------------------------------
 def clean_text(text: str) -> str:
     if not text:
         return ""
-
     text = re.sub(r"<.*?>", "", text)
     text = re.sub(r"\s+", " ", text).strip()
-
     return text
+
+
+def split_into_chunks(text: str, max_len: int = 300):
+    sentences = text.split(". ")
+    chunks = []
+    current = ""
+
+    for sentence in sentences:
+        if len(current) + len(sentence) < max_len:
+            current += sentence + ". "
+        else:
+            chunks.append(current.strip())
+            current = sentence + ". "
+
+    if current:
+        chunks.append(current.strip())
+
+    return chunks
 
 
 # -------------------------------------------------
@@ -102,7 +117,7 @@ def preview_blend(
             episodes_by_feed[feed.feed_url] = []
 
     # -------------------------------------------------
-    # 3. Blend
+    # 3. Blend episodes
     # -------------------------------------------------
     blended_episodes = round_robin_blend(
         episodes_by_podcaster=episodes_by_feed,
@@ -111,7 +126,7 @@ def preview_blend(
     )
 
     # -------------------------------------------------
-    # 4. AUDIO INGESTION
+    # 4. Download audio (EPISODE LEVEL)
     # -------------------------------------------------
     clip_paths: List[str] = []
 
@@ -132,7 +147,6 @@ def preview_blend(
 
             if filename:
                 ep["local_audio"] = f"/audio/{filename}"
-
                 full_path = str(RAW_DIR / filename)
                 clip_paths.append(full_path)
             else:
@@ -143,7 +157,7 @@ def preview_blend(
             ep["local_audio"] = None
 
     # -------------------------------------------------
-    # 5. AI ENRICHMENT
+    # ✅ 5. AI (NOW USING CHUNKS, NOT RAW SUMMARY)
     # -------------------------------------------------
     ai_output = None
 
@@ -160,8 +174,9 @@ def preview_blend(
 
                 cleaned = clean_text(raw)
 
-                if cleaned and len(cleaned) > 100:
-                    segments.append(cleaned)
+                if cleaned:
+                    chunks = split_into_chunks(cleaned)
+                    segments.extend(chunks[:2])  # ✅ multi-idea extraction
 
             if segments:
                 clusters = [
@@ -178,7 +193,7 @@ def preview_blend(
             print(f"⚠️ AI error: {e}")
 
     # -------------------------------------------------
-    # ✅ 6. AUDIO GENERATION + FALLBACK
+    # ✅ 6. AUDIO PIPELINE (FALLBACK SAFE)
     # -------------------------------------------------
     final_audio = None
 
@@ -186,23 +201,24 @@ def preview_blend(
         narration_paths: List[str] = []
         audio_sequence: List[str] = []
 
-        # ✅ Generate narration audio
+        # ✅ TTS
         if ai_output:
             for cluster in ai_output:
                 narration = cluster.get("narration")
 
-                if narration:
-                    try:
-                        path = generate_audio(narration)
-                        narration_paths.append(path)
-                    except Exception as e:
-                        print(f"⚠️ TTS error: {e}")
+                if not narration:
+                    continue
 
-        # ✅ Build final sequence
+                try:
+                    path = generate_audio(narration)
+                    narration_paths.append(path)
+                except Exception:
+                    print("⚠️ TTS failed — skipping narration")
+
         if narration_paths:
 
             if clip_paths:
-                print(f"🎧 Using clips + narration")
+                print("🎧 Narration + clips mode")
 
                 for i in range(len(narration_paths)):
                     audio_sequence.append(narration_paths[i])
@@ -211,10 +227,9 @@ def preview_blend(
                         audio_sequence.append(clip_paths[i])
 
             else:
-                print("⚠️ No clips → narration ONLY")
+                print("⚠️ No clips — narration only")
                 audio_sequence = narration_paths
 
-            # ✅ Stitch
             final_filename = stitch_blendz(audio_sequence)
             final_audio = f"/audio/final/{final_filename}"
 
@@ -233,3 +248,4 @@ def preview_blend(
         "clip_count": len(clip_paths),
         "final_audio": final_audio,
     }
+
