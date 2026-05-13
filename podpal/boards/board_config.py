@@ -8,7 +8,7 @@ BOARD_CONFIG = {
     },
     "genetics": {
         "title": "Genetics & Biotech",
-        "query": "genetics CRISPR gene editing biotech research",
+        "query": "genomics dna sequencing gene expression crispr genome mutation epigenetics molecular biology genetic engineering genetic variation phenotype genotype genome mapping",
         "default_minutes": 10
     },
     "ai_startups": {
