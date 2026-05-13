@@ -73,6 +73,13 @@ def generate_audio(
             region=AZURE_SPEECH_REGION
         )
 
+        # ✅ FORCE correct endpoint
+        speech_config.set_property(
+             speechsdk.PropertyId.SpeechServiceConnection_Endpoint,
+             f"https://{AZURE_SPEECH_REGION}.tts.speech.microsoft.com/cognitiveservices/v1"
+
+        )
+
         speech_config.speech_synthesis_voice_name = voice
 
         audio_config = speechsdk.audio.AudioOutputConfig(
