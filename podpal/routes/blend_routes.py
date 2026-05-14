@@ -18,7 +18,6 @@ from podpal.boards.board_config import BOARD_CONFIG
 
 router = APIRouter()
 
-
 # -------------------------------------------------
 # ✅ CLEAN TEXT
 # -------------------------------------------------
@@ -31,27 +30,24 @@ def clean_text(text: str) -> str:
 
 
 # -------------------------------------------------
-# ✅ CHUNK SPLITTING
+# ✅ SPLIT INTO CHUNKS
 # -------------------------------------------------
 def split_into_chunks(text: str, max_len: int = 300):
     sentences = text.split(". ")
     chunks, current = [], ""
-
     for s in sentences:
         if len(current) + len(s) < max_len:
             current += s + ". "
         else:
             chunks.append(current.strip())
             current = s + ". "
-
     if current:
         chunks.append(current.strip())
-
     return chunks
 
 
 # -------------------------------------------------
-# ✅ MULTI-QUERY ENGINE
+# ✅ MULTI QUERY
 # -------------------------------------------------
 def get_queries(query: str) -> List[str]:
     q = query.lower()
@@ -59,32 +55,33 @@ def get_queries(query: str) -> List[str]:
     if "genetics" in q:
         return [
             "CRISPR gene editing podcast",
-            "genomics dna sequencing",
-            "biotechnology research podcast",
-            "molecular biology genetics discussion",
-            "gene mutation research biology podcast"
+            "genomics dna sequencing podcast",
+            "biotech research genetics podcast",
         ]
 
     return [query]
 
 
 # -------------------------------------------------
-# ✅ DOMAIN FILTER
+# ✅ STRICT DOMAIN FILTER (IMPORTANT)
 # -------------------------------------------------
 def is_good_domain_text(text: str) -> bool:
     text = text.lower()
 
-    terms = [
-        "gene", "dna", "genome", "genetic",
-        "crispr", "biology", "biotech",
-        "mutation", "molecular", "cell"
-    ]
+    required = ["gene", "dna", "genetic", "genome"]
+    if not any(k in text for k in required):
+        return False
 
-    return sum(1 for t in terms if t in text) >= 2
+    bonus_hits = sum(
+        1 for k in ["crispr", "biology", "biotech", "mutation", "cell"]
+        if k in text
+    )
+
+    return bonus_hits >= 1
 
 
 # -------------------------------------------------
-# ✅ CLEAN FOR TTS
+# ✅ CLEAN FOR TTS (SAFE)
 # -------------------------------------------------
 def clean_for_tts(text: str) -> str:
     if not text:
@@ -94,6 +91,7 @@ def clean_for_tts(text: str) -> str:
     text = re.sub(r"\[[^\]]*\]", "", text)
     text = re.sub(r"http\S+", "", text)
 
+    # ✅ critical Azure fix
     text = text.encode("ascii", "ignore").decode()
 
     text = re.sub(r"[^a-zA-Z0-9.,!?;:'\"()\-\s]", "", text)
@@ -103,7 +101,7 @@ def clean_for_tts(text: str) -> str:
 
 
 # -------------------------------------------------
-# ✅ CORE BLEND FUNCTION
+# ✅ CORE BLEND
 # -------------------------------------------------
 def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
@@ -112,7 +110,7 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
     print(f"\n🔍 QUERY: {query}")
 
-    # SEARCH
+    # ---------------- SEARCH ----------------
     feed_urls = []
     for q in get_queries(query):
         try:
@@ -141,22 +139,27 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
     blended = round_robin_blend(episodes_by_feed, 1, 6)
 
-    # FILTER
+    # ---------------- FILTER ----------------
     filtered = []
     for ep in blended:
         text = (ep.get("title", "") + " " + ep.get("summary", "")).lower()
+
         if not is_good_domain_text(text):
             continue
+
         if len(text.split()) < 25:
             continue
+
         filtered.append(ep)
 
-    # FALLBACK
+    # ---------------- FALLBACK ----------------
     if not filtered:
+        print("⚠️ fallback scoring")
         scored = []
+
         for ep in blended:
             text = (ep.get("title", "") + " " + ep.get("summary", "")).lower()
-            score = sum(1 for k in ["gene","dna","biology","science","research"] if k in text)
+            score = sum(1 for k in ["gene", "dna", "biology"] if k in text)
             if score > 0:
                 scored.append((score, ep))
 
@@ -164,14 +167,17 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
         filtered = [ep for _, ep in scored[:3]]
 
     blended = filtered[:3]
+    print(f"✅ Using {len(blended)} episodes")
 
-    # AUDIO DOWNLOAD
+    # ---------------- AUDIO ----------------
     clip_paths = []
+
     for ep in blended:
         try:
             audio_url = next(
-                (l.get("href") for l in ep.get("links", []) if "audio" in l.get("type","")),
-                None,
+                (l.get("href") for l in ep.get("links", [])
+                 if "audio" in l.get("type", "")),
+                None
             )
             if audio_url:
                 fn = download_episode_audio(audio_url)
@@ -180,14 +186,18 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
         except:
             continue
 
-    # AI PIPELINE
+    # ---------------- AI / TTS ----------------
     narration_paths = []
     ai_output = None
 
-    intro = clean_for_tts(f"Welcome to your PodBlendz experience. Today we explore {query}.")
-    if len(intro.split()) > 5:
+    # ✅ intro
+    intro = clean_for_tts(
+        f"Welcome to your PodBlendz experience. Today we explore {query}."
+    )
+
+    if len(intro) > 30:
         try:
-            narration_paths.append(generate_audio(intro))
+            narration_paths.append(generate_audio(intro[:400]))
         except:
             pass
 
@@ -201,47 +211,46 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
                 if cleaned:
                     segments.extend(split_into_chunks(cleaned)[:2])
 
-            # dedupe
+            # ✅ dedupe
             seen = set()
-            cleaned_segments = []
-            for s in segments:
-                key = s[:80]
-                if key not in seen:
-                    seen.add(key)
-                    cleaned_segments.append(s)
-
-            segments = cleaned_segments
+            segments = [s for s in segments if not (s[:80] in seen or seen.add(s[:80]))]
 
             if segments:
-                clusters = [{"id": i+1, "segments": [seg]} for i, seg in enumerate(segments[:5])]
+                clusters = [{"id": i + 1, "segments": [s]} for i, s in enumerate(segments[:5])]
 
                 ai_output = process_clusters(clusters)
 
                 for c in ai_output:
                     narration = c.get("narration")
-                    if not narration:
-                        continue
-                    if "please provide" in narration.lower():
-                        continue
 
+                    # ✅ FINAL SAFETY FILTER (CRITICAL)
                     safe = clean_for_tts(narration)
-                    if len(safe.split()) < 8:
+
+                    if not safe:
+                        continue
+                    if len(safe) < 60:
+                        continue
+                    if not re.search(r"[a-zA-Z]", safe):
                         continue
 
-                    safe = safe[:1000]
+                    bad_words = ["please provide", "subscribe", "visit", "http"]
+                    if any(w in safe.lower() for w in bad_words):
+                        continue
 
                     try:
-                        narration_paths.append(generate_audio(safe))
-                    except:
-                        continue
+                        narration_paths.append(generate_audio(safe[:600]))
+                    except Exception as e:
+                        print("⚠️ Skipping narration:", e)
 
         except Exception as e:
             print("⚠️ AI error:", e)
 
-    # STITCH
+    # ---------------- STITCH ----------------
     final_audio = None
+
     if narration_paths:
         seq = []
+
         for i in range(len(narration_paths)):
             seq.append(narration_paths[i])
             if i < len(clip_paths):
@@ -251,8 +260,8 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
             try:
                 fn = stitch_blendz(seq, target_minutes)
                 final_audio = f"/audio/final/{fn}"
-            except:
-                pass
+            except Exception as e:
+                print("🔥 stitch error:", e)
 
     return {
         "query": query,
@@ -289,11 +298,14 @@ def get_board(board_id: str, minutes: Optional[int] = None):
             "available_boards": list(BOARD_CONFIG.keys())
         }
 
-    print(f"\n📌 BOARD: {board_id}")
-
     return {
         "mode": "board",
         "board_id": board_id,
         "title": board["title"],
-        **run_blend(board["query"], minutes or board["default_minutes"], True),
+        **run_blend(
+            board["query"],
+            minutes or board["default_minutes"],
+            True
+        )
     }
+
