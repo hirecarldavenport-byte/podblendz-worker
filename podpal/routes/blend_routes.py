@@ -31,16 +31,16 @@ def clean_text(text: str) -> str:
 
 
 # -------------------------------------------------
-# ✅ CLEAN FOR TTS (🔥 CRITICAL FIX)
+# ✅ CLEAN FOR TTS (CRITICAL FIX)
 # -------------------------------------------------
 def clean_for_tts(text: str) -> str:
     if not text:
         return ""
 
-    # remove bracket tokens like [Intro Music]
-    text = re.sub(r"\[.*?\]", "", text)
+    # remove ALL bracketed text (causes Azure crashes)
+    text = re.sub(r"\[[^\]]*\]", "", text)
 
-    # remove weird characters
+    # remove non-speech characters
     text = re.sub(r"[^a-zA-Z0-9.,!?;:'\"()\-\s]", "", text)
 
     # normalize whitespace
@@ -99,6 +99,7 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
     # ---------------- SEARCH ----------------
     feed_urls = []
+
     for q in get_queries(query):
         try:
             feed_urls.extend(resolve_search_term(q))
@@ -127,11 +128,58 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
     blended = round_robin_blend(episodes_by_feed, 1, 6)
 
-    blended = blended[:3]
+    # ---------------- FILTER ----------------
+    filtered = []
 
+    for ep in blended:
+        text = (ep.get("title", "") + " " +
+                ep.get("summary", "")).lower()
+
+        if len(text.split()) < 20:
+            continue
+
+        if any(bad in text for bad in ["politics", "sports", "trump"]):
+            continue
+
+        filtered.append(ep)
+
+    # ---------------- FALLBACK ----------------
+    if not filtered:
+        print("⚠️ No strong matches → fallback scoring")
+
+        scored = []
+
+        for ep in blended:
+            text = (ep.get("title", "") + " " +
+                    ep.get("summary", "")).lower()
+
+            keywords = [
+                "gene", "dna", "genetic",
+                "biology", "research",
+                "medical", "science", "biotech"
+            ]
+
+            score = sum(1 for k in keywords if k in text)
+
+            if score > 0:
+                scored.append((score, ep))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        filtered = [ep for _, ep in scored[:3]]
+
+        if not filtered:
+            return {
+                "query": query,
+                "results": [],
+                "ai": None,
+                "clip_count": 0,
+                "final_audio": None,
+            }
+
+    blended = filtered[:3]
     print(f"✅ Using {len(blended)} episodes")
 
-    # ---------------- AUDIO ----------------
+    # ---------------- AUDIO INGEST ----------------
     clip_paths = []
 
     for ep in blended:
@@ -142,13 +190,10 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
                 None
             )
 
-            if not audio_url:
-                continue
-
-            filename = download_episode_audio(audio_url)
-
-            if filename:
-                clip_paths.append(str(RAW_DIR / filename))
+            if audio_url:
+                filename = download_episode_audio(audio_url)
+                if filename:
+                    clip_paths.append(str(RAW_DIR / filename))
 
         except:
             continue
@@ -157,20 +202,19 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
     # ---------------- AI + INTRO ----------------
     narration_paths = []
+    ai_output = None
 
-    # ✅ PODCAST INTRO (🔥 YOUR FEATURE)
-    intro_text = (
-        "Welcome to your PodBlendz experience. "
-        "Here are the latest insights curated just for you."
+    # ✅ SAFE INTRO
+    intro_text = clean_for_tts(
+        f"Welcome to your PodBlendz experience. "
+        f"Here are curated insights on {query}."
     )
 
-    try:
-        intro_audio = generate_audio(clean_for_tts(intro_text))
-        narration_paths.append(intro_audio)
-    except Exception as e:
-        print("⚠️ Intro failed:", e)
-
-    ai_output = None
+    if len(intro_text) > 20:
+        try:
+            narration_paths.append(generate_audio(intro_text))
+        except Exception as e:
+            print("⚠️ Intro failed:", e)
 
     if enable_ai:
         try:
@@ -199,11 +243,14 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
                     safe = clean_for_tts(narration)
 
-                    if len(safe) < 50:
+                    # ✅ HARD SAFETY CHECK
+                    if len(safe.split()) < 10:
                         continue
 
                     try:
-                        narration_paths.append(generate_audio(safe[:3000]))
+                        narration_paths.append(
+                            generate_audio(safe[:2500])
+                        )
                     except Exception as e:
                         print("⚠️ Skipping narration:", e)
 
@@ -255,6 +302,7 @@ def preview_blend(
 
 @router.get("/board/{board_id}")
 def get_board(board_id: str, minutes: Optional[int] = None):
+
     board = BOARD_CONFIG.get(board_id)
 
     if not board:
