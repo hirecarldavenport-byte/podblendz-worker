@@ -31,19 +31,20 @@ def clean_text(text: str) -> str:
 
 
 # -------------------------------------------------
-# ✅ CLEAN FOR TTS (CRITICAL FIX)
+# ✅ CLEAN FOR TTS (🔥 FINAL FIX)
 # -------------------------------------------------
 def clean_for_tts(text: str) -> str:
     if not text:
         return ""
 
-    # remove ALL bracketed text (causes Azure crashes)
+    text = re.sub(r"<.*?>", "", text)
     text = re.sub(r"\[[^\]]*\]", "", text)
+    text = re.sub(r"http\S+", "", text)
 
-    # remove non-speech characters
+    # ✅ remove non-ascii (THIS FIXES AZURE)
+    text = text.encode("ascii", "ignore").decode()
+
     text = re.sub(r"[^a-zA-Z0-9.,!?;:'\"()\-\s]", "", text)
-
-    # normalize whitespace
     text = re.sub(r"\s+", " ", text).strip()
 
     return text
@@ -99,7 +100,6 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
     # ---------------- SEARCH ----------------
     feed_urls = []
-
     for q in get_queries(query):
         try:
             feed_urls.extend(resolve_search_term(q))
@@ -118,7 +118,6 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
             continue
 
     episodes_by_feed = {}
-
     for feed in feeds:
         try:
             rss = fetch_rss_feed(feed.feed_url)
@@ -128,37 +127,28 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
     blended = round_robin_blend(episodes_by_feed, 1, 6)
 
-    # ---------------- FILTER ----------------
+    # ✅ LIGHT FILTER (keep quality but not overkill)
     filtered = []
-
     for ep in blended:
-        text = (ep.get("title", "") + " " +
-                ep.get("summary", "")).lower()
+        text = (ep.get("title", "") + " " + ep.get("summary", "")).lower()
 
         if len(text.split()) < 20:
             continue
 
-        if any(bad in text for bad in ["politics", "sports", "trump"]):
+        if any(x in text for x in ["trump", "sports", "politics"]):
             continue
 
         filtered.append(ep)
 
-    # ---------------- FALLBACK ----------------
+    # ✅ FALLBACK SCORING
     if not filtered:
-        print("⚠️ No strong matches → fallback scoring")
+        print("⚠️ fallback scoring")
 
         scored = []
-
         for ep in blended:
-            text = (ep.get("title", "") + " " +
-                    ep.get("summary", "")).lower()
+            text = (ep.get("title", "") + " " + ep.get("summary", "")).lower()
 
-            keywords = [
-                "gene", "dna", "genetic",
-                "biology", "research",
-                "medical", "science", "biotech"
-            ]
-
+            keywords = ["gene", "dna", "biology", "research", "biotech"]
             score = sum(1 for k in keywords if k in text)
 
             if score > 0:
@@ -167,19 +157,10 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
         scored.sort(key=lambda x: x[0], reverse=True)
         filtered = [ep for _, ep in scored[:3]]
 
-        if not filtered:
-            return {
-                "query": query,
-                "results": [],
-                "ai": None,
-                "clip_count": 0,
-                "final_audio": None,
-            }
-
     blended = filtered[:3]
     print(f"✅ Using {len(blended)} episodes")
 
-    # ---------------- AUDIO INGEST ----------------
+    # ---------------- AUDIO CLIPS ----------------
     clip_paths = []
 
     for ep in blended:
@@ -187,7 +168,7 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
             audio_url = next(
                 (l.get("href") for l in ep.get("links", [])
                  if "audio" in l.get("type", "")),
-                None
+                None,
             )
 
             if audio_url:
@@ -200,21 +181,21 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
     print("🎧 clip_paths:", clip_paths)
 
-    # ---------------- AI + INTRO ----------------
+    # ---------------- AI ----------------
     narration_paths = []
     ai_output = None
 
-    # ✅ SAFE INTRO
-    intro_text = clean_for_tts(
+    # ✅ INTRO (SAFE)
+    intro = clean_for_tts(
         f"Welcome to your PodBlendz experience. "
-        f"Here are curated insights on {query}."
+        f"Today we explore {query}."
     )
 
-    if len(intro_text) > 20:
+    if len(intro.split()) > 5:
         try:
-            narration_paths.append(generate_audio(intro_text))
-        except Exception as e:
-            print("⚠️ Intro failed:", e)
+            narration_paths.append(generate_audio(intro))
+        except:
+            pass
 
     if enable_ai:
         try:
@@ -227,6 +208,18 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
                 if cleaned:
                     segments.extend(split_into_chunks(cleaned)[:2])
 
+            # ✅ REMOVE DUPLICATES (FIXES REPETITION)
+            seen = set()
+            unique_segments = []
+
+            for s in segments:
+                key = s[:80]
+                if key not in seen:
+                    seen.add(key)
+                    unique_segments.append(s)
+
+            segments = unique_segments
+
             if segments:
                 clusters = [
                     {"id": i + 1, "segments": [seg]}
@@ -237,20 +230,18 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
                 for c in ai_output:
                     narration = c.get("narration")
-
-                    if not narration:
-                        continue
-
                     safe = clean_for_tts(narration)
 
-                    # ✅ HARD SAFETY CHECK
-                    if len(safe.split()) < 10:
+                    # ✅ HARD VALIDATION
+                    if not safe:
+                        continue
+                    if len(safe.split()) < 8:
                         continue
 
+                    safe = safe[:1200]  # ✅ LENGTH LIMIT
+
                     try:
-                        narration_paths.append(
-                            generate_audio(safe[:2500])
-                        )
+                        narration_paths.append(generate_audio(safe))
                     except Exception as e:
                         print("⚠️ Skipping narration:", e)
 
