@@ -1,9 +1,10 @@
 """
-Audio stitching utilities for PodBlendz (FINAL FIXED)
+Audio stitching utilities for PodBlendz (FINAL UX VERSION)
 
-✅ Loops clips until target duration is filled
-✅ Uses longer clip durations
-✅ Produces real-length podcasts
+✅ Longer segments (30s)
+✅ Grouped playback per source
+✅ NO back-and-forth bouncing
+✅ Natural listening flow
 """
 
 from pathlib import Path
@@ -22,9 +23,9 @@ FINAL_DIR.mkdir(parents=True, exist_ok=True)
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
-# ✅ LONGER CLIPS (CRITICAL FIX)
+# ✅ CLIP LENGTH
 def get_clip_duration(target_minutes: int) -> int:
-    return 30  # ✅ fixed, stable length
+    return 30
 
 
 # ✅ SEGMENT COUNT
@@ -45,6 +46,7 @@ def process_audio(input_file: str, clip_duration: int) -> str:
             "-ss", "0",
             "-t", str(clip_duration),
             "-i", input_file,
+            "-vn",  # ✅ ignore embedded images (important fix)
             "-ar", "44100",
             "-ac", "2",
             "-b:a", "192k",
@@ -62,7 +64,7 @@ def create_concat_file(audio_files: List[str], concat_file: Path) -> None:
     concat_file.write_text("\n".join(lines), encoding="utf-8")
 
 
-# ✅ MAIN STITCH FUNCTION (FIXED)
+# ✅ MAIN STITCH FUNCTION (FINAL UX FIX)
 def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
 
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
@@ -82,7 +84,27 @@ def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
 
     print("\n🔄 Processing audio...")
 
-    # ✅ KEY FIX: LOOP CLIPS (NOT SINGLE PASS)
+    # ✅ GROUP SIZE = smoother listening
+    group_size = 3
+
+    for audio in audio_files:
+
+        print(f"🎙 Processing source: {audio}")
+
+        for _ in range(group_size):
+            if len(processed_files) >= max_segments:
+                break
+
+            try:
+                processed = process_audio(audio, clip_duration)
+                processed_files.append(processed)
+            except Exception as e:
+                print(f"⚠️ Failed processing: {audio} → {e}")
+
+        if len(processed_files) >= max_segments:
+            break
+
+    # ✅ If still short, THEN loop (fallback only)
     i = 0
     while len(processed_files) < max_segments:
         audio = audio_files[i % len(audio_files)]
@@ -91,7 +113,7 @@ def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
             processed = process_audio(audio, clip_duration)
             processed_files.append(processed)
         except Exception as e:
-            print(f"⚠️ Failed processing: {audio} → {e}")
+            print(f"⚠️ Loop fallback failed: {audio} → {e}")
 
         i += 1
 
