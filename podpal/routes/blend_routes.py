@@ -18,9 +18,7 @@ from podpal.boards.board_config import BOARD_CONFIG
 
 router = APIRouter()
 
-# -------------------------------------------------
-# ✅ CLEAN TEXT
-# -------------------------------------------------
+
 def clean_text(text: str) -> str:
     if not text:
         return ""
@@ -28,9 +26,6 @@ def clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-# -------------------------------------------------
-# ✅ SPLIT INTO CHUNKS
-# -------------------------------------------------
 def split_into_chunks(text: str, max_len: int = 300):
     sentences = text.split(". ")
     chunks, current = [], ""
@@ -45,9 +40,6 @@ def split_into_chunks(text: str, max_len: int = 300):
     return chunks
 
 
-# -------------------------------------------------
-# ✅ MULTI QUERY
-# -------------------------------------------------
 def get_queries(query: str) -> List[str]:
     q = query.lower()
 
@@ -61,9 +53,6 @@ def get_queries(query: str) -> List[str]:
     return [query]
 
 
-# -------------------------------------------------
-# ✅ BALANCED DOMAIN FILTER (FIXED)
-# -------------------------------------------------
 def is_good_domain_text(text: str) -> bool:
     text = text.lower()
 
@@ -82,18 +71,9 @@ def is_good_domain_text(text: str) -> bool:
     strong_hits = sum(1 for w in strong if w in text)
     medium_hits = sum(1 for w in medium if w in text)
 
-    if strong_hits >= 1 and medium_hits >= 1:
-        return True
-
-    if medium_hits >= 2:
-        return True
-
-    return False
+    return (strong_hits >= 1 and medium_hits >= 1) or medium_hits >= 2
 
 
-# -------------------------------------------------
-# ✅ CLEAN FOR TTS
-# -------------------------------------------------
 def clean_for_tts(text: str) -> str:
     if not text:
         return ""
@@ -108,9 +88,6 @@ def clean_for_tts(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-# -------------------------------------------------
-# ✅ FINAL TTS VALIDATION (CRITICAL)
-# -------------------------------------------------
 def is_valid_tts_input(text: str) -> bool:
     if not text:
         return False
@@ -120,15 +97,9 @@ def is_valid_tts_input(text: str) -> bool:
         return False
 
     bad_patterns = ["please provide", "subscribe", "visit", "http", "www"]
-    if any(b in text.lower() for b in bad_patterns):
-        return False
-
-    return True
+    return not any(b in text.lower() for b in bad_patterns)
 
 
-# -------------------------------------------------
-# ✅ CORE BLEND FUNCTION
-# -------------------------------------------------
 def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
     BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -136,7 +107,6 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
     print(f"\n🔍 QUERY: {query}")
 
-    # ---------------- SEARCH ----------------
     feed_urls = []
     for q in get_queries(query):
         try:
@@ -165,15 +135,12 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
     blended = round_robin_blend(episodes_by_feed, 1, 6)
 
-    # ---------------- FILTER ----------------
     filtered = []
     for ep in blended:
         text = (ep.get("title", "") + " " + ep.get("summary", "")).lower()
-
         if is_good_domain_text(text) and len(text.split()) > 25:
             filtered.append(ep)
 
-    # ✅ fallback if filter too strict
     if not filtered:
         print("⚠️ No filtered matches — using fallback")
         filtered = blended[:3]
@@ -181,7 +148,6 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
     blended = filtered[:3]
     print(f"✅ Using {len(blended)} episodes")
 
-    # ---------------- AUDIO DOWNLOAD ----------------
     clip_paths = []
     for ep in blended:
         try:
@@ -197,7 +163,6 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
         except:
             continue
 
-    # ---------------- AI ----------------
     narration_paths = []
     ai_output = None
 
@@ -208,35 +173,39 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
             for ep in blended:
                 raw = ep.get("summary") or ep.get("description")
                 cleaned = clean_text(raw)
-
                 if cleaned:
                     segments.extend(split_into_chunks(cleaned)[:2])
 
-            # dedupe
             seen = set()
             segments = [s for s in segments if not (s[:80] in seen or seen.add(s[:80]))]
 
             if segments:
-                clusters = [{"id": i + 1, "segments": [s]} for i, s in enumerate(segments[:5])]
+                clusters = [{"id": i+1, "segments": [s]} for i, s in enumerate(segments[:5])]
                 ai_output = process_clusters(clusters)
 
                 for c in ai_output:
                     narration = c.get("narration")
                     safe = clean_for_tts(narration)
 
-                    if is_valid_tts_input(safe):
-                        try:
-                            narration_paths.append(generate_audio(safe[:600]))
-                        except:
-                            continue
+                    if not is_valid_tts_input(safe):
+                        continue
+
+                    # ✅ FINAL AZURE PROTECTION
+                    if any(ord(c) > 127 for c in safe):
+                        continue
+
+                    try:
+                        print("🔊 TTS INPUT:", safe[:120])
+                        narration_paths.append(generate_audio(safe[:600]))
+                    except Exception:
+                        print("🔥 Skipping bad TTS input:", safe[:120])
+                        continue
 
         except Exception as e:
             print("⚠️ AI error:", e)
 
-    # ---------------- STITCH ----------------
     final_audio = None
 
-    # ✅ ALWAYS have something to stitch
     if narration_paths:
         sequence = []
         for i in range(len(narration_paths)):
@@ -262,15 +231,10 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
     }
 
 
-# -------------------------------------------------
-# ✅ ENDPOINTS
-# -------------------------------------------------
 @router.post("/blend")
-def preview_blend(
-    query: Optional[str] = Body(default=None),
-    enable_ai: bool = Body(default=True),
-    target_minutes: int = Body(default=5),
-):
+def preview_blend(query: Optional[str] = Body(default=None),
+                  enable_ai: bool = Body(default=True),
+                  target_minutes: int = Body(default=5)):
     if not query:
         return {"error": "Query required"}
 
