@@ -35,8 +35,7 @@ def clean_text(text: str) -> str:
 # -------------------------------------------------
 def split_into_chunks(text: str, max_len: int = 300):
     sentences = text.split(". ")
-    chunks = []
-    current = ""
+    chunks, current = [], ""
 
     for sentence in sentences:
         if len(current) + len(sentence) < max_len:
@@ -118,26 +117,13 @@ def exclude_low_quality(ep: Dict[str, Any]) -> bool:
             ep.get("summary", "") + " " +
             ep.get("description", "")).lower()
 
-    bad_phrases = [
-        "weekly podcast",
-        "we talk about",
-        "random topics",
-        "two friends",
-    ]
-
-    bad_domains = [
-        "torah", "idol worship",
-        "politics", "trump",
-        "economics", "basketball", "sports"
-    ]
-
-    if any(b in text for b in bad_phrases):
-        return False
-
-    if any(b in text for b in bad_domains):
-        return False
-
     if len(text.split()) < 25:
+        return False
+
+    bad_phrases = ["weekly podcast", "we talk about", "random topics", "two friends"]
+    bad_domains = ["torah", "politics", "trump", "sports", "economics"]
+
+    if any(b in text for b in bad_phrases + bad_domains):
         return False
 
     return True
@@ -171,14 +157,11 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
     print(f"\n🔍 QUERY: {query}")
 
-    queries = get_queries(query)
-
+    # ---------------- SEARCH ----------------
     feed_urls = []
-
-    for q in queries:
+    for q in get_queries(query):
         try:
-            results = resolve_search_term(q)
-            feed_urls.extend(results)
+            feed_urls.extend(resolve_search_term(q))
         except Exception:
             continue
 
@@ -194,7 +177,6 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
             continue
 
     episodes_by_feed = {}
-
     for feed in feeds:
         try:
             rss = fetch_rss_feed(feed.feed_url)
@@ -202,12 +184,9 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
         except Exception:
             episodes_by_feed[feed.feed_url] = []
 
-    blended = round_robin_blend(
-        episodes_by_podcaster=episodes_by_feed,
-        max_per_podcaster=1,
-        max_total=6,
-    )
+    blended = round_robin_blend(episodes_by_feed, 1, 6)
 
+    # ---------------- STRICT FILTER ----------------
     filtered = [
         ep for ep in blended
         if is_relevant_episode(ep, query)
@@ -215,48 +194,75 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
         and exclude_low_quality(ep)
     ]
 
+    # 🔥 FALLBACK SCORING (KEY FIX)
     if not filtered:
-        print("⚠️ No relevant content → stopping")
-        return {
-            "query": query,
-            "results": [],
-            "ai": None,
-            "clip_count": 0,
-            "final_audio": None,
-        }
+        print("⚠️ No strong matches → fallback scoring")
 
-    blended = filtered[:3]
-    print(f"✅ Filtered to {len(blended)} episodes")
+        scored = []
 
-    # ---------------- AUDIO ----------------
+        for ep in blended:
+            text = (ep.get("title", "") + " " +
+                    ep.get("summary", "")).lower()
+
+            keywords = [
+                "gene", "dna", "genetic",
+                "biology", "research",
+                "medical", "science", "biotech"
+            ]
+
+            score = sum(1 for k in keywords if k in text)
+
+            if score > 0:
+                scored.append((score, ep))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        blended = [ep for _, ep in scored[:3]]
+
+        if not blended:
+            print("⚠️ Still nothing usable → stopping")
+            return {
+                "query": query,
+                "results": [],
+                "ai": None,
+                "clip_count": 0,
+                "final_audio": None,
+            }
+    else:
+        blended = filtered[:3]
+
+    print(f"✅ Using {len(blended)} episodes")
+
+    # ---------------- AUDIO INGEST ----------------
     clip_paths = []
 
     for ep in blended:
         try:
-            audio_url = None
-            for link in ep.get("links", []):
-                if "audio" in link.get("type", ""):
-                    audio_url = link.get("href")
-                    break
+            audio_url = next(
+                (l.get("href") for l in ep.get("links", [])
+                 if "audio" in l.get("type", "")),
+                None
+            )
 
             if not audio_url:
                 continue
 
             filename = download_episode_audio(audio_url)
-
             if filename:
                 clip_paths.append(str(RAW_DIR / filename))
+
         except Exception:
             continue
 
     print("🎧 clip_paths:", clip_paths)
 
+    # ---------------- AI ----------------
     narration_paths = []
     ai_output = None
 
     if enable_ai:
         try:
-            segments = []  # ✅ FIXED missing variable
+            segments = []
 
             for ep in blended:
                 raw = ep.get("summary") or ep.get("description")
@@ -269,51 +275,45 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
                 clusters = [
                     {"id": i + 1, "segments": [seg]}
                     for i, seg in enumerate(segments[:5])
-                ]  # ✅ FIXED bracket
+                ]
 
                 ai_output = process_clusters(clusters)
 
-                for cluster in ai_output:
-                    narration = cluster.get("narration")
+                for c in ai_output:
+                    narration = c.get("narration")
 
-                    if not narration:
+                    if not narration or len(narration.strip()) < 50:
                         continue
 
-                    safe = narration.strip()
-
-                    if len(safe) < 50:
-                        continue
-
-                    if "please provide" in safe.lower():
+                    if "please provide" in narration.lower():
                         continue
 
                     try:
-                        path = generate_audio(safe[:3000])
-                        narration_paths.append(path)
-                    except Exception as e:
-                        print("⚠️ Skipping narration:", e)
+                        narration_paths.append(
+                            generate_audio(narration[:3000])
+                        )
+                    except Exception:
+                        continue
 
         except Exception as e:
             print("⚠️ AI error:", e)
 
+    # ---------------- STITCH ----------------
     final_audio = None
 
     if narration_paths:
-        try:
-            sequence = []
+        sequence = []
+        for i in range(len(narration_paths)):
+            sequence.append(narration_paths[i])
+            if i < len(clip_paths):
+                sequence.append(clip_paths[i])
 
-            for i in range(len(narration_paths)):
-                sequence.append(narration_paths[i])
-
-                if i < len(clip_paths):
-                    sequence.append(clip_paths[i])
-
-            if sequence:
-                filename = stitch_blendz(sequence, target_minutes=target_minutes)
+        if sequence:
+            try:
+                filename = stitch_blendz(sequence, target_minutes)
                 final_audio = f"/audio/final/{filename}"
-
-        except Exception as e:
-            print("🔥 Audio error:", e)
+            except Exception:
+                pass
 
     return {
         "query": query,
@@ -325,7 +325,7 @@ def run_blend(query: str, target_minutes: int, enable_ai: bool):
 
 
 # -------------------------------------------------
-# ✅ BLEND
+# ✅ BLEND ENDPOINT
 # -------------------------------------------------
 @router.post("/blend")
 def preview_blend(
@@ -340,7 +340,7 @@ def preview_blend(
 
 
 # -------------------------------------------------
-# ✅ BOARD
+# ✅ BOARD ENDPOINT
 # -------------------------------------------------
 @router.get("/board/{board_id}")
 def get_board(board_id: str, minutes: Optional[int] = None):
@@ -353,14 +353,11 @@ def get_board(board_id: str, minutes: Optional[int] = None):
             "available_boards": list(BOARD_CONFIG.keys())
         }
 
-    query = board["query"]
-    target_minutes = minutes or board["default_minutes"]
-
     print(f"\n📌 BOARD: {board_id}")
 
     return {
         "mode": "board",
         "board_id": board_id,
         "title": board["title"],
-        **run_blend(query, target_minutes, True)
+        **run_blend(board["query"], minutes or board["default_minutes"], True),
     }
