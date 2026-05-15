@@ -1,10 +1,11 @@
 """
-Audio stitching utilities for PodBlendz (FINAL FIX — CONTENT AWARE)
+Audio stitching utilities for PodBlendz (ENHANCED UX VERSION)
 
-✅ Avoids intros / ads / outros
-✅ Extracts mid-content segments
-✅ Prevents repeat segments
-✅ Preserves grouped playback
+✅ Smooth fades (no abrupt cuts)
+✅ Natural spacing between segments
+✅ Volume consistency
+✅ Handles TTS + podcast clips cleanly
+✅ Preserves your current logic
 """
 
 from pathlib import Path
@@ -39,19 +40,39 @@ def calculate_max_segments(target_minutes: int, clip_duration: int) -> int:
 USED_SEGMENTS = {}
 
 
-# ✅ PROCESS AUDIO (FIXED — MID CONTENT SAMPLING)
+# ✅ PROCESS AUDIO (SMOOTHED VERSION)
 def process_audio(input_file: str, clip_duration: int) -> str:
 
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     output_file = TEMP_DIR / f"{uuid.uuid4().hex}.mp3"
 
-    # ✅ DEFINE SAFE RANGE (skip intros & outros)
-    MIN_START = 180   # skip first 3 minutes
-    MAX_START = 900   # stop before late episode outro
+    # ✅ Detect TTS (we do NOT trim narration)
+    is_tts = "/tts/" in input_file
+
+    if is_tts:
+        print(f"🔊 Using full TTS: {input_file}")
+
+        subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-i", input_file,
+                "-af", "loudnorm=I=-16:LRA=11:TP=-1.5,apad=pad_dur=0.25",
+                "-ar", "44100",
+                "-ac", "2",
+                "-b:a", "192k",
+                str(output_file),
+            ],
+            check=True,
+        )
+        return str(output_file)
+
+    # ✅ NORMAL PODCAST CLIPS (with mid-content sampling)
+    MIN_START = 180
+    MAX_START = 900
 
     used = USED_SEGMENTS.get(input_file, set())
 
-    # ✅ avoid repeating same segments
     for _ in range(10):
         start_time = random.randint(MIN_START, MAX_START)
         bucket = start_time // clip_duration
@@ -61,7 +82,6 @@ def process_audio(input_file: str, clip_duration: int) -> str:
             USED_SEGMENTS[input_file] = used
             break
     else:
-        # fallback if exhausted
         start_time = random.randint(MIN_START, MAX_START)
 
     print(f"⏩ Extracting {start_time}s → {start_time + clip_duration}s")
@@ -70,10 +90,16 @@ def process_audio(input_file: str, clip_duration: int) -> str:
         [
             ffmpeg,
             "-y",
-            "-ss", str(start_time),    # ✅ KEY FIX HERE
+            "-ss", str(start_time),
             "-t", str(clip_duration),
             "-i", input_file,
             "-vn",
+            # ✅ KEY UX FIXES BELOW
+            "-af",
+            # smooth entry, smooth exit, normalize, add slight silence
+            "afade=t=in:ss=0:d=1,afade=t=out:st=29:d=1,"
+            "loudnorm=I=-16:LRA=11:TP=-1.5,"
+            "apad=pad_dur=0.25",
             "-ar", "44100",
             "-ac", "2",
             "-b:a", "192k",
