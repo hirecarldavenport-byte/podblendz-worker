@@ -39,14 +39,23 @@ def get_queries(query: str) -> List[str]:
     return [query]
 
 
-# ---------------- STRONGER FILTER ----------------
+# ---------------- STRICT DOMAIN FILTER ----------------
 def is_good_domain_text(text: str) -> bool:
     text = text.lower()
 
     required_terms = ["gene", "dna", "genome", "genetic", "crispr"]
     domain_terms = ["sequencing", "biology", "molecular", "cell"]
 
+    bad_context_terms = [
+        "author", "book", "biography",
+        "interview", "guest", "story",
+        "life of", "history of"
+    ]
+
     if len(text.split()) < 20:
+        return False
+
+    if any(b in text for b in bad_context_terms):
         return False
 
     if not any(r in text for r in required_terms):
@@ -57,22 +66,32 @@ def is_good_domain_text(text: str) -> bool:
     return score >= 1
 
 
-# ---------------- CLEAN THEME ----------------
+# ---------------- CLEAN / EXTRACT TRUE THEMES ----------------
 def extract_theme(text: str) -> str:
     text = text.lower()
 
-    # remove stage directions
+    # remove stage noise
     text = re.sub(r"\[.*?\]", "", text)
 
-    # take first sentence only
-    parts = text.split(".")
-    if parts:
-        return parts[0][:120]
+    # remove filler intro phrases
+    text = re.sub(
+        r"(welcome to.*?|in this episode.*?|today we.*?|join us.*?)[,\.]",
+        "",
+        text
+    )
 
-    return text[:120]
+    keywords = [
+        "gene", "dna", "genome", "genetic",
+        "crispr", "sequencing", "mutation",
+        "biotech", "molecular", "cell"
+    ]
+
+    hits = [k for k in keywords if k in text]
+
+    return " ".join(hits[:6])
 
 
-# ---------------- MATCH SCORING (IMPROVED) ----------------
+# ---------------- SMART MATCH SCORING ----------------
 def match_episode_to_theme(ep, theme: str) -> int:
     text = (ep.get("title", "") + " " + ep.get("summary", "")).lower()
 
@@ -129,14 +148,14 @@ def run_blend(query: str, target_minutes: int):
             filtered.append(ep)
 
     if not filtered:
-        print("⚠️ fallback")
-        filtered = blended[:4]
+        print("⚠️ fallback to minimal safe set")
+        filtered = blended[:3]
 
     blended = filtered[:4]
     print(f"✅ Using {len(blended)} episodes")
 
     # -------------------------------------------------
-    # ✅ BUILD SEGMENTS
+    # ✅ BUILD SEGMENTS (FOR AI)
     # -------------------------------------------------
     segments = []
     titles = []
@@ -155,7 +174,7 @@ def run_blend(query: str, target_minutes: int):
     ]
 
     # -------------------------------------------------
-    # ✅ CLUSTER THEMES (FIXED)
+    # ✅ AI CLUSTERING
     # -------------------------------------------------
     clustered = process_clusters(cluster_input)
 
@@ -164,13 +183,23 @@ def run_blend(query: str, target_minutes: int):
         narration = c.get("narration", "")
         if narration:
             theme = extract_theme(narration)
-            if len(theme) > 20:
+            if len(theme.split()) >= 2:
                 themes.append(theme)
+
+    # ✅ FAILSAFE THEMES
+    if len(themes) == 0:
+        print("⚠️ AI theme failure → fallback")
+
+        themes = [
+            "genome sequencing",
+            "gene editing crispr",
+            "molecular biology dna"
+        ]
 
     print(f"🧠 Themes: {themes}")
 
     # -------------------------------------------------
-    # ✅ ORDER EPISODES (NO DUPLICATES)
+    # ✅ ORDER EPISODES (DIVERSE)
     # -------------------------------------------------
     ordered_audio_urls = []
     used_titles = set()
@@ -180,10 +209,12 @@ def run_blend(query: str, target_minutes: int):
         scored = []
 
         for ep in blended:
+
             if ep.get("title") in used_titles:
                 continue
 
             score = match_episode_to_theme(ep, theme)
+
             if score > 0:
                 scored.append((score, ep))
 
@@ -202,9 +233,10 @@ def run_blend(query: str, target_minutes: int):
             if audio_url:
                 ordered_audio_urls.append(audio_url)
 
-    # fallback
-    if not ordered_audio_urls:
-        print("⚠️ fallback ordering")
+    # ✅ GUARANTEE MULTIPLE SOURCES
+    if len(ordered_audio_urls) < 2:
+        print("⚠️ expanding clips")
+
         for ep in blended:
             audio_url = next(
                 (l.get("href") for l in ep.get("links", [])
@@ -230,13 +262,15 @@ def run_blend(query: str, target_minutes: int):
     print(f"🎧 Clips collected: {len(clip_paths)}")
 
     # -------------------------------------------------
-    # ✅ INTRO TEXT (IMPROVED)
+    # ✅ INTRO SUMMARY
     # -------------------------------------------------
     intro_text = f"This blend explores {query}. "
+
     if titles:
-        intro_text += "Featuring: " + ", ".join(titles[:3]) + "."
+        intro_text += "Featuring: " + ", ".join(titles[:3]) + ". "
+
     if themes:
-        intro_text += " Key topics include: " + ", ".join(themes[:3]) + "."
+        intro_text += "Key topics include: " + ", ".join(themes[:3]) + "."
 
     print(f"🎤 Intro: {intro_text}")
 
