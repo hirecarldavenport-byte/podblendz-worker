@@ -11,8 +11,7 @@ from podpal.blending.round_robin import round_robin_blend
 from podpal.audio.ingest import download_episode_audio
 from podpal.audio.stitch import stitch_blendz
 
-from podpal.ai.pipeline import process_clusters  # ✅ NEW
-
+from podpal.ai.pipeline import process_clusters
 from podpal.boards.board_config import BOARD_CONFIG
 
 router = APIRouter()
@@ -40,27 +39,46 @@ def get_queries(query: str) -> List[str]:
     return [query]
 
 
-# ---------------- DOMAIN FILTER ----------------
+# ---------------- STRONGER FILTER ----------------
 def is_good_domain_text(text: str) -> bool:
     text = text.lower()
 
-    good_terms = [
-        "gene", "dna", "genome", "genetic",
-        "crispr", "biology", "biotech",
-        "molecular", "cell", "mutation",
-        "sequencing", "antibody"
-    ]
+    required_terms = ["gene", "dna", "genome", "genetic", "crispr"]
+    domain_terms = ["sequencing", "biology", "molecular", "cell"]
 
     if len(text.split()) < 20:
         return False
 
-    return any(g in text for g in good_terms)
+    if not any(r in text for r in required_terms):
+        return False
+
+    score = sum(1 for d in domain_terms if d in text)
+
+    return score >= 1
 
 
-# ---------------- MATCH SCORING ----------------
+# ---------------- CLEAN THEME ----------------
+def extract_theme(text: str) -> str:
+    text = text.lower()
+
+    # remove stage directions
+    text = re.sub(r"\[.*?\]", "", text)
+
+    # take first sentence only
+    parts = text.split(".")
+    if parts:
+        return parts[0][:120]
+
+    return text[:120]
+
+
+# ---------------- MATCH SCORING (IMPROVED) ----------------
 def match_episode_to_theme(ep, theme: str) -> int:
     text = (ep.get("title", "") + " " + ep.get("summary", "")).lower()
-    words = theme.split()
+
+    stopwords = {"the", "is", "and", "to", "of", "in", "we", "this"}
+    words = [w for w in theme.split() if w not in stopwords and len(w) > 3]
+
     return sum(1 for w in words if w in text)
 
 
@@ -107,7 +125,6 @@ def run_blend(query: str, target_minutes: int):
     filtered = []
     for ep in blended:
         text = (ep.get("title", "") + " " + ep.get("summary", "")).lower()
-
         if is_good_domain_text(text):
             filtered.append(ep)
 
@@ -119,7 +136,7 @@ def run_blend(query: str, target_minutes: int):
     print(f"✅ Using {len(blended)} episodes")
 
     # -------------------------------------------------
-    # ✅ STEP 1: BUILD SEGMENTS
+    # ✅ BUILD SEGMENTS
     # -------------------------------------------------
     segments = []
     titles = []
@@ -138,7 +155,7 @@ def run_blend(query: str, target_minutes: int):
     ]
 
     # -------------------------------------------------
-    # ✅ STEP 2: CLUSTER THEMES
+    # ✅ CLUSTER THEMES (FIXED)
     # -------------------------------------------------
     clustered = process_clusters(cluster_input)
 
@@ -146,20 +163,26 @@ def run_blend(query: str, target_minutes: int):
     for c in clustered:
         narration = c.get("narration", "")
         if narration:
-            themes.append(narration.lower())
+            theme = extract_theme(narration)
+            if len(theme) > 20:
+                themes.append(theme)
 
-    print(f"🧠 Themes detected: {len(themes)}")
+    print(f"🧠 Themes: {themes}")
 
     # -------------------------------------------------
-    # ✅ STEP 3: ORDER EPISODES BY THEMES
+    # ✅ ORDER EPISODES (NO DUPLICATES)
     # -------------------------------------------------
     ordered_audio_urls = []
+    used_titles = set()
 
     for theme in themes:
 
         scored = []
 
         for ep in blended:
+            if ep.get("title") in used_titles:
+                continue
+
             score = match_episode_to_theme(ep, theme)
             if score > 0:
                 scored.append((score, ep))
@@ -168,6 +191,7 @@ def run_blend(query: str, target_minutes: int):
 
         if scored:
             best_ep = scored[0][1]
+            used_titles.add(best_ep.get("title"))
 
             audio_url = next(
                 (l.get("href") for l in best_ep.get("links", [])
@@ -181,7 +205,6 @@ def run_blend(query: str, target_minutes: int):
     # fallback
     if not ordered_audio_urls:
         print("⚠️ fallback ordering")
-
         for ep in blended:
             audio_url = next(
                 (l.get("href") for l in ep.get("links", [])
@@ -192,7 +215,7 @@ def run_blend(query: str, target_minutes: int):
                 ordered_audio_urls.append(audio_url)
 
     # -------------------------------------------------
-    # ✅ STEP 4: DOWNLOAD IN ORDER
+    # ✅ DOWNLOAD
     # -------------------------------------------------
     clip_paths = []
 
@@ -207,15 +230,15 @@ def run_blend(query: str, target_minutes: int):
     print(f"🎧 Clips collected: {len(clip_paths)}")
 
     # -------------------------------------------------
-    # ✅ STEP 5: BUILD SUMMARY OPENING TEXT
+    # ✅ INTRO TEXT (IMPROVED)
     # -------------------------------------------------
-    intro_text = f"This blend explores {query}. Featuring insights from: "
-
-    intro_text += ", ".join(titles[:3]) + "."
+    intro_text = f"This blend explores {query}. "
+    if titles:
+        intro_text += "Featuring: " + ", ".join(titles[:3]) + "."
+    if themes:
+        intro_text += " Key topics include: " + ", ".join(themes[:3]) + "."
 
     print(f"🎤 Intro: {intro_text}")
-
-    # (we'll convert this to TTS later)
 
     # -------------------------------------------------
     # ✅ STITCH
@@ -231,11 +254,11 @@ def run_blend(query: str, target_minutes: int):
 
     return {
         "query": query,
-        "themes": themes,  # ✅ NEW (debug visibility)
+        "themes": themes,
         "results": blended,
         "clip_count": len(clip_paths),
         "final_audio": final_audio,
-        "intro_text": intro_text,  # ✅ ready for narration
+        "intro_text": intro_text,
     }
 
 
