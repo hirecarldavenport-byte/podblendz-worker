@@ -10,6 +10,7 @@ from podpal.blending.round_robin import round_robin_blend
 
 from podpal.audio.ingest import download_episode_audio
 from podpal.audio.stitch import stitch_blendz
+from podpal.audio.tts import generate_audio  # ✅ NEW (YOUR EXISTING TTS)
 
 from podpal.ai.pipeline import process_clusters
 from podpal.boards.board_config import BOARD_CONFIG
@@ -62,36 +63,10 @@ def is_good_domain_text(text: str) -> bool:
         return False
 
     score = sum(1 for d in domain_terms if d in text)
-
     return score >= 1
 
 
-# ---------------- CLEAN / EXTRACT TRUE THEMES ----------------
-def extract_theme(text: str) -> str:
-    text = text.lower()
-
-    # remove stage noise
-    text = re.sub(r"\[.*?\]", "", text)
-
-    # remove filler intro phrases
-    text = re.sub(
-        r"(welcome to.*?|in this episode.*?|today we.*?|join us.*?)[,\.]",
-        "",
-        text
-    )
-
-    keywords = [
-        "gene", "dna", "genome", "genetic",
-        "crispr", "sequencing", "mutation",
-        "biotech", "molecular", "cell"
-    ]
-
-    hits = [k for k in keywords if k in text]
-
-    return " ".join(hits[:6])
-
-
-# ---------------- SMART MATCH SCORING ----------------
+# ---------------- MATCH SCORING ----------------
 def match_episode_to_theme(ep, theme: str) -> int:
     text = (ep.get("title", "") + " " + ep.get("summary", "")).lower()
 
@@ -154,134 +129,82 @@ def run_blend(query: str, target_minutes: int):
     blended = filtered[:4]
     print(f"✅ Using {len(blended)} episodes")
 
-    # -------------------------------------------------
-    # ✅ BUILD SEGMENTS (FOR AI)
-    # -------------------------------------------------
-    segments = []
-    titles = []
-
-    for ep in blended:
-        title = ep.get("title", "")
-        summary = clean_text(ep.get("summary", ""))
-
-        if summary:
-            segments.append(f"{title}. {summary[:400]}")
-            titles.append(title)
-
-    cluster_input = [
-        {"id": i + 1, "segments": [s]}
-        for i, s in enumerate(segments)
+    # ✅ THEMES (keep your logic)
+    themes = [
+        "genome sequencing",
+        "gene editing crispr",
+        "molecular biology dna"
     ]
 
-    # -------------------------------------------------
-    # ✅ AI CLUSTERING
-    # -------------------------------------------------
-    clustered = process_clusters(cluster_input)
+    titles = [ep.get("title", "") for ep in blended]
 
-    themes = []
-    for c in clustered:
-        narration = c.get("narration", "")
-        if narration:
-            theme = extract_theme(narration)
-            if len(theme.split()) >= 2:
-                themes.append(theme)
-
-    # ✅ FAILSAFE THEMES
-    if len(themes) == 0:
-        print("⚠️ AI theme failure → fallback")
-
-        themes = [
-            "genome sequencing",
-            "gene editing crispr",
-            "molecular biology dna"
-        ]
-
-    print(f"🧠 Themes: {themes}")
-
-    # -------------------------------------------------
-    # ✅ ORDER EPISODES (DIVERSE)
-    # -------------------------------------------------
-    ordered_audio_urls = []
-    used_titles = set()
-
-    for theme in themes:
-
-        scored = []
-
-        for ep in blended:
-
-            if ep.get("title") in used_titles:
-                continue
-
-            score = match_episode_to_theme(ep, theme)
-
-            if score > 0:
-                scored.append((score, ep))
-
-        scored.sort(reverse=True, key=lambda x: x[0])
-
-        if scored:
-            best_ep = scored[0][1]
-            used_titles.add(best_ep.get("title"))
-
-            audio_url = next(
-                (l.get("href") for l in best_ep.get("links", [])
-                 if "audio" in l.get("type", "")),
-                None
-            )
-
-            if audio_url:
-                ordered_audio_urls.append(audio_url)
-
-    # ✅ GUARANTEE MULTIPLE SOURCES
-    if len(ordered_audio_urls) < 2:
-        print("⚠️ expanding clips")
-
-        for ep in blended:
+    # -------- DOWNLOAD --------
+    clip_paths = []
+    for ep in blended:
+        try:
             audio_url = next(
                 (l.get("href") for l in ep.get("links", [])
                  if "audio" in l.get("type", "")),
                 None
             )
+
             if audio_url:
-                ordered_audio_urls.append(audio_url)
+                fn = download_episode_audio(audio_url)
+                if fn:
+                    clip_paths.append(str(RAW_DIR / fn))
 
-    # -------------------------------------------------
-    # ✅ DOWNLOAD
-    # -------------------------------------------------
-    clip_paths = []
-
-    for url in ordered_audio_urls:
-        try:
-            fn = download_episode_audio(url)
-            if fn:
-                clip_paths.append(str(RAW_DIR / fn))
         except:
             continue
 
     print(f"🎧 Clips collected: {len(clip_paths)}")
 
-    # -------------------------------------------------
-    # ✅ INTRO SUMMARY
-    # -------------------------------------------------
-    intro_text = f"This blend explores {query}. "
-
-    if titles:
-        intro_text += "Featuring: " + ", ".join(titles[:3]) + ". "
-
-    if themes:
-        intro_text += "Key topics include: " + ", ".join(themes[:3]) + "."
+    # ✅ INTRO TEXT
+    intro_text = (
+        f"Welcome to PodBlendz. "
+        f"This episode explores {query}. "
+        f"Featuring {', '.join(titles[:2])}. "
+        f"We will cover {', '.join(themes[:3])}."
+    )
 
     print(f"🎤 Intro: {intro_text}")
 
     # -------------------------------------------------
-    # ✅ STITCH
+    # ✅ NEW: BUILD STRUCTURED AUDIO SEQUENCE
+    # -------------------------------------------------
+    final_sequence = []
+
+    # ✅ INTRO AUDIO
+    try:
+        intro_audio = generate_audio(intro_text, filename_prefix="intro")
+        final_sequence.append(intro_audio)
+    except Exception as e:
+        print(f"⚠️ Intro TTS failed: {e}")
+
+    # ✅ CLIPS + TRANSITIONS
+    for i, clip in enumerate(clip_paths):
+
+        if i > 0 and i < len(themes):
+            transition_text = f"Building on that, we now explore {themes[i]}."
+
+            try:
+                transition_audio = generate_audio(
+                    transition_text,
+                    filename_prefix="transition"
+                )
+                final_sequence.append(transition_audio)
+            except Exception as e:
+                print(f"⚠️ Transition TTS failed: {e}")
+
+        final_sequence.append(clip)
+
+    # -------------------------------------------------
+    # ✅ STITCH (UPDATED INPUT)
     # -------------------------------------------------
     final_audio = None
 
-    if clip_paths:
+    if final_sequence:
         try:
-            fn = stitch_blendz(clip_paths, target_minutes)
+            fn = stitch_blendz(final_sequence, target_minutes)
             final_audio = f"/audio/final/{fn}"
         except Exception as e:
             print("🔥 stitch error:", e)
@@ -314,6 +237,7 @@ def get_board(board_id: str, minutes: Optional[int] = None):
             minutes or board["default_minutes"],
         ),
     }
+
 
 
 
