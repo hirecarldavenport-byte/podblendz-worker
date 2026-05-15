@@ -10,12 +10,13 @@ from podpal.blending.round_robin import round_robin_blend
 
 from podpal.audio.ingest import download_episode_audio
 from podpal.audio.stitch import stitch_blendz
-from podpal.audio.tts import generate_audio  # ✅ ADDED (Azure TTS)
+from podpal.audio.tts import generate_audio  # ✅ Azure TTS
 
 from podpal.ai.pipeline import process_clusters
 from podpal.boards.board_config import BOARD_CONFIG
 
 router = APIRouter()
+
 
 # ---------------- CLEAN TEXT ----------------
 def clean_text(text: str) -> str:
@@ -23,6 +24,16 @@ def clean_text(text: str) -> str:
         return ""
     text = re.sub(r"<.*?>", "", text)
     return re.sub(r"\s+", " ", text).strip()
+
+
+# ---------------- LANGUAGE FILTER ----------------
+def is_english_text(text: str) -> bool:
+    try:
+        text.encode("ascii")
+        return True
+    except:
+        return False
+
 
 # ---------------- SEARCH QUERIES ----------------
 def get_queries(query: str) -> List[str]:
@@ -37,61 +48,63 @@ def get_queries(query: str) -> List[str]:
 
     return [query]
 
-# ---------------- STRICT DOMAIN FILTER ----------------
+
+# ---------------- STRICT DOMAIN FILTER (FIXED) ----------------
 def is_good_domain_text(text: str) -> bool:
     text = text.lower()
 
-    required_terms = ["gene", "dna", "genome", "genetic", "crispr"]
-    domain_terms = ["sequencing", "biology", "molecular", "cell"]
+    required_terms = [
+        "gene", "dna", "genome", "genetic",
+        "crispr", "sequencing", "genomics"
+    ]
 
-    bad_context_terms = [
-        "author", "book", "biography",
-        "interview", "guest", "story",
-        "life of", "history of"
+    strict_terms = ["biology", "molecular", "cell", "research"]
+
+    bad_terms = [
+        "author", "book", "biography", "devotional",
+        "mindset", "faith", "scripture",
+        "lifestyle", "journey", "motivation"
     ]
 
     if len(text.split()) < 20:
         return False
 
-    if any(b in text for b in bad_context_terms):
+    if any(b in text for b in bad_terms):
         return False
 
     if not any(r in text for r in required_terms):
         return False
 
-    score = sum(1 for d in domain_terms if d in text)
+    if not any(s in text for s in strict_terms):
+        return False
 
-    return score >= 1
+    return True
 
-# ---------------- CLEAN / EXTRACT TRUE THEMES ----------------
+
+# ---------------- THEME EXTRACTION ----------------
 def extract_theme(text: str) -> str:
     text = text.lower()
-
     text = re.sub(r"\[.*?\]", "", text)
-    text = re.sub(
-        r"(welcome to.*?|in this episode.*?|today we.*?|join us.*?)[,\.]",
-        "",
-        text
-    )
 
     keywords = [
-        "gene", "dna", "genome", "genetic",
-        "crispr", "sequencing", "mutation",
-        "biotech", "molecular", "cell"
+        "gene", "dna", "genome",
+        "crispr", "sequencing",
+        "molecular", "biology"
     ]
 
     hits = [k for k in keywords if k in text]
 
-    return " ".join(hits[:6])
+    return " ".join(hits[:5])
 
-# ---------------- SMART MATCH SCORING ----------------
+
+# ---------------- MATCH SCORING ----------------
 def match_episode_to_theme(ep, theme: str) -> int:
     text = (ep.get("title", "") + " " + ep.get("summary", "")).lower()
 
-    stopwords = {"the", "is", "and", "to", "of", "in", "we", "this"}
-    words = [w for w in theme.split() if w not in stopwords and len(w) > 3]
+    words = [w for w in theme.split() if len(w) > 3]
 
     return sum(1 for w in words if w in text)
+
 
 # ---------------- CORE FUNCTION ----------------
 def run_blend(query: str, target_minutes: int):
@@ -132,10 +145,16 @@ def run_blend(query: str, target_minutes: int):
 
     blended = round_robin_blend(episodes_by_feed, 1, 6)
 
-    # -------- FILTER --------
+    # -------- FILTER (UPGRADED) --------
     filtered = []
+
     for ep in blended:
         text = (ep.get("title", "") + " " + ep.get("summary", "")).lower()
+
+        # ✅ language filter
+        if not is_english_text(text):
+            continue
+
         if is_good_domain_text(text):
             filtered.append(ep)
 
@@ -144,11 +163,10 @@ def run_blend(query: str, target_minutes: int):
         filtered = blended[:3]
 
     blended = filtered[:4]
+
     print(f"✅ Using {len(blended)} episodes")
 
-    # -------------------------------------------------
-    # ✅ BUILD SEGMENTS (FOR AI)
-    # -------------------------------------------------
+    # -------- BUILD SEGMENTS --------
     segments = []
     titles = []
 
@@ -165,21 +183,16 @@ def run_blend(query: str, target_minutes: int):
         for i, s in enumerate(segments)
     ]
 
-    # -------------------------------------------------
-    # ✅ AI CLUSTERING
-    # -------------------------------------------------
     clustered = process_clusters(cluster_input)
 
     themes = []
     for c in clustered:
         narration = c.get("narration", "")
-        if narration:
-            theme = extract_theme(narration)
-            if len(theme.split()) >= 2:
-                themes.append(theme)
+        theme = extract_theme(narration)
+        if len(theme.split()) >= 2:
+            themes.append(theme)
 
-    if len(themes) == 0:
-        print("⚠️ AI theme failure → fallback")
+    if not themes:
         themes = [
             "genome sequencing",
             "gene editing crispr",
@@ -188,56 +201,19 @@ def run_blend(query: str, target_minutes: int):
 
     print(f" Themes: {themes}")
 
-    # -------------------------------------------------
-    # ✅ ORDER EPISODES (DIVERSE)
-    # -------------------------------------------------
+    # -------- AUDIO URL SELECTION --------
     ordered_audio_urls = []
-    used_titles = set()
 
-    for theme in themes:
+    for ep in blended:
+        audio_url = next(
+            (l.get("href") for l in ep.get("links", [])
+             if "audio" in l.get("type", "")),
+            None
+        )
+        if audio_url:
+            ordered_audio_urls.append(audio_url)
 
-        scored = []
-
-        for ep in blended:
-
-            if ep.get("title") in used_titles:
-                continue
-
-            score = match_episode_to_theme(ep, theme)
-
-            if score > 0:
-                scored.append((score, ep))
-
-        scored.sort(reverse=True, key=lambda x: x[0])
-
-        if scored:
-            best_ep = scored[0][1]
-            used_titles.add(best_ep.get("title"))
-
-            audio_url = next(
-                (l.get("href") for l in best_ep.get("links", [])
-                 if "audio" in l.get("type", "")),
-                None
-            )
-
-            if audio_url:
-                ordered_audio_urls.append(audio_url)
-
-    if len(ordered_audio_urls) < 2:
-        print("⚠️ expanding clips")
-
-        for ep in blended:
-            audio_url = next(
-                (l.get("href") for l in ep.get("links", [])
-                 if "audio" in l.get("type", "")),
-                None
-            )
-            if audio_url:
-                ordered_audio_urls.append(audio_url)
-
-    # -------------------------------------------------
-    # ✅ DOWNLOAD
-    # -------------------------------------------------
+    # -------- DOWNLOAD --------
     clip_paths = []
 
     for url in ordered_audio_urls:
@@ -250,22 +226,19 @@ def run_blend(query: str, target_minutes: int):
 
     print(f"🎧 Clips collected: {len(clip_paths)}")
 
-    # -------------------------------------------------
-    # ✅ INTRO SUMMARY
-    # -------------------------------------------------
+    # -------- INTRO TEXT --------
     intro_text = f"This blend explores {query}. "
 
     if titles:
-        intro_text += "Featuring: " + ", ".join(titles[:3]) + ". "
+        intro_text += "Featuring: " + ", ".join(titles[:2]) + ". "
 
     if themes:
-        intro_text += "Key topics include: " + ", ".join(themes[:3]) + "."
+        intro_text += "Key topics include: " + ", ".join(themes[:2]) + "."
 
+    
     print(f" Intro: {intro_text}")
 
-    # -------------------------------------------------
-    # ✅ NEW: BUILD FINAL AUDIO SEQUENCE
-    # -------------------------------------------------
+    # -------- BUILD FINAL AUDIO --------
     final_sequence = []
 
     try:
@@ -273,32 +246,24 @@ def run_blend(query: str, target_minutes: int):
         final_sequence.append(intro_audio)
         print("✅ Intro audio added")
     except Exception as e:
-        print(f"⚠️ Intro TTS failed: {e}")
-
-    enhanced_sequence = []
+        print(f"⚠️ Intro failed: {e}")
 
     for i, clip in enumerate(clip_paths):
 
         if i > 0 and i < len(themes):
-            transition_text = f"Building on that, we now explore {themes[i]}."
-
             try:
                 t_audio = generate_audio(
-                    transition_text,
+                    f"Next, we explore {themes[i]}.",
                     filename_prefix="transition"
                 )
-                enhanced_sequence.append(t_audio)
-                print(f"✅ Transition {i} added")
-            except Exception as e:
-                print(f"⚠️ Transition failed: {e}")
+                final_sequence.append(t_audio)
+                print(f"✅ Transition {i}")
+            except:
+                pass
 
-        enhanced_sequence.append(clip)
+        final_sequence.append(clip)
 
-    final_sequence = final_sequence + enhanced_sequence
-
-    # -------------------------------------------------
-    # ✅ STITCH (UPDATED INPUT)
-    # -------------------------------------------------
+    # -------- STITCH --------
     final_audio = None
 
     if final_sequence:
@@ -316,6 +281,7 @@ def run_blend(query: str, target_minutes: int):
         "final_audio": final_audio,
         "intro_text": intro_text,
     }
+
 
 # ---------------- ENDPOINT ----------------
 @router.get("/board/{board_id}")
