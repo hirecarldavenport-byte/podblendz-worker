@@ -27,19 +27,39 @@ FALLBACK_AUDIO_SOURCES = {
 }
 
 
-# ✅ TEXT CLEANING
-def clean_text(text: str) -> str:
-    text = re.sub(r"<.*?>", "", text or "")
-    return re.sub(r"\s+", " ", text).strip()
-
-
+# ✅ HARD-SAFE TTS (FINAL FIX)
 def sanitize_tts_text(text: str) -> str:
+    if not text:
+        return "This episode explores the topic."
+
     text = text.replace("\n", " ")
     text = re.sub(r"[^\x00-\x7F]+", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"[^a-zA-Z0-9 .,!?-]", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+
+    if len(text) > 300:
+        text = text[:300].rsplit(" ", 1)[0]
+
+    if not text:
+        return "Continuing the discussion."
+
+    return text
 
 
-# ✅ RELEVANCE FILTER
+def safe_generate_audio(text: str, label: str):
+    try:
+        clean = sanitize_tts_text(text)
+        return generate_audio(clean, label)
+    except Exception as e:
+        print(f"⚠️ TTS failed ({label}): {e}")
+        try:
+            return generate_audio("Continuing the conversation.", label)
+        except Exception:
+            print("🔥 TTS failed completely")
+            return None
+
+
+# ✅ FILTER
 def is_good_domain_text(text: str) -> bool:
     text = text.lower()
 
@@ -52,20 +72,18 @@ def is_good_domain_text(text: str) -> bool:
     return any(r in text for r in required)
 
 
-# ✅ COHERENCE CHECK (NEW CORE)
+# ✅ COHERENCE ENGINE
 def is_cohesive_cluster(texts: List[str]) -> bool:
-
     keywords = ["gene", "dna", "genome", "crispr", "sequencing"]
 
-    strong_hits = 0
+    strong = 0
 
     for t in texts:
         score = sum(1 for k in keywords if k in t.lower())
-
         if score >= 2:
-            strong_hits += 1
+            strong += 1
 
-    return strong_hits >= 3
+    return strong >= 3
 
 
 # ✅ MAIN FUNCTION
@@ -73,6 +91,8 @@ def run_blend(query: str, target_minutes: int):
 
     BASE_DIR = Path(__file__).resolve().parent.parent.parent
     RAW_DIR = BASE_DIR / "audio" / "raw"
+
+    print(f"\n QUERY: {query}")
 
     # -------- SEARCH --------
     feed_urls = []
@@ -82,7 +102,6 @@ def run_blend(query: str, target_minutes: int):
         pass
 
     feeds = []
-
     for url in list(set(feed_urls))[:20]:
         try:
             feeds.append(resolve_podcast_source(url))
@@ -90,7 +109,6 @@ def run_blend(query: str, target_minutes: int):
             continue
 
     episodes = {}
-
     for f in feeds:
         try:
             rss = fetch_rss_feed(f.feed_url)
@@ -102,7 +120,6 @@ def run_blend(query: str, target_minutes: int):
 
     # -------- FILTER --------
     filtered = []
-
     for ep in blended:
         text = (ep.get("title", "") + " " + ep.get("summary", "")).lower()
 
@@ -115,15 +132,15 @@ def run_blend(query: str, target_minutes: int):
 
     blended = filtered[:5]
 
-    # ✅ COHERENCE DECISION
+    # -------- COHERENCE --------
     segment_texts = [
-        clean_text(ep.get("title") + " " + ep.get("summary", ""))
+        (ep.get("title", "") + " " + ep.get("summary", "")).lower()
         for ep in blended
     ]
 
     is_cohesive = is_cohesive_cluster(segment_texts)
 
-    print(f"\n🧠 Cohesion: {is_cohesive}")
+    print(f"🧠 Cohesion: {is_cohesive}")
 
     # -------- AUDIO --------
     clip_paths = []
@@ -142,59 +159,73 @@ def run_blend(query: str, target_minutes: int):
             if fn:
                 clip_paths.append(str(RAW_DIR / fn))
                 seen.add(audio_url)
+            else:
+                print(f"⚠️ download failed: {audio_url}")
 
-    # ✅ FALLBACK
+    # -------- FALLBACK --------
     if len(clip_paths) < 3:
         print("⚠️ using fallback")
+
         for url in FALLBACK_AUDIO_SOURCES["genetics"]:
             fn = download_episode_audio(url)
+
             if fn:
                 clip_paths.append(str(RAW_DIR / fn))
+
             if len(clip_paths) >= 3:
                 break
 
-    # ---------------------------------------
-    # ✅ MODE SELECT
-    # ---------------------------------------
+    print(f"🎧 Clips: {len(clip_paths)}")
 
+    # -------- BUILD SEQUENCE --------
     final_sequence = []
 
     if is_cohesive:
-        print("✅ MULTI EPISODE MODE")
+        print("✅ MULTI MODE")
 
-        intro = sanitize_tts_text(
-            f"Welcome to PodBlendz. This episode explores {query} across multiple perspectives."
-        )
+        intro = f"Welcome to PodBlendz. This episode explores {query} from multiple perspectives."
 
-        final_sequence.append(generate_audio(intro, "intro"))
+        intro_audio = safe_generate_audio(intro, "intro")
+        if intro_audio:
+            final_sequence.append(intro_audio)
 
         for i, clip in enumerate(clip_paths[:3]):
 
-            narration = sanitize_tts_text(
+            narration = (
                 "We begin with a foundational idea."
                 if i == 0 else
                 "Building on that, we continue exploring this concept."
             )
 
-            final_sequence.append(generate_audio(narration, "transition"))
+            n_audio = safe_generate_audio(narration, "transition")
+            if n_audio:
+                final_sequence.append(n_audio)
+
             final_sequence.append(clip)
 
     else:
-        print("✅ SINGLE EPISODE MODE")
+        print("✅ SINGLE MODE")
 
         clip = clip_paths[0]
 
-        intro = sanitize_tts_text(
-            f"Welcome to PodBlendz. This episode focuses on a deep exploration of {query}."
+        intro_audio = safe_generate_audio(
+            f"Welcome to PodBlendz. This episode focuses on {query}.",
+            "intro"
         )
 
-        final_sequence.append(generate_audio(intro, "intro"))
+        if intro_audio:
+            final_sequence.append(intro_audio)
 
-        for i in range(3):
-            narration = sanitize_tts_text(
-                "We continue unpacking this idea from a different angle."
+        for _ in range(3):
+
+            n_audio = safe_generate_audio(
+                "We continue unpacking this idea.",
+                "transition"
             )
-            final_sequence.append(generate_audio(narration, "transition"))
+
+            if n_audio:
+                final_sequence.append(n_audio)
+
             final_sequence.append(clip)
 
     # -------- STITCH --------
