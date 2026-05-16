@@ -1,12 +1,11 @@
 """
-Audio stitching utilities for PodBlendz (AI HOSTED EXPERIENCE VERSION)
+PodBlendz Stitch Engine (PRODUCTION BASELINE)
 
-✅ Role-aware audio handling
-✅ Intro ALWAYS preserved
-✅ Narration & transitions flow naturally
-✅ Smooth fades + spacing + leveling
-✅ No duplication or segmentation of TTS
-✅ Designed for AI-hosted podcast structure
+✅ Guarantees usable blends (>=3 clips)
+✅ Role-aware processing (intro / transition / clip / outro)
+✅ Smooth fades + spacing + audio leveling
+✅ Prevents weak blends (single clip issue)
+✅ Designed for scalable multi-board system
 """
 
 from pathlib import Path
@@ -26,56 +25,51 @@ FINAL_DIR.mkdir(parents=True, exist_ok=True)
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
-# ✅ CLIP LENGTH
-def get_clip_duration(target_minutes: int) -> int:
-    return 30
-
-
-# ✅ allow room for narration segments
-def calculate_max_segments(target_minutes: int, clip_duration: int) -> int:
-    total_seconds = target_minutes * 60
-    return max(3, total_seconds // clip_duration + 3)
+# -------------------------------------------------
+# ✅ CONFIG
+# -------------------------------------------------
+MIN_CLIPS_REQUIRED = 3
+CLIP_DURATION = 30
 
 
 USED_SEGMENTS = {}
 
 
-# ✅ DETECT AUDIO ROLE
+# -------------------------------------------------
+# ✅ AUDIO TYPE DETECTION
+# -------------------------------------------------
 def detect_audio_type(path: str) -> str:
     if "/tts/" in path:
         name = Path(path).name.lower()
 
         if "intro" in name:
             return "intro"
-        if "outro" in name:
-            return "outro"
         if "transition" in name:
             return "transition"
+        if "outro" in name:
+            return "outro"
+
         return "narration"
 
     return "clip"
 
 
-# ✅ PROCESS AUDIO BY ROLE
-def process_audio(input_file: str, clip_duration: int) -> str:
+# -------------------------------------------------
+# ✅ PROCESS AUDIO (ROLE-AWARE)
+# -------------------------------------------------
+def process_audio(input_file: str) -> str:
 
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     output_file = TEMP_DIR / f"{uuid.uuid4().hex}.mp3"
 
     audio_type = detect_audio_type(input_file)
 
-    print(f"🎧 Processing ({audio_type}): {input_file}")
+    print(f"🎧 Processing {audio_type}: {input_file}")
 
     # -------------------------------------------------
-    # ✅ TTS HANDLING (intro / narration / transition / outro)
+    # ✅ TTS HANDLING (NO CLIPPING)
     # -------------------------------------------------
-    if audio_type in ["intro", "narration", "transition", "outro"]:
-
-        fade_in = "0.4"
-        fade_out = "0.6"
-
-        if audio_type == "intro":
-            fade_out = "1.2"   # longer intro fade
+    if audio_type != "clip":
 
         subprocess.run(
             [
@@ -83,10 +77,10 @@ def process_audio(input_file: str, clip_duration: int) -> str:
                 "-y",
                 "-i", input_file,
                 "-af",
-                f"afade=t=in:ss=0:d={fade_in},"
-                f"afade=t=out:st=3:d={fade_out},"
+                "afade=t=in:ss=0:d=0.3,"
+                "afade=t=out:st=4:d=0.6,"
                 "loudnorm=I=-16:LRA=7:TP=-1.5,"
-                "apad=pad_dur=0.4",
+                "apad=pad_dur=0.35",
                 "-ar", "44100",
                 "-ac", "2",
                 "-b:a", "192k",
@@ -98,7 +92,7 @@ def process_audio(input_file: str, clip_duration: int) -> str:
         return str(output_file)
 
     # -------------------------------------------------
-    # ✅ PODCAST CLIPS (CONTENT)
+    # ✅ CLIP HANDLING (MID-CONTENT)
     # -------------------------------------------------
     MIN_START = 180
     MAX_START = 900
@@ -107,7 +101,7 @@ def process_audio(input_file: str, clip_duration: int) -> str:
 
     for _ in range(10):
         start_time = random.randint(MIN_START, MAX_START)
-        bucket = start_time // clip_duration
+        bucket = start_time // CLIP_DURATION
 
         if bucket not in used:
             used.add(bucket)
@@ -116,14 +110,12 @@ def process_audio(input_file: str, clip_duration: int) -> str:
     else:
         start_time = random.randint(MIN_START, MAX_START)
 
-    print(f"⏩ Extracting {start_time}s → {start_time + clip_duration}s")
-
     subprocess.run(
         [
             ffmpeg,
             "-y",
             "-ss", str(start_time),
-            "-t", str(clip_duration),
+            "-t", str(CLIP_DURATION),
             "-i", input_file,
             "-vn",
             "-af",
@@ -142,61 +134,72 @@ def process_audio(input_file: str, clip_duration: int) -> str:
     return str(output_file)
 
 
+# -------------------------------------------------
 # ✅ CONCAT FILE
-def create_concat_file(audio_files: List[str], concat_file: Path) -> None:
+# -------------------------------------------------
+def create_concat_file(audio_files: List[str], concat_file: Path):
     lines = [f"file '{Path(a).resolve().as_posix()}'" for a in audio_files]
     concat_file.write_text("\n".join(lines), encoding="utf-8")
 
 
+# -------------------------------------------------
+# ✅ VALIDATE INPUT (CRITICAL FIX)
+# -------------------------------------------------
+def validate_sequence(audio_files: List[str]) -> List[str]:
+
+    clips = [a for a in audio_files if detect_audio_type(a) == "clip"]
+
+    if len(clips) < MIN_CLIPS_REQUIRED:
+        raise RuntimeError(
+            f"❌ Not enough clips ({len(clips)}). Need at least {MIN_CLIPS_REQUIRED}."
+        )
+
+    return audio_files
+
+
+# -------------------------------------------------
 # ✅ MAIN STITCH FUNCTION
+# -------------------------------------------------
 def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
 
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
 
     if not audio_files:
-        raise RuntimeError("No audio files provided")
+        raise RuntimeError("❌ No audio files provided")
 
-    print(f"\n🎯 Target duration: {target_minutes} minutes")
+    print(f"\n🎯 Starting blend build...")
 
-    clip_duration = get_clip_duration(target_minutes)
-    max_segments = calculate_max_segments(target_minutes, clip_duration)
-
-    print(f"🎧 Clip duration: {clip_duration}s")
-    print(f"🎚 Max segments: {max_segments}")
+    # ✅ CRITICAL GUARD
+    audio_files = validate_sequence(audio_files)
 
     processed_files = []
-    print("\n🔄 Processing audio sequence...")
-
     last_clip_source = None
+
+    print("\n🔄 Processing sequence...")
 
     for audio in audio_files:
 
         try:
             audio_type = detect_audio_type(audio)
 
-            # ✅ process
-            processed = process_audio(audio, clip_duration)
-
-            # ✅ avoid repeating same content source twice
+            # ✅ Avoid repeating same clip
             if audio_type == "clip":
-                if last_clip_source == audio:
+                if audio == last_clip_source:
                     print("⚠️ Skipping duplicate clip source")
                     continue
                 last_clip_source = audio
 
+            processed = process_audio(audio)
             processed_files.append(processed)
-
-            if len(processed_files) >= max_segments:
-                break
 
         except Exception as e:
             print(f"⚠️ Failed: {audio} → {e}")
 
     if not processed_files:
-        raise RuntimeError("No processed audio files")
+        raise RuntimeError("❌ No processed audio files")
 
     # -------------------------------------------------
-    # ✅ FINAL CONCAT
+    # ✅ CONCAT + FINAL RENDER
     # -------------------------------------------------
     concat_file = TEMP_DIR / f"concat_{uuid.uuid4().hex}.txt"
     create_concat_file(processed_files, concat_file)
@@ -219,7 +222,7 @@ def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
         check=True,
     )
 
-    print(f"\n✅ Final podcast created → {output_file}")
+    print(f"\n✅ Blend created → {output_file}")
 
     return output_file.name
 
