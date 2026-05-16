@@ -10,7 +10,7 @@ from podpal.blending.round_robin import round_robin_blend
 
 from podpal.audio.ingest import download_episode_audio
 from podpal.audio.stitch import stitch_blendz
-from podpal.audio.tts import generate_audio  # ✅ Azure TTS
+from podpal.audio.tts import generate_audio
 
 from podpal.ai.pipeline import process_clusters
 from podpal.boards.board_config import BOARD_CONFIG
@@ -18,7 +18,21 @@ from podpal.boards.board_config import BOARD_CONFIG
 router = APIRouter()
 
 
-# ---------------- CLEAN TEXT ----------------
+# ===============================
+# ✅ FALLBACK SOURCES (STABILITY LAYER)
+# ===============================
+FALLBACK_AUDIO_SOURCES = {
+    "genetics": [
+        "https://sphinx.acast.com/p/open/s/65736d39d32e730012c98919/e/69fcce54051b78474edb8b8e/media.mp3",
+        "https://anchor.fm/s/fb43d2d4/podcast/play/92030581/https://d3ctxlq1ktw2nl.cloudfront.net/staging/2024-8-22/386803392-44100-2-8e5eb4d5876af.m4a",
+        "https://sphinx.acast.com/p/open/s/657b178ababc4c0017c46b78/e/69e6893923929c3a2a3525e0/media.mp3",
+    ]
+}
+
+
+# ===============================
+# ✅ TEXT CLEAN / SAFE TTS
+# ===============================
 def clean_text(text: str) -> str:
     if not text:
         return ""
@@ -26,7 +40,13 @@ def clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-# ---------------- LANGUAGE FILTER ----------------
+def sanitize_tts_text(text: str) -> str:
+    text = text.replace("\n", " ")
+    text = re.sub(r"[^\x00-\x7F]+", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
 def is_english_text(text: str) -> bool:
     try:
         text.encode("ascii")
@@ -35,21 +55,9 @@ def is_english_text(text: str) -> bool:
         return False
 
 
-# ---------------- SEARCH QUERIES ----------------
-def get_queries(query: str) -> List[str]:
-    q = query.lower()
-
-    if "genetics" in q:
-        return [
-            "gene editing crispr dna podcast",
-            "genomics biotechnology podcast",
-            "molecular biology genetics podcast",
-        ]
-
-    return [query]
-
-
-# ---------------- STRICT DOMAIN FILTER (FIXED) ----------------
+# ===============================
+# ✅ FILTER (STRONG BUT NOT OVERLY STRICT)
+# ===============================
 def is_good_domain_text(text: str) -> bool:
     text = text.lower()
 
@@ -58,55 +66,21 @@ def is_good_domain_text(text: str) -> bool:
         "crispr", "sequencing", "genomics"
     ]
 
-    strict_terms = ["biology", "molecular", "cell", "research"]
-
     bad_terms = [
-        "author", "book", "biography", "devotional",
-        "mindset", "faith", "scripture",
-        "lifestyle", "journey", "motivation"
+        "story", "life", "family",
+        "crime", "relationship",
+        "celebrity", "tv", "drama"
     ]
-
-    if len(text.split()) < 20:
-        return False
 
     if any(b in text for b in bad_terms):
         return False
 
-    if not any(r in text for r in required_terms):
-        return False
-
-    if not any(s in text for s in strict_terms):
-        return False
-
-    return True
+    return any(r in text for r in required_terms)
 
 
-# ---------------- THEME EXTRACTION ----------------
-def extract_theme(text: str) -> str:
-    text = text.lower()
-    text = re.sub(r"\[.*?\]", "", text)
-
-    keywords = [
-        "gene", "dna", "genome",
-        "crispr", "sequencing",
-        "molecular", "biology"
-    ]
-
-    hits = [k for k in keywords if k in text]
-
-    return " ".join(hits[:5])
-
-
-# ---------------- MATCH SCORING ----------------
-def match_episode_to_theme(ep, theme: str) -> int:
-    text = (ep.get("title", "") + " " + ep.get("summary", "")).lower()
-
-    words = [w for w in theme.split() if len(w) > 3]
-
-    return sum(1 for w in words if w in text)
-
-
-# ---------------- CORE FUNCTION ----------------
+# ===============================
+# ✅ CORE BLEND FUNCTION
+# ===============================
 def run_blend(query: str, target_minutes: int):
 
     BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -116,93 +90,48 @@ def run_blend(query: str, target_minutes: int):
 
     # -------- SEARCH --------
     feed_urls = []
-    for q in get_queries(query):
+    for q in [query]:
         try:
             feed_urls.extend(resolve_search_term(q))
         except:
             continue
 
-    feed_urls = list(set(feed_urls))[:30]
-
-    # -------- RESOLVE --------
-    feeds = []
-    for url in feed_urls:
-        try:
-            f = resolve_podcast_source(url)
-            if f:
-                feeds.append(f)
-        except:
-            continue
+    feed_urls = list(set(feed_urls))[:20]
 
     # -------- FETCH --------
     episodes_by_feed = {}
-    for f in feeds:
+    for url in feed_urls:
         try:
-            rss = fetch_rss_feed(f.feed_url)
-            episodes_by_feed[f.feed_url] = rss.get("items", [])
+            resolved = resolve_podcast_source(url)
+            rss = fetch_rss_feed(resolved.feed_url)
+            episodes_by_feed[resolved.feed_url] = rss.get("items", [])
         except:
-            episodes_by_feed[f.feed_url] = []
+            continue
 
     blended = round_robin_blend(episodes_by_feed, 1, 6)
 
-    # -------- FILTER (UPGRADED) --------
+    # -------- FILTER --------
     filtered = []
-
     for ep in blended:
         text = (ep.get("title", "") + " " + ep.get("summary", "")).lower()
 
-        # ✅ language filter
         if not is_english_text(text):
             continue
 
         if is_good_domain_text(text):
             filtered.append(ep)
 
-    if not filtered:
-        print("⚠️ fallback to minimal safe set")
-        filtered = blended[:3]
+    if len(filtered) < 3:
+        print("⚠️ Expanding pool")
+        filtered = blended[:5]
 
-    blended = filtered[:4]
+    blended = filtered[:5]
 
     print(f"✅ Using {len(blended)} episodes")
 
-    # -------- BUILD SEGMENTS --------
-    segments = []
-    titles = []
-
-    for ep in blended:
-        title = ep.get("title", "")
-        summary = clean_text(ep.get("summary", ""))
-
-        if summary:
-            segments.append(f"{title}. {summary[:400]}")
-            titles.append(title)
-
-    cluster_input = [
-        {"id": i + 1, "segments": [s]}
-        for i, s in enumerate(segments)
-    ]
-
-    clustered = process_clusters(cluster_input)
-
-    themes = []
-    for c in clustered:
-        narration = c.get("narration", "")
-        theme = extract_theme(narration)
-        if len(theme.split()) >= 2:
-            themes.append(theme)
-
-    if not themes:
-        themes = [
-            "genome sequencing",
-            "gene editing crispr",
-            "molecular biology dna"
-        ]
-
-    print(f" Themes: {themes}")
-
     # -------- AUDIO URL SELECTION --------
     ordered_audio_urls = []
+    seen = set()
 
     for ep in blended:
         audio_url = next(
@@ -210,98 +139,119 @@ def run_blend(query: str, target_minutes: int):
              if "audio" in l.get("type", "")),
             None
         )
-        if audio_url:
-            ordered_audio_urls.append(audio_url)
 
-    # -------- DOWNLOAD --------
+        if audio_url and audio_url not in seen:
+            ordered_audio_urls.append(audio_url)
+            seen.add(audio_url)
+
+    # -------- DOWNLOAD (FIXED) --------
     clip_paths = []
 
     for url in ordered_audio_urls:
         try:
             fn = download_episode_audio(url)
-            if fn:
+
+            if fn:  # ✅ critical fix
                 clip_paths.append(str(RAW_DIR / fn))
-        except:
-            continue
+            else:
+                print(f"⚠️ download failed: {url}")
+
+        except Exception as e:
+            print(f"⚠️ error downloading {url}: {e}")
+
+    # -------- FALLBACK --------
+    if len(clip_paths) < 3:
+        print("⚠️ Using fallback pool")
+
+        fallback_urls = FALLBACK_AUDIO_SOURCES.get("genetics", [])
+
+        for url in fallback_urls:
+            try:
+                fn = download_episode_audio(url)
+
+                if fn:
+                    clip_paths.append(str(RAW_DIR / fn))
+                else:
+                    print(f"⚠️ fallback failed: {url}")
+
+            except Exception as e:
+                print(f"⚠️ fallback error: {url} → {e}")
+
+            if len(clip_paths) >= 3:
+                break
 
     print(f"🎧 Clips collected: {len(clip_paths)}")
 
-    # -------- INTRO TEXT --------
-    intro_text = f"This blend explores {query}. "
+    # -------- THEMES --------
+    themes = [
+        "genome sequencing",
+        "gene editing",
+        "molecular biology"
+    ]
 
-    if titles:
-        intro_text += "Featuring: " + ", ".join(titles[:2]) + ". "
+    # -------- INTRO --------
+    intro_text = sanitize_tts_text(
+        f"Welcome to PodBlendz. This episode explores {query}. "
+        f"We begin with {themes[0]}."
+    )
 
-    if themes:
-        intro_text += "Key topics include: " + ", ".join(themes[:2]) + "."
-
-    
-    print(f" Intro: {intro_text}")
-
-    # -------- BUILD FINAL AUDIO --------
+    # -------- BUILD SEQUENCE --------
     final_sequence = []
 
     try:
-        intro_audio = generate_audio(intro_text, filename_prefix="intro")
+        intro_audio = generate_audio(intro_text, "intro")
         final_sequence.append(intro_audio)
-        print("✅ Intro audio added")
+        print("✅ Intro added")
     except Exception as e:
         print(f"⚠️ Intro failed: {e}")
 
-    for i, clip in enumerate(clip_paths):
+    clip_index = 0
 
-        if i > 0 and i < len(themes):
-            try:
-                t_audio = generate_audio(
-                    f"Next, we explore {themes[i]}.",
-                    filename_prefix="transition"
-                )
-                final_sequence.append(t_audio)
-                print(f"✅ Transition {i}")
-            except:
-                pass
+    for i, theme in enumerate(themes):
 
-        final_sequence.append(clip)
+        narration_text = sanitize_tts_text(
+            f"Building on that, we now explore {theme}."
+            if i > 0 else f"We begin with {theme}."
+        )
+
+        try:
+            narration_audio = generate_audio(narration_text, "transition")
+            final_sequence.append(narration_audio)
+        except Exception as e:
+            print(f"⚠️ transition failed: {e}")
+
+        if clip_index < len(clip_paths):
+            final_sequence.append(clip_paths[clip_index])
+            clip_index += 1
 
     # -------- STITCH --------
     final_audio = None
 
-    if final_sequence:
-        try:
-            fn = stitch_blendz(final_sequence, target_minutes)
-            final_audio = f"/audio/final/{fn}"
-        except Exception as e:
-            print("🔥 stitch error:", e)
+    try:
+        fn = stitch_blendz(final_sequence, target_minutes)
+        final_audio = f"/audio/final/{fn}"
+    except Exception as e:
+        print("🔥 stitch error:", e)
 
     return {
         "query": query,
-        "themes": themes,
-        "results": blended,
         "clip_count": len(clip_paths),
-        "final_audio": final_audio,
-        "intro_text": intro_text,
+        "final_audio": final_audio
     }
 
 
-# ---------------- ENDPOINT ----------------
+# ===============================
+# ✅ ENDPOINT
+# ===============================
 @router.get("/board/{board_id}")
 def get_board(board_id: str, minutes: Optional[int] = None):
 
-    board_id = board_id.lower()
-
-    board = BOARD_CONFIG.get(board_id)
+    board = BOARD_CONFIG.get(board_id.lower())
 
     if not board:
         return {"error": "Board not found"}
 
-    return {
-        "mode": "board",
-        **run_blend(
-            board["query"],
-            minutes or board["default_minutes"],
-        ),
-    }
-
+    return run_blend(board["query"], minutes or 5)
 
 
 
