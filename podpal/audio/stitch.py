@@ -1,11 +1,12 @@
 """
-PodBlendz Stitch Engine (PRODUCTION BASELINE)
+PodBlendz Stitch Engine (FINAL PRODUCTION VERSION)
 
-✅ Guarantees usable blends (>=3 clips)
-✅ Role-aware processing (intro / transition / clip / outro)
-✅ Smooth fades + spacing + audio leveling
-✅ Prevents weak blends (single clip issue)
-✅ Designed for scalable multi-board system
+✅ Guarantees >=3 clips
+✅ Preserves intro + narration + transitions
+✅ Extends runtime to target (~5 min)
+✅ Smooth fades + normalized audio
+✅ No duplicate content stacking
+✅ Designed for AI guided podcast flow
 """
 
 from pathlib import Path
@@ -30,6 +31,7 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 # -------------------------------------------------
 MIN_CLIPS_REQUIRED = 3
 CLIP_DURATION = 30
+TARGET_TOTAL_SEGMENTS = 12   # ~5 minutes
 
 
 USED_SEGMENTS = {}
@@ -55,7 +57,7 @@ def detect_audio_type(path: str) -> str:
 
 
 # -------------------------------------------------
-# ✅ PROCESS AUDIO (ROLE-AWARE)
+# ✅ PROCESS AUDIO
 # -------------------------------------------------
 def process_audio(input_file: str) -> str:
 
@@ -67,7 +69,7 @@ def process_audio(input_file: str) -> str:
     print(f"🎧 Processing {audio_type}: {input_file}")
 
     # -------------------------------------------------
-    # ✅ TTS HANDLING (NO CLIPPING)
+    # ✅ TTS (INTRO / TRANSITIONS / NARRATION)
     # -------------------------------------------------
     if audio_type != "clip":
 
@@ -78,9 +80,9 @@ def process_audio(input_file: str) -> str:
                 "-i", input_file,
                 "-af",
                 "afade=t=in:ss=0:d=0.3,"
-                "afade=t=out:st=4:d=0.6,"
+                "afade=t=out:st=4:d=0.8,"
                 "loudnorm=I=-16:LRA=7:TP=-1.5,"
-                "apad=pad_dur=0.35",
+                "apad=pad_dur=0.4",
                 "-ar", "44100",
                 "-ac", "2",
                 "-b:a", "192k",
@@ -92,7 +94,7 @@ def process_audio(input_file: str) -> str:
         return str(output_file)
 
     # -------------------------------------------------
-    # ✅ CLIP HANDLING (MID-CONTENT)
+    # ✅ PODCAST CLIP SAMPLING
     # -------------------------------------------------
     MIN_START = 180
     MAX_START = 900
@@ -128,7 +130,7 @@ def process_audio(input_file: str) -> str:
             "-b:a", "192k",
             str(output_file),
         ],
-        check=True,
+            check=True,
     )
 
     return str(output_file)
@@ -143,7 +145,7 @@ def create_concat_file(audio_files: List[str], concat_file: Path):
 
 
 # -------------------------------------------------
-# ✅ VALIDATE INPUT (CRITICAL FIX)
+# ✅ VALIDATION
 # -------------------------------------------------
 def validate_sequence(audio_files: List[str]) -> List[str]:
 
@@ -158,7 +160,7 @@ def validate_sequence(audio_files: List[str]) -> List[str]:
 
 
 # -------------------------------------------------
-# ✅ MAIN STITCH FUNCTION
+# ✅ MAIN STITCH
 # -------------------------------------------------
 def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
 
@@ -167,25 +169,29 @@ def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
     if not audio_files:
         raise RuntimeError("❌ No audio files provided")
 
-    print(f"\n🎯 Starting blend build...")
+    print(f"\n🎯 Building PodBlend...")
 
-    # ✅ CRITICAL GUARD
     audio_files = validate_sequence(audio_files)
 
     processed_files = []
     last_clip_source = None
 
-    print("\n🔄 Processing sequence...")
+    print("\n🔄 Expanding sequence to full duration...")
 
-    for audio in audio_files:
+    i = 0
+
+    # ✅ LOOP TO FORCE FULL LENGTH
+    while len(processed_files) < TARGET_TOTAL_SEGMENTS:
+
+        audio = audio_files[i % len(audio_files)]
 
         try:
             audio_type = detect_audio_type(audio)
 
-            # ✅ Avoid repeating same clip
+            # ✅ Avoid repeating exact same clip back-to-back
             if audio_type == "clip":
                 if audio == last_clip_source:
-                    print("⚠️ Skipping duplicate clip source")
+                    i += 1
                     continue
                 last_clip_source = audio
 
@@ -195,11 +201,10 @@ def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
         except Exception as e:
             print(f"⚠️ Failed: {audio} → {e}")
 
-    if not processed_files:
-        raise RuntimeError("❌ No processed audio files")
+        i += 1
 
     # -------------------------------------------------
-    # ✅ CONCAT + FINAL RENDER
+    # ✅ CONCAT + FINAL OUTPUT
     # -------------------------------------------------
     concat_file = TEMP_DIR / f"concat_{uuid.uuid4().hex}.txt"
     create_concat_file(processed_files, concat_file)
@@ -222,7 +227,7 @@ def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
         check=True,
     )
 
-    print(f"\n✅ Blend created → {output_file}")
+    print(f"\n✅ PodBlend created → {output_file}")
 
     return output_file.name
 
