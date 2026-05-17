@@ -43,7 +43,7 @@ def select_podcasters(priority: str = "high") -> List[Dict]:
 
     for topic, pod in iter_ingestible_podcasters():
 
-        if pod.get("ingest_priority") == priority:
+        if pod.get("ingest_priority", "high") == priority:
             selected.append(pod)
 
     print(f"\n✅ Selected {len(selected)} {priority}-priority podcasters")
