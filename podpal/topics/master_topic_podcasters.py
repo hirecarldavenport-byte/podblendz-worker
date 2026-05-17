@@ -4,10 +4,8 @@ Master Topic Podcasters
 
 Canonical editorial registry of podcasters grouped by master topic.
 
-This file is AUTHORITATIVE:
-- All ingestion eligibility flows from here
-- media_access governs ingestion
-- only DIRECT audio feeds should run through pipeline
+✅ AUTHORITATIVE SOURCE OF INGESTION
+✅ Only direct + stable RSS feeds are ingestible
 """
 
 from typing import Dict, List, Optional, TypedDict
@@ -39,11 +37,11 @@ class CanonicalPodcaster(TypedDict):
 TOP_PODCASTERS_BY_MASTER_TOPIC: Dict[str, List[CanonicalPodcaster]] = {
 
     # =================================================
-    # 🧠 CORE BLENDZ FOUNDATION (HIGH SIGNAL)
+    # 🧠 CORE BLENDZ FOUNDATION
     # =================================================
     "core_blendz": [
 
-        # ✅ Already working
+        # ✅ WORKING
         {
             "id": "econtalk",
             "name": "EconTalk",
@@ -55,49 +53,49 @@ TOP_PODCASTERS_BY_MASTER_TOPIC: Dict[str, List[CanonicalPodcaster]] = {
             "source_quality": "core",
         },
 
-        # ✅ Strong reasoning content
+        # ❌ Broken RSS (returns HTML)
         {
             "id": "knowledge_project",
             "name": "The Knowledge Project",
-            "ingestible": True,
+            "ingestible": False,
             "primary_topic": "education_learning",
             "allow_cross_topic": True,
             "feed_url": "https://feeds.simplecast.com/ClmzXJj7",
-            "media_access": "direct",
-            "source_quality": "core",
+            "media_access": "blocked",
+            "source_quality": "experimental",
         },
 
         {
             "id": "invest_like_the_best",
             "name": "Invest Like the Best",
-            "ingestible": True,
+            "ingestible": False,
             "primary_topic": "finance",
             "allow_cross_topic": True,
             "feed_url": "https://feeds.simplecast.com/4T39_jAj",
-            "media_access": "direct",
-            "source_quality": "core",
+            "media_access": "blocked",
+            "source_quality": "experimental",
         },
 
         {
             "id": "acquired",
             "name": "Acquired",
-            "ingestible": True,
+            "ingestible": False,
             "primary_topic": "business_strategy",
             "allow_cross_topic": True,
             "feed_url": "https://feeds.simplecast.com/i2yC1nFQ",
-            "media_access": "direct",
-            "source_quality": "core",
+            "media_access": "blocked",
+            "source_quality": "experimental",
         },
 
         {
             "id": "my_first_million",
             "name": "My First Million",
-            "ingestible": True,
+            "ingestible": False,
             "primary_topic": "business",
             "allow_cross_topic": True,
             "feed_url": "https://feeds.simplecast.com/0M0F0QSn",
-            "media_access": "direct",
-            "source_quality": "core",
+            "media_access": "blocked",
+            "source_quality": "experimental",
         },
     ],
 
@@ -107,6 +105,7 @@ TOP_PODCASTERS_BY_MASTER_TOPIC: Dict[str, List[CanonicalPodcaster]] = {
     # =================================================
     "science_general": [
 
+        # ✅ WORKING
         {
             "id": "huberman_lab",
             "name": "Huberman Lab Podcast",
@@ -118,37 +117,36 @@ TOP_PODCASTERS_BY_MASTER_TOPIC: Dict[str, List[CanonicalPodcaster]] = {
             "source_quality": "core",
         },
 
+        # ❌ Broken RSS
         {
             "id": "big_biology",
             "name": "Big Biology",
-            "ingestible": True,
+            "ingestible": False,
             "primary_topic": "science_general",
             "allow_cross_topic": True,
             "feed_url": "https://feeds.simplecast.com/XFJZy2r3",
-            "media_access": "direct",
-            "source_quality": "core",
+            "media_access": "blocked",
+            "source_quality": "experimental",
         },
     ],
 
 
     # =================================================
-    # 💰 FINANCE (INCLUDING CULTURAL RELEVANCE)
+    # 💰 FINANCE
     # =================================================
     "finance": [
 
-        # ✅ culturally relevant
         {
             "id": "earn_your_leisure",
             "name": "Earn Your Leisure",
-            "ingestible": True,
+            "ingestible": False,
             "primary_topic": "finance",
             "allow_cross_topic": True,
             "feed_url": None,
-            "media_access": "direct",  # route-check required
+            "media_access": "blocked",
             "source_quality": "experimental",
         },
 
-        # ❌ blocked due to redirects
         {
             "id": "freakonomics_radio",
             "name": "Freakonomics Radio",
@@ -167,10 +165,10 @@ TOP_PODCASTERS_BY_MASTER_TOPIC: Dict[str, List[CanonicalPodcaster]] = {
     # =================================================
     "education_learning": [
 
-        # ✅ public domain philosophy
+        # ✅ FIXED NAME + WORKING FEED
         {
-            "id": "as_a_man_thinketh",
-            "name": "As a Man Thinketh (LibriVox)",
+            "id": "as_a_man_readeth",
+            "name": "As a Man Readeth (LibriVox)",
             "ingestible": True,
             "primary_topic": "education_learning",
             "allow_cross_topic": True,
@@ -179,7 +177,6 @@ TOP_PODCASTERS_BY_MASTER_TOPIC: Dict[str, List[CanonicalPodcaster]] = {
             "source_quality": "core",
         },
 
-        # ⚠️ verify first (NPR systems vary)
         {
             "id": "hidden_brain",
             "name": "Hidden Brain",
@@ -194,7 +191,7 @@ TOP_PODCASTERS_BY_MASTER_TOPIC: Dict[str, List[CanonicalPodcaster]] = {
 
 
     # =================================================
-    # 🎭 CULTURE / IDEAS (NON-INGEST BUT IMPORTANT)
+    # 🎭 CULTURE / IDEAS
     # =================================================
     "media_culture": [
 
@@ -222,8 +219,10 @@ def iter_ingestible_podcasters():
     for topic, podcasters in TOP_PODCASTERS_BY_MASTER_TOPIC.items():
         for podcaster in podcasters:
             if (
-                podcaster.get("ingestible") and
-                podcaster.get("media_access") == "direct" and
-                podcaster.get("feed_url")
+                podcaster.get("ingestible")
+                and podcaster.get("media_access") == "direct"
+                and podcaster.get("feed_url")
             ):
                 yield topic, podcaster
+
+
