@@ -3,7 +3,7 @@ blend_engine.py
 
 ✅ Builds blended podcast experiences from themes
 ✅ Uses clusters.json + themes.json
-✅ Selects segments from clusters
+✅ Smart narrative-aware clip selection
 ✅ Produces structured sequence (intro → transitions → clips)
 """
 
@@ -38,16 +38,14 @@ def select_theme(themes: List[Dict[str, Any]], index: Optional[int] = None) -> D
     if not themes:
         raise ValueError("No themes available")
 
-    # ✅ explicit selection
     if index is not None and 0 <= index < len(themes):
         return themes[index]
 
-    # ✅ fallback → random
     return random.choice(themes)
 
 
 # -------------------------------------------------
-# ✅ FIND CLUSTER BY ID
+# ✅ FIND CLUSTER
 # -------------------------------------------------
 def find_cluster(clusters: List[Dict[str, Any]], theme: Dict[str, Any]) -> Dict[str, Any]:
 
@@ -63,22 +61,78 @@ def find_cluster(clusters: List[Dict[str, Any]], theme: Dict[str, Any]) -> Dict[
 
 
 # -------------------------------------------------
-# ✅ BUILD SEGMENTS FROM CLUSTER
+# ✅ SMART AUDIO PLAN (KEY UPGRADE)
 # -------------------------------------------------
 def build_audio_plan(cluster: Dict[str, Any], max_segments: int = 3) -> List[Dict[str, Any]]:
 
-    segments: List[Dict[str, Any]] = []
+    items = cluster.get("items", [])
 
-    texts = cluster.get("sample_texts", [])
+    if not items:
+        return []
 
-    for text in texts[:max_segments]:
-        segments.append({
-            "text": text,
-            "podcast": None,   # placeholder (next phase adds mapping)
-            "episode": None,
-        })
+    # ✅ 1. Remove duplicate texts
+    seen = set()
+    unique_items = []
 
-    return segments
+    for item in items:
+        text = item.get("text", "").strip()
+
+        if text and text not in seen:
+            seen.add(text)
+            unique_items.append(item)
+
+    # ✅ If already small, return early
+    if len(unique_items) <= max_segments:
+        return unique_items
+
+    # ✅ 2. Diversify by podcast
+    by_podcast = {}
+    for item in unique_items:
+        p = item.get("podcast", "unknown")
+        by_podcast.setdefault(p, []).append(item)
+
+    diversified = []
+    for group in by_podcast.values():
+        diversified.append(group[0])  # take one per source
+
+    # ✅ fallback if not enough diversity
+    if len(diversified) < max_segments:
+        diversified = unique_items
+
+    # ✅ 3. sort by text length (proxy for depth)
+    diversified.sort(key=lambda x: len(x.get("text", "")))
+
+    # ✅ 4. build story arc
+    selected = []
+
+    # beginning → simplest
+    selected.append(diversified[0])
+
+    # middle → moderate complexity
+    if len(diversified) > 2:
+        selected.append(diversified[len(diversified) // 2])
+    else:
+        selected.append(diversified[1])
+
+    # ending → most detailed
+    selected.append(diversified[-1])
+
+    return selected[:max_segments]
+
+
+# -------------------------------------------------
+# ✅ TRANSITIONS (VARIATION)
+# -------------------------------------------------
+TRANSITIONS = [
+    "Building on that idea, we continue.",
+    "Taking that further, we explore another perspective.",
+    "From a different angle, this idea expands.",
+    "Let’s go deeper into that concept.",
+]
+
+
+def get_transition() -> str:
+    return random.choice(TRANSITIONS)
 
 
 # -------------------------------------------------
@@ -100,7 +154,7 @@ def build_narrative(theme: str, segments: List[Dict[str, Any]]) -> List[Dict[str
         if i > 0:
             sequence.append({
                 "type": "transition",
-                "text": "Building on that idea, we continue."
+                "text": get_transition()
             })
 
         sequence.append({
@@ -112,7 +166,7 @@ def build_narrative(theme: str, segments: List[Dict[str, Any]]) -> List[Dict[str
 
 
 # -------------------------------------------------
-# ✅ MAIN ENTRY
+# ✅ MAIN ENGINE
 # -------------------------------------------------
 def build_blend(theme_index: Optional[int] = None) -> List[Dict[str, Any]]:
 
@@ -144,4 +198,5 @@ if __name__ == "__main__":
 
     for step in result:
         print(step)
+
 
