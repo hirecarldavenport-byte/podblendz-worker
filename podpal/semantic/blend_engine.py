@@ -1,11 +1,9 @@
 """
-blend_engine.py
-
-✅ Builds blended podcast experiences from themes
+blend_engine Builds blended podcast experiences from themesblend_engine.py
 ✅ Uses clusters.json + themes.json
 ✅ Story-aware clip selection (progression-based)
-✅ Context-aware transitions (uses clip meaning)
-✅ Produces structured sequence for audio rendering
+✅ Context-aware transitions
+✅ ALWAYS returns usable segments (fallback safe)
 """
 
 import json
@@ -35,7 +33,6 @@ def load_themes() -> List[Dict[str, Any]]:
 # ✅ SELECT THEME
 # -------------------------------------------------
 def select_theme(themes: List[Dict[str, Any]], index: Optional[int] = None) -> Dict[str, Any]:
-
     if not themes:
         raise ValueError("No themes available")
 
@@ -49,7 +46,6 @@ def select_theme(themes: List[Dict[str, Any]], index: Optional[int] = None) -> D
 # ✅ FIND CLUSTER
 # -------------------------------------------------
 def find_cluster(clusters: List[Dict[str, Any]], theme: Dict[str, Any]) -> Dict[str, Any]:
-
     cluster_id = theme.get("cluster_id")
 
     if cluster_id is None:
@@ -62,16 +58,15 @@ def find_cluster(clusters: List[Dict[str, Any]], theme: Dict[str, Any]) -> Dict[
 
 
 # -------------------------------------------------
-# ✅ SMART AUDIO PLAN (STORY-DRIVEN)
+# ✅ SMART AUDIO PLAN (FIXED)
 # -------------------------------------------------
 def build_audio_plan(cluster: Dict[str, Any], max_segments: int = 3) -> List[Dict[str, Any]]:
-
     items = cluster.get("items", [])
 
     if not items:
         return []
 
-    # ✅ 1. Remove duplicate text
+    # ✅ 1. Remove duplicates
     seen = set()
     unique_items = []
 
@@ -81,34 +76,38 @@ def build_audio_plan(cluster: Dict[str, Any], max_segments: int = 3) -> List[Dic
             seen.add(text)
             unique_items.append(item)
 
-    if len(unique_items) <= max_segments:
-        return unique_items
+    if not unique_items:
+        return []
 
-    # ✅ 2. Diversify sources
+    # ✅ 2. Sort by length (short → long progression)
+    unique_items.sort(key=lambda x: len(x.get("text", "")))
+
+    # ✅ 3. Try to diversify (but DO NOT fail if not possible)
     by_source = {}
     for item in unique_items:
         source = item.get("podcast", "unknown")
         by_source.setdefault(source, []).append(item)
 
-    diversified = [items[0] for items in by_source.values()]
+    diversified = [group[0] for group in by_source.values()]
 
+    # ✅ 4. FALLBACK (CRITICAL FIX)
+    # If we don't have enough diversity, just use all items
     if len(diversified) < max_segments:
-        diversified = unique_items
+        selected_pool = unique_items
+    else:
+        selected_pool = diversified
 
-    # ✅ 3. Sort by length (proxy for depth progression)
-    diversified.sort(key=lambda x: len(x.get("text", "")))
+    # ✅ 5. Ensure we always return something
+    if len(selected_pool) <= max_segments:
+        return selected_pool
 
-    # ✅ 4. Build narrative arc (simple → mid → deep)
+    # ✅ 6. Build simple narrative arc
     selected = []
 
-    selected.append(diversified[0])  # introduction idea
-
-    if len(diversified) > 2:
-        selected.append(diversified[len(diversified) // 2])
-    else:
-        selected.append(diversified[1])
-
-    selected.append(diversified[-1])  # most complex
+    selected.append(selected_pool[0])                        # intro
+    mid_index = len(selected_pool) // 2
+    selected.append(selected_pool[mid_index])                # middle
+    selected.append(selected_pool[-1])                       # deepest
 
     return selected[:max_segments]
 
@@ -117,8 +116,6 @@ def build_audio_plan(cluster: Dict[str, Any], max_segments: int = 3) -> List[Dic
 # ✅ CONTEXT-AWARE TRANSITION
 # -------------------------------------------------
 def generate_context_transition(prev_text: str, next_text: str) -> str:
-
-    prev_snippet = prev_text[:80].strip()
     next_snippet = next_text[:80].strip()
 
     connectors = [
@@ -126,6 +123,7 @@ def generate_context_transition(prev_text: str, next_text: str) -> str:
         "Taking that further,",
         "From another perspective,",
         "Continuing this line of thinking,",
+        "Expanding on this concept,",
     ]
 
     connector = random.choice(connectors)
@@ -137,7 +135,6 @@ def generate_context_transition(prev_text: str, next_text: str) -> str:
 # ✅ BUILD NARRATIVE
 # -------------------------------------------------
 def build_narrative(theme: str, segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-
     sequence: List[Dict[str, Any]] = []
 
     # ✅ INTRO
@@ -146,7 +143,7 @@ def build_narrative(theme: str, segments: List[Dict[str, Any]]) -> List[Dict[str
         "text": f"Welcome to PodBlendz. Today we explore {theme}."
     })
 
-    # ✅ BODY WITH CONTEXT TRANSITIONS
+    # ✅ BODY
     for i, seg in enumerate(segments):
 
         if i > 0:
@@ -170,7 +167,6 @@ def build_narrative(theme: str, segments: List[Dict[str, Any]]) -> List[Dict[str
 # ✅ MAIN ENGINE
 # -------------------------------------------------
 def build_blend(theme_index: Optional[int] = None) -> List[Dict[str, Any]]:
-
     print("\n🎧 BUILDING SEMANTIC BLEND\n")
 
     clusters = load_clusters()
@@ -186,19 +182,25 @@ def build_blend(theme_index: Optional[int] = None) -> List[Dict[str, Any]]:
 
     print(f"✅ Selected {len(segments)} segments")
 
+    if not segments:
+        print("⚠️ No segments found — returning empty narrative")
+        return []
+
     sequence = build_narrative(theme.get("theme", "this topic"), segments)
 
     return sequence
 
 
 # -------------------------------------------------
-# ✅ TEST ENTRY POINT
+# ✅ TEST
 # -------------------------------------------------
 if __name__ == "__main__":
     result = build_blend()
 
     for step in result:
         print(step)
+
+
 
 
 
