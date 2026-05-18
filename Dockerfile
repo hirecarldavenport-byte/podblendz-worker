@@ -14,4 +14,4 @@ RUN mkdir -p /app/ui/assets
 
 ENV PYTHONUNBUFFERED=1
 
-CMD ["uvicorn", "podpal.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn podpal.main:app --host 0.0.0.0 --port $PORT"]
