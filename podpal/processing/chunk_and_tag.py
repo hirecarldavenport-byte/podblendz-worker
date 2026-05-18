@@ -68,7 +68,7 @@ def build_chunks(segments):
 
     for seg in segments:
 
-        text = seg.get("text", "").strip()
+        text = (seg.get("text") or "").strip()
 
         if not text or not is_useful_segment(text):
             continue
@@ -76,7 +76,7 @@ def build_chunks(segments):
         current.append(seg)
         word_count += len(text.split())
 
-        # ✅ chunk size target
+        # ✅ chunk sizing
         if word_count >= 80:
             chunks.append(current)
             current = []
@@ -99,26 +99,28 @@ def process_transcript(path: Path):
         data = json.load(f)
 
     segments = data.get("segments", [])
-    podcast_id = data.get("podcast_id")
-    episode_id = data.get("episode_id")
+    podcast_id = data.get("podcast_id") or "unknown_podcast"
+    episode_id = data.get("episode_id") or path.stem
 
+    # ✅ CRITICAL FIX: auto-inject audio_path if missing
     audio_path = data.get("audio_path")
 
     if not audio_path:
-        print(f"⚠️ Skipping {path.name} (missing audio_path)")
-        return
+        audio_path = f"audio/raw/{episode_id}.mp3"
+        print(f"⚠️ Injected audio_path for {path.name}")
 
     if not segments:
         print(f"⚠️ Skipping {path.name} (no segments)")
         return
 
     chunks = build_chunks(segments)
-
     processed = []
 
     for chunk in chunks:
 
-        full_text = " ".join(s.get("text", "") for s in chunk).strip()
+        full_text = " ".join(
+            (s.get("text") or "") for s in chunk
+        ).strip()
 
         if not full_text:
             continue
@@ -160,7 +162,7 @@ def process_transcript(path: Path):
 
 
 # -------------------------------------------------
-# ✅ RUN EVERYTHING (FIXED)
+# ✅ RUN EVERYTHING (FINAL)
 # -------------------------------------------------
 if __name__ == "__main__":
 
@@ -169,7 +171,6 @@ if __name__ == "__main__":
     if not TRANSCRIPTS_DIR.exists():
         raise FileNotFoundError("❌ transcripts/ folder not found")
 
-    # ✅ THIS IS THE CRITICAL FIX
     files = list(TRANSCRIPTS_DIR.rglob("*.json"))
 
     if not files:
@@ -181,3 +182,4 @@ if __name__ == "__main__":
             process_transcript(file)
 
     print("\n✅ CHUNKING COMPLETE\n")
+
