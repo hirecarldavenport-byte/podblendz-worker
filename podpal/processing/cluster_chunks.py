@@ -1,5 +1,7 @@
 """
-Cluster Chunks ideas across podcastsCluster Chunks
+cluster_chunks.py
+
+✅ Groups similar ideas across podcasts
 ✅ Filters low-quality chunks
 ✅ Preserves full audio metadata (CRITICAL)
 ✅ Produces clusters ready for real audio blending
@@ -20,9 +22,13 @@ model = SentenceTransformer("all-MiniLM-L6-v2")
 
 
 # =========================
-# LOAD CHUNKS (UPDATED)
+# ✅ LOAD CHUNKS
 # =========================
 def load_all_chunks():
+
+    if not INPUT_DIR.exists():
+        raise FileNotFoundError("❌ processed_chunks/ directory not found")
+
     all_chunks = []
 
     for podcast_dir in INPUT_DIR.iterdir():
@@ -35,40 +41,70 @@ def load_all_chunks():
 
                 for chunk in data.get("chunks", []):
 
-                    # ✅ IMPORTANT: preserve full metadata
+                    text = chunk.get("text")
+                    audio_path = chunk.get("audio_path")
+                    start = chunk.get("start")
+                    end = chunk.get("end")
+
+                    # ✅ STRICT VALIDATION (CRITICAL)
+                    if (
+                        not text
+                        or not audio_path
+                        or start is None
+                        or end is None
+                    ):
+                        continue
+
                     all_chunks.append({
                         "podcast": data.get("podcast_id"),
                         "episode": data.get("episode_id"),
-                        "text": chunk.get("text"),
+                        "text": text.strip(),
                         "tag": chunk.get("tag"),
 
-                        # ✅ NEW (REQUIRED FOR AUDIO CLIPPING)
-                        "audio_path": chunk.get("audio_path"),
-                        "start": chunk.get("start"),
-                        "end": chunk.get("end"),
+                        # ✅ REQUIRED FIELDS
+                        "audio_path": audio_path,
+                        "start": float(start),
+                        "end": float(end),
                     })
 
     return all_chunks
 
 
 # =========================
-# FILTER HIGH-SIGNAL CHUNKS
+# ✅ FILTER HIGH-SIGNAL CHUNKS
 # =========================
 def filter_chunks(chunks):
-    return [
-        c for c in chunks
-        if c.get("tag") in ("insight", "reflection", "example")
-        and c.get("text")
-        and len(c["text"].split()) > 20
-    ]
+
+    filtered = []
+
+    for c in chunks:
+
+        text = c.get("text", "")
+        tag = c.get("tag")
+
+        if not text:
+            continue
+
+        if tag not in ("insight", "reflection", "example"):
+            continue
+
+        if len(text.split()) <= 20:
+            continue
+
+        filtered.append(c)
+
+    return filtered
 
 
 # =========================
-# CLUSTERING
+# ✅ CLUSTERING LOGIC
 # =========================
 def cluster_chunks(chunks, threshold=0.45):
 
-    # ✅ shorten text for embeddings
+    if not chunks:
+        print("⚠️ No chunks available for clustering")
+        return []
+
     texts = [c["text"][:300] for c in chunks]
 
     embeddings = model.encode(texts, convert_to_numpy=True)
@@ -94,7 +130,7 @@ def cluster_chunks(chunks, threshold=0.45):
                 cluster.append(chunks[j])
                 visited.add(j)
 
-        # ✅ only meaningful clusters
+        # ✅ keep only meaningful groups
         if len(cluster) >= 3:
             clusters.append(cluster)
 
@@ -102,7 +138,7 @@ def cluster_chunks(chunks, threshold=0.45):
 
 
 # =========================
-# SAVE CLUSTERS (UPDATED)
+# ✅ SAVE CLUSTERS
 # =========================
 def save_clusters(clusters):
 
@@ -113,39 +149,41 @@ def save_clusters(clusters):
         output.append({
             "cluster_id": idx,
 
-            # ✅ keep full metadata (CRITICAL)
+            # ✅ FULL METADATA (CRITICAL)
             "items": cluster,
 
             "cluster_size": len(cluster),
             "sources": list({c["podcast"] for c in cluster}),
 
-            # ✅ keep previews (for debugging)
+            # ✅ debugging previews
             "sample_texts": [c["text"] for c in cluster[:3]],
         })
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2)
 
-    print(f"[CLUSTER] Saved to {OUTPUT_FILE}")
+    print(f"✅ [CLUSTER] Saved to {OUTPUT_FILE}")
 
 
 # =========================
-# MAIN
+# ✅ MAIN RUNNER
 # =========================
 def run():
 
-    print("[CLUSTER] Loading chunks...")
+    print("\n🚀 STARTING CLUSTERING PIPELINE\n")
 
     chunks = load_all_chunks()
-    print(f"[CLUSTER] Loaded {len(chunks)} raw chunks")
+    print(f"✅ Loaded {len(chunks)} valid chunks")
 
     chunks = filter_chunks(chunks)
-    print(f"[CLUSTER] Filtered to {len(chunks)} high-signal chunks")
+    print(f"✅ Filtered to {len(chunks)} high-signal chunks")
 
     clusters = cluster_chunks(chunks)
-    print(f"[CLUSTER] Created {len(clusters)} clusters")
+    print(f"✅ Created {len(clusters)} clusters")
 
     save_clusters(clusters)
+
+    print("\n✅ CLUSTERING COMPLETE\n")
 
 
 if __name__ == "__main__":
