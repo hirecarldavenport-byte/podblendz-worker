@@ -1,5 +1,38 @@
 """
-Improved Chunk:Improved Chunking + Tagging
+Improved Chunking + Tagging
+
+✅ Removes podcast intros
+✅ Creates idea-based chunks
+✅ Adds tags (insight, reflection, example)
+✅ Preserves audio_path + timestamps (CRITICAL)
+"""
+
+import json
+from pathlib import Path
+
+OUTPUT_DIR = Path("processed_chunks")
+
+
+# =========================
+# FILTER (REMOVE INTRO NOISE)
+# =========================
+def is_useful_segment(text: str) -> bool:
+    text_lower = text.lower()
+
+    bad_phrases = [
+        "welcome to",
+        "this is",
+        "i'm your host",
+        "today's episode",
+    ]
+
+    return not any(phrase in text_lower for phrase in bad_phrases)
+
+
+# =========================
+# TAGGING
+# =========================
+def tag_text(text: str) -> str:
     t = text.lower()
 
     if any(x in t for x in ["for example", "for instance", "example"]):
@@ -109,37 +142,3 @@ def process_transcript(transcript_path: str):
     print(f"[CHUNK] Saved: {out_path}")
 
     return str(out_path)
-
-
-✅ Removes podcast intros
-✅ Creates idea-based chunks
-✅ Adds tags (insight, reflection, example)
-✅ Preserves audio_path + timestamps (CRITICAL)
-"""
-
-import json
-from pathlib import Path
-
-OUTPUT_DIR = Path("processed_chunks")
-
-
-# =========================
-# FILTER (REMOVE INTRO NOISE)
-# =========================
-def is_useful_segment(text: str) -> bool:
-    text_lower = text.lower()
-
-    bad_phrases = [
-        "welcome to",
-        "this is",
-        "i'm your host",
-        "today's episode",
-    ]
-
-    return not any(phrase in text_lower for phrase in bad_phrases)
-
-
-# =========================
-# TAGGING
-# =========================
-
