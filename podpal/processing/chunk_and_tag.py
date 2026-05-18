@@ -1,53 +1,14 @@
 """
-Improved Chunking + Tagging
-
-✅ Removes podcast intros
-✅ Creates idea-based chunks
-✅ Better tagging (reflection vs insight vs example)
-"""
-
-import json
-from pathlib import Path
-
-OUTPUT_DIR = Path("processed_chunks")
-
-
-# =========================
-# FILTER (REMOVE INTRO NOISE)
-# =========================
-
-def is_useful_segment(text: str) -> bool:
-    text_lower = text.lower()
-
-    bad_phrases = [
-        "welcome to",
-        "this is",
-        "i'm your host",
-        "conversations for the curious",
-        "today's episode",
-    ]
-
-    for phrase in bad_phrases:
-        if phrase in text_lower:
-            return False
-
-    return True
-
-
-# =========================
-# TAGGING (UPGRADED)
-# =========================
-
-def tag_text(text: str) -> str:
+Improved Chunk:Improved Chunking + Tagging
     t = text.lower()
 
-    if "example" in t or "for instance" in t or "for example" in t:
+    if any(x in t for x in ["for example", "for instance", "example"]):
         return "example"
 
-    if any(w in t for w in ["why", "how", "what if"]):
+    if any(x in t for x in ["why", "how", "what if"]):
         return "reflection"
 
-    if any(w in t for w in ["the idea", "this means", "this suggests"]):
+    if any(x in t for x in ["this means", "this suggests", "the idea is"]):
         return "insight"
 
     if len(t.split()) < 15:
@@ -57,9 +18,8 @@ def tag_text(text: str) -> str:
 
 
 # =========================
-# CHUNKING (BETTER LOGIC)
+# CHUNKING LOGIC
 # =========================
-
 def build_chunks(segments):
     chunks = []
     current = []
@@ -71,12 +31,9 @@ def build_chunks(segments):
         if not is_useful_segment(text):
             continue
 
-        words = text.split()
-
         current.append(seg)
-        word_count += len(words)
+        word_count += len(text.split())
 
-        # ✅ better threshold
         if word_count >= 80:
             chunks.append(current)
             current = []
@@ -91,7 +48,6 @@ def build_chunks(segments):
 # =========================
 # MAIN PROCESS
 # =========================
-
 def process_transcript(transcript_path: str):
 
     print(f"[CHUNK] Processing: {transcript_path}")
@@ -103,18 +59,39 @@ def process_transcript(transcript_path: str):
     podcast_id = data.get("podcast_id")
     episode_id = data.get("episode_id")
 
-    chunks = build_chunks(segments)
+    # ✅ CRITICAL: MUST exist
+    audio_path = data.get("audio_path")
 
+    if not audio_path:
+        raise ValueError(
+            "❌ Missing audio_path in transcript file. Fix transcription step."
+        )
+
+    chunks = build_chunks(segments)
     processed = []
 
     for chunk in chunks:
-        full_text = " ".join(s.get("text", "") for s in chunk)
+
+        full_text = " ".join(s.get("text", "") for s in chunk).strip()
+
+        if not full_text:
+            continue
+
+        start = chunk[0].get("start")
+        end = chunk[-1].get("end")
+
+        # ✅ VALIDATION
+        if start is None or end is None:
+            continue
 
         processed.append({
-            "text": full_text.strip(),
+            "text": full_text,
             "tag": tag_text(full_text),
-            "start": chunk[0]["start"],
-            "end": chunk[-1]["end"],
+
+            # ✅ REQUIRED FOR AUDIO CLIPPING
+            "audio_path": audio_path,
+            "start": float(start),
+            "end": float(end),
         })
 
     out_dir = OUTPUT_DIR / podcast_id
@@ -132,3 +109,37 @@ def process_transcript(transcript_path: str):
     print(f"[CHUNK] Saved: {out_path}")
 
     return str(out_path)
+
+
+✅ Removes podcast intros
+✅ Creates idea-based chunks
+✅ Adds tags (insight, reflection, example)
+✅ Preserves audio_path + timestamps (CRITICAL)
+"""
+
+import json
+from pathlib import Path
+
+OUTPUT_DIR = Path("processed_chunks")
+
+
+# =========================
+# FILTER (REMOVE INTRO NOISE)
+# =========================
+def is_useful_segment(text: str) -> bool:
+    text_lower = text.lower()
+
+    bad_phrases = [
+        "welcome to",
+        "this is",
+        "i'm your host",
+        "today's episode",
+    ]
+
+    return not any(phrase in text_lower for phrase in bad_phrases)
+
+
+# =========================
+# TAGGING
+# =========================
+
