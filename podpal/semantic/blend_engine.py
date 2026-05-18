@@ -3,8 +3,9 @@ blend_engine.py
 
 ✅ Builds blended podcast experiences from themes
 ✅ Uses clusters.json + themes.json
-✅ Smart narrative-aware clip selection
-✅ Produces structured sequence (intro → transitions → clips)
+✅ Story-aware clip selection (progression-based)
+✅ Context-aware transitions (uses clip meaning)
+✅ Produces structured sequence for audio rendering
 """
 
 import json
@@ -61,7 +62,7 @@ def find_cluster(clusters: List[Dict[str, Any]], theme: Dict[str, Any]) -> Dict[
 
 
 # -------------------------------------------------
-# ✅ SMART AUDIO PLAN (KEY UPGRADE)
+# ✅ SMART AUDIO PLAN (STORY-DRIVEN)
 # -------------------------------------------------
 def build_audio_plan(cluster: Dict[str, Any], max_segments: int = 3) -> List[Dict[str, Any]]:
 
@@ -70,69 +71,66 @@ def build_audio_plan(cluster: Dict[str, Any], max_segments: int = 3) -> List[Dic
     if not items:
         return []
 
-    # ✅ 1. Remove duplicate texts
+    # ✅ 1. Remove duplicate text
     seen = set()
     unique_items = []
 
     for item in items:
         text = item.get("text", "").strip()
-
         if text and text not in seen:
             seen.add(text)
             unique_items.append(item)
 
-    # ✅ If already small, return early
     if len(unique_items) <= max_segments:
         return unique_items
 
-    # ✅ 2. Diversify by podcast
-    by_podcast = {}
+    # ✅ 2. Diversify sources
+    by_source = {}
     for item in unique_items:
-        p = item.get("podcast", "unknown")
-        by_podcast.setdefault(p, []).append(item)
+        source = item.get("podcast", "unknown")
+        by_source.setdefault(source, []).append(item)
 
-    diversified = []
-    for group in by_podcast.values():
-        diversified.append(group[0])  # take one per source
+    diversified = [items[0] for items in by_source.values()]
 
-    # ✅ fallback if not enough diversity
     if len(diversified) < max_segments:
         diversified = unique_items
 
-    # ✅ 3. sort by text length (proxy for depth)
+    # ✅ 3. Sort by length (proxy for depth progression)
     diversified.sort(key=lambda x: len(x.get("text", "")))
 
-    # ✅ 4. build story arc
+    # ✅ 4. Build narrative arc (simple → mid → deep)
     selected = []
 
-    # beginning → simplest
-    selected.append(diversified[0])
+    selected.append(diversified[0])  # introduction idea
 
-    # middle → moderate complexity
     if len(diversified) > 2:
         selected.append(diversified[len(diversified) // 2])
     else:
         selected.append(diversified[1])
 
-    # ending → most detailed
-    selected.append(diversified[-1])
+    selected.append(diversified[-1])  # most complex
 
     return selected[:max_segments]
 
 
 # -------------------------------------------------
-# ✅ TRANSITIONS (VARIATION)
+# ✅ CONTEXT-AWARE TRANSITION
 # -------------------------------------------------
-TRANSITIONS = [
-    "Building on that idea, we continue.",
-    "Taking that further, we explore another perspective.",
-    "From a different angle, this idea expands.",
-    "Let’s go deeper into that concept.",
-]
+def generate_context_transition(prev_text: str, next_text: str) -> str:
 
+    prev_snippet = prev_text[:80].strip()
+    next_snippet = next_text[:80].strip()
 
-def get_transition() -> str:
-    return random.choice(TRANSITIONS)
+    connectors = [
+        "Building on that idea,",
+        "Taking that further,",
+        "From another perspective,",
+        "Continuing this line of thinking,",
+    ]
+
+    connector = random.choice(connectors)
+
+    return f"{connector} {next_snippet}"
 
 
 # -------------------------------------------------
@@ -148,13 +146,16 @@ def build_narrative(theme: str, segments: List[Dict[str, Any]]) -> List[Dict[str
         "text": f"Welcome to PodBlendz. Today we explore {theme}."
     })
 
-    # ✅ BODY
+    # ✅ BODY WITH CONTEXT TRANSITIONS
     for i, seg in enumerate(segments):
 
         if i > 0:
+            prev_text = segments[i - 1].get("text", "")
+            next_text = seg.get("text", "")
+
             sequence.append({
                 "type": "transition",
-                "text": get_transition()
+                "text": generate_context_transition(prev_text, next_text)
             })
 
         sequence.append({
@@ -198,5 +199,6 @@ if __name__ == "__main__":
 
     for step in result:
         print(step)
+
 
 
