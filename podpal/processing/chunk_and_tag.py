@@ -5,6 +5,7 @@ chunk_and_tag.py
 ✅ Adds tagging (insight, reflection, example)
 ✅ Preserves audio_path + timestamps (CRITICAL)
 ✅ Filters intro noise
+✅ Recursively processes transcript folders
 ✅ Outputs data ready for clustering + blending
 """
 
@@ -75,7 +76,7 @@ def build_chunks(segments):
         current.append(seg)
         word_count += len(text.split())
 
-        # ✅ chunk threshold (~30–60 sec speech)
+        # ✅ chunk size target
         if word_count >= 80:
             chunks.append(current)
             current = []
@@ -92,7 +93,7 @@ def build_chunks(segments):
 # -------------------------------------------------
 def process_transcript(path: Path):
 
-    print(f"[CHUNK] Processing: {path.name}")
+    print(f"[CHUNK] Processing: {path}")
 
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -101,13 +102,15 @@ def process_transcript(path: Path):
     podcast_id = data.get("podcast_id")
     episode_id = data.get("episode_id")
 
-    # ✅ MUST EXIST (critical for audio system)
     audio_path = data.get("audio_path")
 
     if not audio_path:
-        raise ValueError(
-            f"❌ Missing audio_path in {path.name}. Fix transcription step."
-        )
+        print(f"⚠️ Skipping {path.name} (missing audio_path)")
+        return
+
+    if not segments:
+        print(f"⚠️ Skipping {path.name} (no segments)")
+        return
 
     chunks = build_chunks(segments)
 
@@ -123,7 +126,6 @@ def process_transcript(path: Path):
         start = chunk[0].get("start")
         end = chunk[-1].get("end")
 
-        # ✅ validate timestamps
         if start is None or end is None:
             continue
 
@@ -131,10 +133,8 @@ def process_transcript(path: Path):
             "text": full_text,
             "tag": tag_text(full_text),
 
-            # ✅ CRITICAL FOR AUDIO
+            # ✅ CRITICAL FIELDS
             "audio_path": audio_path,
-
-            # ✅ TIMESTAMPS
             "start": float(start),
             "end": float(end),
         })
@@ -160,7 +160,7 @@ def process_transcript(path: Path):
 
 
 # -------------------------------------------------
-# ✅ RUN ALL TRANSCRIPTS
+# ✅ RUN EVERYTHING (FIXED)
 # -------------------------------------------------
 if __name__ == "__main__":
 
@@ -169,11 +169,14 @@ if __name__ == "__main__":
     if not TRANSCRIPTS_DIR.exists():
         raise FileNotFoundError("❌ transcripts/ folder not found")
 
+    # ✅ THIS IS THE CRITICAL FIX
     files = list(TRANSCRIPTS_DIR.rglob("*.json"))
 
     if not files:
         print("⚠️ No transcript files found")
     else:
+        print(f"✅ Found {len(files)} transcript files\n")
+
         for file in files:
             process_transcript(file)
 
