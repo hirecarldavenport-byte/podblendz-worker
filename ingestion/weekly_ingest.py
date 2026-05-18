@@ -1,6 +1,6 @@
 """
 weekly_ingest.py
-
+print("🚨 RUNNING FILE:", __file__)
 ✅ Full pipeline:
 RSS → audio → transcription → chunking
 """
