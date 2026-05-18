@@ -1,9 +1,15 @@
-print(" FULL PIPELINE ACTIVE ")
-print("FULL PIPELINE ACTIVE pathlib import Path")
+"""
+weekly_ingest.py
+
+✅ Full pipeline:
+RSS → audio → transcription → chunking
+"""
+
+import sys
 from pathlib import Path
 import feedparser
 
-# ✅ Fix path
+# ✅ FIX PATH FIRST
 ROOT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT_DIR))
 
@@ -16,12 +22,13 @@ from podpal.ingestion.feed_utils import fetch_feed
 from podpal.transcription.transcribe import transcribe_audio
 from podpal.processing.chunk_and_tag import process_transcript
 
+
 MAX_EPISODES = 2
 
 
 def run_ingest():
 
-    print("\n=== STARTING FULL PIPELINE ===")
+    print("\n🚀 STARTING FULL PIPELINE\n")
 
     session = get_session()
 
@@ -31,6 +38,7 @@ def run_ingest():
 
         for podcaster in podcasters:
 
+            # ✅ FILTER
             if not podcaster.get("ingestible"):
                 continue
 
@@ -49,11 +57,11 @@ def run_ingest():
                 print("[WARN] Missing podcast:", podcast_id)
                 continue
 
-            print(f"[INGEST] {podcaster['name']}")
+            print(f"\n🎧 INGESTING: {podcaster['name']}")
 
             feed = fetch_feed(feed_url)
 
-            if not feed or not feed.entries:
+            if not feed or not getattr(feed, "entries", None):
                 print(f"[WARN] No entries for {podcaster['name']}")
                 continue
 
@@ -86,15 +94,17 @@ def run_ingest():
                     episode_id=episode_id,
                 )
 
+                if not transcript_path:
+                    print("[WARN] Transcription failed")
+                    continue
+
                 print("[TRANSCRIPT]", transcript_path)
 
-                # ✅ CHUNKING
-                chunk_path = process_transcript(transcript_path)
+                # ✅ KEY FIX HERE
+                chunk_path = process_transcript(Path(transcript_path))
 
                 print("[CHUNK]", chunk_path)
 
 
 if __name__ == "__main__":
     run_ingest()
-
-import sys
