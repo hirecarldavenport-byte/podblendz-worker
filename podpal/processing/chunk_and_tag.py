@@ -169,7 +169,7 @@ if __name__ == "__main__":
     if not TRANSCRIPTS_DIR.exists():
         raise FileNotFoundError("❌ transcripts/ folder not found")
 
-    files = list(TRANSCRIPTS_DIR.glob("*.json"))
+    files = list(TRANSCRIPTS_DIR.rglob("*.json"))
 
     if not files:
         print("⚠️ No transcript files found")
