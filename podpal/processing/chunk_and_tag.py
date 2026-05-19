@@ -1,11 +1,7 @@
 """
-chunk_and_tag.py
-
-✅ Converts transcripts → structured chunks
-✅ Adds tagging (insight, reflection, example)
-✅ Preserves audio_path + timestamps (CRITICAL)
-✅ Filters intro noise
-✅ Recursively processes transcript folders
+chunk_and_tag Converts transcripts → structured chunkschunk_and_tag.py
+✅ Uses S3 audio paths (FIXED)
+✅ Preserves timestamps
 ✅ Outputs data ready for clustering + blending
 """
 
@@ -19,9 +15,13 @@ from pathlib import Path
 TRANSCRIPTS_DIR = Path("transcripts")
 OUTPUT_DIR = Path("processed_chunks")
 
+# ✅ YOUR S3 BUCKET (IMPORTANT)
+S3_BUCKET = "podblendz-episode-audio"
+S3_REGION = "us-east-1"
+
 
 # -------------------------------------------------
-# ✅ FILTER (REMOVE INTRO NOISE)
+# ✅ FILTER
 # -------------------------------------------------
 def is_useful_segment(text: str) -> bool:
     text_lower = text.lower()
@@ -58,7 +58,7 @@ def tag_text(text: str) -> str:
 
 
 # -------------------------------------------------
-# ✅ BUILD CHUNKS (GROUP SEGMENTS)
+# ✅ BUILD CHUNKS
 # -------------------------------------------------
 def build_chunks(segments):
 
@@ -76,7 +76,6 @@ def build_chunks(segments):
         current.append(seg)
         word_count += len(text.split())
 
-        # ✅ chunk sizing
         if word_count >= 80:
             chunks.append(current)
             current = []
@@ -89,7 +88,7 @@ def build_chunks(segments):
 
 
 # -------------------------------------------------
-# ✅ PROCESS SINGLE TRANSCRIPT
+# ✅ PROCESS TRANSCRIPT
 # -------------------------------------------------
 def process_transcript(path: Path):
 
@@ -102,12 +101,10 @@ def process_transcript(path: Path):
     podcast_id = data.get("podcast_id") or "unknown_podcast"
     episode_id = data.get("episode_id") or path.stem
 
-    # ✅ CRITICAL FIX: auto-inject audio_path if missing
-    audio_path = data.get("audio_path")
+    # ✅ FIXED: ALWAYS USE S3 PATH
+    s3_key = f"raw_audio/{podcast_id}/{episode_id}.mp3"
 
-    if not audio_path:
-        audio_path = f"audio/raw/{episode_id}.mp3"
-        print(f"⚠️ Injected audio_path for {path.name}")
+    audio_path = f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{s3_key}"
 
     if not segments:
         print(f"⚠️ Skipping {path.name} (no segments)")
@@ -135,7 +132,7 @@ def process_transcript(path: Path):
             "text": full_text,
             "tag": tag_text(full_text),
 
-            # ✅ CRITICAL FIELDS
+            # ✅ CRITICAL CHANGE HERE
             "audio_path": audio_path,
             "start": float(start),
             "end": float(end),
@@ -162,7 +159,7 @@ def process_transcript(path: Path):
 
 
 # -------------------------------------------------
-# ✅ RUN EVERYTHING (FINAL)
+# ✅ RUN
 # -------------------------------------------------
 if __name__ == "__main__":
 
@@ -182,4 +179,5 @@ if __name__ == "__main__":
             process_transcript(file)
 
     print("\n✅ CHUNKING COMPLETE\n")
+
 
