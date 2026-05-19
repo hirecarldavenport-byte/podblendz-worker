@@ -1,71 +1,7 @@
 """
-blend_routes # -------------------------------------------------blend_routes.py
-    # ✅ STEP 2: Extract CLIP segments only
-    # -------------------------------------------------
-    clips = [
-        step["content"]
-        for step in final_sequence
-        if step.get("type") == "clip"
-    ]
-
-    print(f"✅ Clips selected: {len(clips)}")
-
-    # -------------------------------------------------
-    # ✅ STEP 3: Extract AUDIO FILE PATHS
-    # (critical for stitch engine)
-    # -------------------------------------------------
-    audio_files = []
-
-    for clip in clips:
-        audio_path = clip.get("audio_path")
-
-        if audio_path:
-            audio_files.append(audio_path)
-
-    print(f"🎧 Audio files ready: {len(audio_files)}")
-
-    # -------------------------------------------------
-    # ✅ STEP 4: STITCH AUDIO
-    # -------------------------------------------------
-    if stitch_blend and len(audio_files) >= 2:
-        try:
-            fn = stitch_blend(audio_files, target_minutes)
-            final_audio = f"/audio/final/{fn}"
-
-            print(f"✅ Audio stitched → {final_audio}")
-
-        except Exception as e:
-            print(f"🔥 Stitch failed: {e}")
-
-    else:
-        print("⚠️ Skipping stitch (not enough audio or stitch unavailable)")
-
-    # -------------------------------------------------
-    # ✅ RESPONSE
-    # -------------------------------------------------
-    return {
-        "mode": "semantic_blend",
-        "steps": len(clips),
-        "segments": clips,
-        "final_audio": final_audio,
-    }
-
-
-# -------------------------------------------------
-# ✅ API ENDPOINT
-# -------------------------------------------------
-@router.get("/blend")
-def get_blend(
-    minutes: Optional[int] = 5,
-    theme_index: Optional[int] = None
-):
-    return run_blend(minutes or 5, theme_index)
-
-✅ Fully wired to blend_engine
-✅ Safe import handling (prevents route from disappearing)
-✅ Correct stitch integration (uses lst of audio files)
-✅ Returns segments + audio
-✅ Production stable
+blend_routes.py production-safe routeblend_routes.py
+✅ Properly connected to blend_engine
+✅ Safe stitch integration
 """
 
 from typing import Optional
@@ -73,10 +9,8 @@ from fastapi import APIRouter
 
 from podpal.semantic.blend_engine import build_blend
 
-
 # -------------------------------------------------
-# ✅ SAFE IMPORT (CRITICAL)
-# Prevents route from failing silently
+# ✅ SAFE STITCH IMPORT (prevents route failure)
 # -------------------------------------------------
 try:
     from podpal.audio.stitch import stitch_blendz as stitch_blend
@@ -86,37 +20,60 @@ except Exception as e:
     stitch_blend = None
 
 
+# ✅ MUST exist BEFORE decorator
 router = APIRouter()
 
+print("✅ blend_routes.py loaded")
+
 
 # -------------------------------------------------
-# ✅ CORE BLEND EXECUTION
+# ✅ ENDPOINT
 # -------------------------------------------------
-def run_blend(target_minutes: int, theme_index: Optional[int] = None):
+@router.get("/blend")
+def get_blend(
+    minutes: Optional[int] = 5,
+    theme_index: Optional[int] = None
+):
+    print("🎯 /blend endpoint hit")
 
-    print("\n🚀 RUNNING BLEND PIPELINE\n")
+    sequence = build_blend(theme_index=theme_index)
 
-    final_audio = None
-
-    # ✅ STEP 1: Build semantic sequence
-    final_sequence = build_blend(theme_index=theme_index)
-
-    if not final_sequence:
-        print("❌ No sequence generated")
-
+    if not sequence:
         return {
             "mode": "semantic_blend",
             "steps": 0,
             "segments": [],
             "final_audio": None,
-            "error": "No sequence generated",
         }
 
+    # ✅ Extract clip segments
+    clips = [
+        step["content"]
+        for step in sequence
+        if step.get("type") == "clip"
+    ]
 
+    # ✅ Extract audio paths
+    audio_files = [
+        clip.get("audio_path")
+        for clip in clips
+        if clip.get("audio_path")
+    ]
 
+    final_audio = None
 
+    # ✅ Stitch audio if possible
+    if stitch_blend and len(audio_files) >= 2:
+        try:
+            filename = stitch_blend(audio_files, minutes or 5)
+            final_audio = f"/audio/final/{filename}"
+        except Exception as err:
+            print("🔥 stitch error:", err)
 
-
-
-
+    return {
+        "mode": "semantic_blend",
+        "steps": len(clips),
+        "segments": clips,
+        "final_audio": final_audio,
+    }
 
