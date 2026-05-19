@@ -1,98 +1,45 @@
 """
-blend_routes.py
+blend_routes STEP 2: Extract clipsblend_routes.py
+    clips = [
+        step["content"]
+        for step in final_sequence
+        if step.get("type") == "clip"
+    ]
 
-✅ Thin API layer for semantic blending
-✅ Uses blend_engine for sequence generation
-✅ Uses clipper for real audio segments
-✅ Handles TTS + stitching
-"""
+    print(f"✅ Clips selected: {len(clips)}")
 
-from fastapi import APIRouter
-from typing import Optional, List
+    # ✅ STEP 3: Extract audio files (IMPORTANT FIX)
+    audio_files = []
+    for clip in clips:
+        audio_path = clip.get("audio_path")
+        if audio_path:
+            audio_files.append(audio_path)
 
-from podpal.semantic.blend_engine import build_blend
-from podpal.audio.stitch import stitch_blendz
-from podpal.audio.tts import generate_audio
-from podpal.audio.clipper import extract_audio_clip
-
-router = APIRouter()
-
-
-# -------------------------------------------------
-# ✅ SAFE TTS
-# -------------------------------------------------
-def safe_generate_audio(text: str, label: str):
-    try:
-        return generate_audio(text, label)
-    except Exception as e:
-        print(f"⚠️ TTS failed ({label}): {e}")
-        return None
-
-
-# -------------------------------------------------
-# ✅ CORE BLEND FUNCTION
-# -------------------------------------------------
-def run_blend(target_minutes: int, theme_index: Optional[int] = None):
-
-    print("\n🎧 RUNNING SEMANTIC BLEND\n")
-
-    sequence = build_blend(theme_index)
-
-    final_sequence: List[str] = []
-
-    for step in sequence:
-
-        # ✅ INTRO
-        if step.get("type") == "intro":
-            audio = safe_generate_audio(step.get("text", ""), "intro")
-            if audio:
-                final_sequence.append(audio)
-
-        # ✅ TRANSITION
-        elif step.get("type") == "transition":
-            audio = safe_generate_audio(step.get("text", ""), "transition")
-            if audio:
-                final_sequence.append(audio)
-
-        # ✅ REAL AUDIO CLIPS
-        elif step.get("type") == "clip":
-
-            content = step.get("content", {})
-
-            audio_path = content.get("audio_path")
-            start = content.get("start")
-            end = content.get("end")
-
-            if audio_path and start is not None and end is not None:
-                try:
-                    clip_file = extract_audio_clip(audio_path, start, end)
-                    final_sequence.append(clip_file)
-                except Exception as e:
-                    print(f"⚠️ Clip extraction failed: {e}")
-            else:
-                print("⚠️ Missing clip metadata — skipping")
-
-    print(f"✅ Final sequence length: {len(final_sequence)}")
+    print(f"🎧 Audio files ready: {len(audio_files)}")
 
     # -------------------------------------------------
-    # ✅ STITCH FINAL AUDIO
+    # ✅ STEP 4: STITCH AUDIO (FIXED)
     # -------------------------------------------------
-    final_audio = None
+    if len(audio_files) >= 2:
+        try:
+            fn = stitch_blend(audio_files, target_minutes)
+            final_audio = f"/audio/final/{fn}"
+            print(f"✅ Audio stitched → {final_audio}")
 
-    try:
-        if not final_sequence:
-            raise ValueError("No audio segments generated")
+        except Exception as e:
+            print(f"🔥 Stitch failed: {e}")
 
-        fn = stitch_blendz(final_sequence, target_minutes)
-        final_audio = f"/audio/final/{fn}"
+    else:
+        print("⚠️ Skipping stitch: not enough audio files")
 
-    except Exception as e:
-        print(f"🔥 Stitch failed: {e}")
-
+    # -------------------------------------------------
+    # ✅ RESPONSE
+    # -------------------------------------------------
     return {
         "mode": "semantic_blend",
-        "steps": len(final_sequence),
-        "final_audio": final_audio
+        "steps": len(clips),
+        "segments": clips,          # ✅ critical for debugging
+        "final_audio": final_audio  # ✅ will now populate when stitch works
     }
 
 
@@ -101,7 +48,49 @@ def run_blend(target_minutes: int, theme_index: Optional[int] = None):
 # -------------------------------------------------
 @router.get("/blend")
 def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
+
     return run_blend(minutes or 5, theme_index)
+
+✅ Fully wired to blend_engine
+✅ Correct stitch integration (fixed name + correct input)
+✅ Returns real segments + audio
+✅ Safe + debug-friendly
+"""
+
+from typing import Optional
+from fastapi import APIRouter
+
+from podpal.semantic.blend_engine import build_blend
+
+# ✅ FIX: correct function name (alias)
+from podpal.audio.stitch import stitch_blendz as stitch_blend
+
+router = APIRouter()
+
+
+# -------------------------------------------------
+# ✅ CORE BLEND EXECUTION
+# -------------------------------------------------
+def run_blend(target_minutes: int, theme_index: Optional[int] = None):
+
+    print("\n🚀 RUNNING BLEND PIPELINE\n")
+
+    final_audio = None
+
+    # ✅ STEP 1: Build semantic sequence
+    final_sequence = build_blend(theme_index=theme_index)
+
+    if not final_sequence:
+        print("❌ No sequence generated")
+
+        return {
+            "mode": "semantic_blend",
+            "steps": 0,
+            "segments": [],
+            "final_audio": None,
+            "error": "No sequence generated"
+        }
+
 
 
 
