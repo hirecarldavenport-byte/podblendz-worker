@@ -1,9 +1,8 @@
 """
-blend_engine Builds blended podcast experiences from themesblend_engine.py
-✅ Uses clusters.json + themes.json
-✅ Story-aware clip selection (progression-based)
-✅ Context-aware transitions
-✅ ALWAYS returns usable segments (fallback safe)
+blend_engine.py
+
+✅ Resilient semantic blending
+✅ ALWAYS returns usable segments (cross-cluster fallback)
 """
 
 import json
@@ -43,79 +42,89 @@ def select_theme(themes: List[Dict[str, Any]], index: Optional[int] = None) -> D
 
 
 # -------------------------------------------------
-# ✅ FIND CLUSTER
+# ✅ FIND CLUSTER (SAFE)
 # -------------------------------------------------
 def find_cluster(clusters: List[Dict[str, Any]], theme: Dict[str, Any]) -> Dict[str, Any]:
     cluster_id = theme.get("cluster_id")
 
-    if cluster_id is None:
-        raise ValueError("Theme missing cluster_id")
-
-    if cluster_id >= len(clusters):
-        raise ValueError("Cluster index out of range")
+    if cluster_id is None or cluster_id >= len(clusters):
+        print("⚠️ Invalid cluster_id — using fallback cluster")
+        return random.choice(clusters)
 
     return clusters[cluster_id]
 
 
 # -------------------------------------------------
-# ✅ SMART AUDIO PLAN (FIXED)
+# ✅ CLEAN + FILTER ITEMS
+# -------------------------------------------------
+def clean_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+
+    seen = set()
+    clean = []
+
+    for item in items:
+        text = item.get("text", "").strip()
+        audio = item.get("audio_path")
+
+        if not text or not audio:
+            continue
+
+        if text in seen:
+            continue
+
+        seen.add(text)
+        clean.append(item)
+
+    return clean
+
+
+# -------------------------------------------------
+# ✅ BUILD AUDIO PLAN (RESILIENT)
 # -------------------------------------------------
 def build_audio_plan(cluster: Dict[str, Any], max_segments: int = 3) -> List[Dict[str, Any]]:
-    items = cluster.get("items", [])
+
+    items = clean_items(cluster.get("items", []))
+
+    print("DEBUG cluster size:", len(cluster.get("items", [])))
+    print("DEBUG cleaned items:", len(items))
 
     if not items:
         return []
 
-    # ✅ 1. Remove duplicates
-    seen = set()
-    unique_items = []
+    # ✅ Sort for narrative (short → long)
+    items.sort(key=lambda x: len(x.get("text", "")))
 
-    for item in items:
-        text = item.get("text", "").strip()
-        if text and text not in seen:
-            seen.add(text)
-            unique_items.append(item)
+    # ✅ Always return something
+    return items[:max_segments]
 
-    if not unique_items:
+
+# -------------------------------------------------
+# ✅ CROSS-CLUSTER FALLBACK (CRITICAL FIX)
+# -------------------------------------------------
+def fallback_segments(clusters: List[Dict[str, Any]], max_segments: int = 3) -> List[Dict[str, Any]]:
+
+    print("⚠️ Using cross-cluster fallback")
+
+    all_items = []
+
+    for cluster in clusters:
+        all_items.extend(cluster.get("items", []))
+
+    all_items = clean_items(all_items)
+
+    if not all_items:
         return []
 
-    # ✅ 2. Sort by length (short → long progression)
-    unique_items.sort(key=lambda x: len(x.get("text", "")))
+    all_items.sort(key=lambda x: len(x.get("text", "")))
 
-    # ✅ 3. Try to diversify (but DO NOT fail if not possible)
-    by_source = {}
-    for item in unique_items:
-        source = item.get("podcast", "unknown")
-        by_source.setdefault(source, []).append(item)
-
-    diversified = [group[0] for group in by_source.values()]
-
-    # ✅ 4. FALLBACK (CRITICAL FIX)
-    # If we don't have enough diversity, just use all items
-    if len(diversified) < max_segments:
-        selected_pool = unique_items
-    else:
-        selected_pool = diversified
-
-    # ✅ 5. Ensure we always return something
-    if len(selected_pool) <= max_segments:
-        return selected_pool
-
-    # ✅ 6. Build simple narrative arc
-    selected = []
-
-    selected.append(selected_pool[0])                        # intro
-    mid_index = len(selected_pool) // 2
-    selected.append(selected_pool[mid_index])                # middle
-    selected.append(selected_pool[-1])                       # deepest
-
-    return selected[:max_segments]
+    return all_items[:max_segments]
 
 
 # -------------------------------------------------
-# ✅ CONTEXT-AWARE TRANSITION
+# ✅ CONTEXT TRANSITION
 # -------------------------------------------------
 def generate_context_transition(prev_text: str, next_text: str) -> str:
+
     next_snippet = next_text[:80].strip()
 
     connectors = [
@@ -126,33 +135,30 @@ def generate_context_transition(prev_text: str, next_text: str) -> str:
         "Expanding on this concept,",
     ]
 
-    connector = random.choice(connectors)
-
-    return f"{connector} {next_snippet}"
+    return f"{random.choice(connectors)} {next_snippet}"
 
 
 # -------------------------------------------------
 # ✅ BUILD NARRATIVE
 # -------------------------------------------------
-def build_narrative(theme: str, segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    sequence: List[Dict[str, Any]] = []
+def build_narrative(theme: str, segments: List[Dict[str, Any]]):
 
-    # ✅ INTRO
+    sequence = []
+
     sequence.append({
         "type": "intro",
         "text": f"Welcome to PodBlendz. Today we explore {theme}."
     })
 
-    # ✅ BODY
     for i, seg in enumerate(segments):
 
         if i > 0:
-            prev_text = segments[i - 1].get("text", "")
-            next_text = seg.get("text", "")
-
             sequence.append({
                 "type": "transition",
-                "text": generate_context_transition(prev_text, next_text)
+                "text": generate_context_transition(
+                    segments[i - 1].get("text", ""),
+                    seg.get("text", "")
+                )
             })
 
         sequence.append({
@@ -164,9 +170,10 @@ def build_narrative(theme: str, segments: List[Dict[str, Any]]) -> List[Dict[str
 
 
 # -------------------------------------------------
-# ✅ MAIN ENGINE
+# ✅ MAIN ENGINE (FIXED)
 # -------------------------------------------------
-def build_blend(theme_index: Optional[int] = None) -> List[Dict[str, Any]]:
+def build_blend(theme_index: Optional[int] = None):
+
     print("\n🎧 BUILDING SEMANTIC BLEND\n")
 
     clusters = load_clusters()
@@ -180,15 +187,17 @@ def build_blend(theme_index: Optional[int] = None) -> List[Dict[str, Any]]:
 
     segments = build_audio_plan(cluster)
 
+    # ✅ CRITICAL FIX: fallback if empty
+    if not segments:
+        segments = fallback_segments(clusters)
+
     print(f"✅ Selected {len(segments)} segments")
 
     if not segments:
-        print("⚠️ No segments found — returning empty narrative")
+        print("❌ Still no segments — data issue")
         return []
 
-    sequence = build_narrative(theme.get("theme", "this topic"), segments)
-
-    return sequence
+    return build_narrative(theme.get("theme", "this topic"), segments)
 
 
 # -------------------------------------------------
@@ -199,6 +208,7 @@ if __name__ == "__main__":
 
     for step in result:
         print(step)
+
 
 
 
