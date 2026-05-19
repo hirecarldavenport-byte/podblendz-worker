@@ -1,3 +1,4 @@
+print("✅ Loading blend routes...")
 from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -53,3 +54,12 @@ app.include_router(health_router)
 app.include_router(s3_router)
 app.include_router(narration_router)
 app.include_router(blend_router)
+
+print("\n✅ REGISTERED ROUTES:")
+from fastapi.routing import APIRoute
+
+print("\n✅ REGISTERED ROUTES:")
+for route in app.routes:
+    if isinstance(route, APIRoute):
+        print("➡️", route.path)
+    
