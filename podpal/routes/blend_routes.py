@@ -1,57 +1,53 @@
-"""
-blend_routes.py (FINAL STABLE VERSION)
-
-✅ Fast + safe
-✅ Downloads enough audio for ffmpeg
-✅ Prevents 502 timeouts
-✅ Fully production-ready
-"""
-
-from typing import Optional
+from typing import Optional 
 from fastapi import APIRouter
 import requests
 import uuid
 
 from podpal.semantic.blend_engine import build_blend
 
+# -------------------------------------------------
+# ✅ SAFE STITCH IMPORT (FIXED)
+# -------------------------------------------------
+stitch_blend = None  # ✅ always defined
 
-# -------------------------------------------------
-# ✅ SAFE STITCH IMPORT
-# -------------------------------------------------
 try:
-    from podpal.audio.stitch import stitch_blendz as stitch_blend
+    from podpal.audio.stitch import stitch_blendz
+    stitch_blend = stitch_blendz
     print("✅ stitch_blend loaded successfully")
 except Exception as e:
     print("⚠️ stitch import failed:", e)
-    stitch_blend = None
 
 
+# -------------------------------------------------
+# ✅ ROUTER
+# -------------------------------------------------
 router = APIRouter()
 
 print("✅ blend_routes.py loaded")
 
 
 # -------------------------------------------------
-# ✅ DOWNLOAD HELPER (FIXED)
+# ✅ DOWNLOAD HELPER (RELIABLE VERSION)
 # -------------------------------------------------
 def fetch_to_local(url: str):
     """
-    Download enough of the file (~5MB) so ffmpeg can seek properly
+    Download full file for ffmpeg reliability
     """
     local_file = f"/tmp/{uuid.uuid4().hex}.mp3"
 
     print(f"⬇️ downloading: {url}")
 
     try:
-        with requests.get(url, stream=True, timeout=10) as r:
-            r.raise_for_status()
+        r = requests.get(url, timeout=20)
 
-            with open(local_file, "wb") as f:
-                for i, chunk in enumerate(r.iter_content(chunk_size=1024 * 1024)):
-                    f.write(chunk)
+        if r.status_code != 200:
+            print(f"❌ bad status: {r.status_code}")
+            return None
 
-                    if i >= 4:  # ✅ download ~5MB instead of 1MB
-                        break
+        with open(local_file, "wb") as f:
+            f.write(r.content)
+
+        print(f"✅ saved: {local_file}")
 
         return local_file
 
@@ -69,6 +65,7 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
     print("🎯 /blend endpoint hit")
 
     try:
+        # ✅ STEP 1: Get semantic sequence
         sequence = build_blend(theme_index=theme_index)
 
         if not sequence:
@@ -79,7 +76,7 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
                 "final_audio": None,
             }
 
-        # ✅ Extract clips
+        # ✅ STEP 2: Extract clips
         clips = [
             step["content"]
             for step in sequence
@@ -88,7 +85,7 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
 
         print(f"✅ clips found: {len(clips)}")
 
-        # ✅ Convert S3 → local
+        # ✅ STEP 3: Download audio locally
         audio_files = []
 
         for clip in clips:
@@ -102,21 +99,32 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
             if local_file:
                 audio_files.append(local_file)
 
-        print(f"✅ audio files ready: {len(audio_files)}")
+        print("DEBUG audio_files:", audio_files)
+        print("DEBUG audio_files count:", len(audio_files))
 
         final_audio = None
 
-        # ✅ Stitch safely
+        # ✅ STEP 4: Stitch audio
         if stitch_blend and len(audio_files) >= 2:
             try:
                 print("🎧 starting stitch...")
+                print("DEBUG ready to stitch:", len(audio_files))
+
                 filename = stitch_blend(audio_files, minutes or 5)
+
+                print("DEBUG filename:", filename)
+
                 final_audio = f"/audio/final/{filename}"
+
                 print(f"✅ stitch complete: {final_audio}")
 
             except Exception as err:
                 print("🔥 stitch error:", err)
 
+        else:
+            print("⚠️ Not enough audio files to stitch")
+
+        # ✅ STEP 5: Return response
         return {
             "mode": "semantic_blend",
             "steps": len(clips),
@@ -134,5 +142,6 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
             "final_audio": None,
             "error": str(e),
         }
+
 
 

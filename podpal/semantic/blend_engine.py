@@ -3,6 +3,7 @@ blend_engine.py
 
 ✅ Resilient semantic blending
 ✅ ALWAYS returns usable segments (cross-cluster fallback)
+✅ Clean + production-safe
 """
 
 import json
@@ -11,21 +12,37 @@ from pathlib import Path
 from typing import List, Dict, Optional, Any
 
 
-CLUSTERS_FILE = Path("clusters.json")
-THEMES_FILE = Path("themes.json")
+# -------------------------------------------------
+# ✅ FILE PATHS
+# -------------------------------------------------
+
+BASE_DIR = Path(__file__).resolve().parent
+CLUSTERS_FILE = BASE_DIR / "clusters.json"
+THEMES_FILE = BASE_DIR / "themes.json"
 
 
 # -------------------------------------------------
-# ✅ LOAD DATA
+# ✅ LOAD DATA (SAFE)
 # -------------------------------------------------
+def load_json(path: Path) -> List[Dict[str, Any]]:
+    if not path.exists():
+        print(f"⚠️ Missing file: {path}")
+        return []
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"❌ Failed to load {path}: {e}")
+        return []
+
+
 def load_clusters() -> List[Dict[str, Any]]:
-    with open(CLUSTERS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    return load_json(CLUSTERS_FILE)
 
 
 def load_themes() -> List[Dict[str, Any]]:
-    with open(THEMES_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    return load_json(THEMES_FILE)
 
 
 # -------------------------------------------------
@@ -45,6 +62,9 @@ def select_theme(themes: List[Dict[str, Any]], index: Optional[int] = None) -> D
 # ✅ FIND CLUSTER (SAFE)
 # -------------------------------------------------
 def find_cluster(clusters: List[Dict[str, Any]], theme: Dict[str, Any]) -> Dict[str, Any]:
+    if not clusters:
+        raise ValueError("No clusters available")
+
     cluster_id = theme.get("cluster_id")
 
     if cluster_id is None or cluster_id >= len(clusters):
@@ -58,12 +78,11 @@ def find_cluster(clusters: List[Dict[str, Any]], theme: Dict[str, Any]) -> Dict[
 # ✅ CLEAN + FILTER ITEMS
 # -------------------------------------------------
 def clean_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-
     seen = set()
     clean = []
 
     for item in items:
-        text = item.get("text", "").strip()
+        text = (item.get("text") or "").strip()
         audio = item.get("audio_path")
 
         if not text or not audio:
@@ -79,10 +98,9 @@ def clean_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 # -------------------------------------------------
-# ✅ BUILD AUDIO PLAN (RESILIENT)
+# ✅ BUILD AUDIO PLAN
 # -------------------------------------------------
 def build_audio_plan(cluster: Dict[str, Any], max_segments: int = 3) -> List[Dict[str, Any]]:
-
     items = clean_items(cluster.get("items", []))
 
     print("DEBUG cluster size:", len(cluster.get("items", [])))
@@ -91,18 +109,16 @@ def build_audio_plan(cluster: Dict[str, Any], max_segments: int = 3) -> List[Dic
     if not items:
         return []
 
-    # ✅ Sort for narrative (short → long)
+    # Sort shortest → longest for flow
     items.sort(key=lambda x: len(x.get("text", "")))
 
-    # ✅ Always return something
     return items[:max_segments]
 
 
 # -------------------------------------------------
-# ✅ CROSS-CLUSTER FALLBACK (CRITICAL FIX)
+# ✅ CROSS-CLUSTER FALLBACK
 # -------------------------------------------------
 def fallback_segments(clusters: List[Dict[str, Any]], max_segments: int = 3) -> List[Dict[str, Any]]:
-
     print("⚠️ Using cross-cluster fallback")
 
     all_items = []
@@ -124,7 +140,6 @@ def fallback_segments(clusters: List[Dict[str, Any]], max_segments: int = 3) -> 
 # ✅ CONTEXT TRANSITION
 # -------------------------------------------------
 def generate_context_transition(prev_text: str, next_text: str) -> str:
-
     next_snippet = next_text[:80].strip()
 
     connectors = [
@@ -141,8 +156,7 @@ def generate_context_transition(prev_text: str, next_text: str) -> str:
 # -------------------------------------------------
 # ✅ BUILD NARRATIVE
 # -------------------------------------------------
-def build_narrative(theme: str, segments: List[Dict[str, Any]]):
-
+def build_narrative(theme: str, segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     sequence = []
 
     sequence.append({
@@ -170,14 +184,17 @@ def build_narrative(theme: str, segments: List[Dict[str, Any]]):
 
 
 # -------------------------------------------------
-# ✅ MAIN ENGINE (FIXED)
+# ✅ MAIN ENGINE
 # -------------------------------------------------
-def build_blend(theme_index: Optional[int] = None):
-
+def build_blend(theme_index: Optional[int] = None) -> List[Dict[str, Any]]:
     print("\n🎧 BUILDING SEMANTIC BLEND\n")
 
     clusters = load_clusters()
     themes = load_themes()
+
+    if not clusters or not themes:
+        print("❌ Missing clusters or themes")
+        return []
 
     theme = select_theme(themes, theme_index)
 
@@ -187,7 +204,7 @@ def build_blend(theme_index: Optional[int] = None):
 
     segments = build_audio_plan(cluster)
 
-    # ✅ CRITICAL FIX: fallback if empty
+    # ✅ fallback if empty
     if not segments:
         segments = fallback_segments(clusters)
 
@@ -201,13 +218,14 @@ def build_blend(theme_index: Optional[int] = None):
 
 
 # -------------------------------------------------
-# ✅ TEST
+# ✅ LOCAL TESTING
 # -------------------------------------------------
 if __name__ == "__main__":
     result = build_blend()
 
     for step in result:
         print(step)
+
 
 
 
