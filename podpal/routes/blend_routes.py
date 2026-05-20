@@ -1,4 +1,5 @@
-from typing import Optional 
+from typing import Optional
+import uuid
 from fastapi import APIRouter
 import requests
 import uuid
@@ -30,9 +31,6 @@ print("✅ blend_routes.py loaded")
 # ✅ DOWNLOAD HELPER (RELIABLE VERSION)
 # -------------------------------------------------
 def fetch_to_local(url: str):
-    """
-    Download full file for ffmpeg reliability
-    """
     local_file = f"/tmp/{uuid.uuid4().hex}.mp3"
 
     print(f"⬇️ downloading: {url}")
@@ -65,7 +63,6 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
     print("🎯 /blend endpoint hit")
 
     try:
-        # ✅ STEP 1: Get semantic sequence
         sequence = build_blend(theme_index=theme_index)
 
         if not sequence:
@@ -76,7 +73,7 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
                 "final_audio": None,
             }
 
-        # ✅ STEP 2: Extract clips
+        # ✅ Extract clips
         clips = [
             step["content"]
             for step in sequence
@@ -85,7 +82,7 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
 
         print(f"✅ clips found: {len(clips)}")
 
-        # ✅ STEP 3: Download audio locally
+        # ✅ STEP 3: Download + TRIM segments
         audio_files = []
 
         for clip in clips:
@@ -96,15 +93,48 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
 
             local_file = fetch_to_local(url)
 
-            if local_file:
-                audio_files.append(local_file)
+            if not local_file:
+                continue
+
+            start = clip.get("start", 0)
+            end = clip.get("end", start + 10)
+
+            duration = end - start
+
+            trimmed_file = f"/tmp/{uuid.uuid4().hex}.mp3"
+
+            try:
+                import subprocess
+                import imageio_ffmpeg
+
+                ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+
+                subprocess.run(
+                    [
+                        ffmpeg,
+                        "-y",
+                        "-ss", str(start),
+                        "-t", str(min(duration, 6)),  # short clips
+                        "-i", local_file,
+                        "-acodec", "mp3",
+                        trimmed_file,
+                    ],
+                    check=True,
+                )
+
+                print(f"✅ trimmed: {trimmed_file}")
+
+                audio_files.append(trimmed_file)
+
+            except Exception as e:
+                print(f"❌ trimming failed: {e}")
 
         print("DEBUG audio_files:", audio_files)
         print("DEBUG audio_files count:", len(audio_files))
 
         final_audio = None
 
-        # ✅ STEP 4: Stitch audio
+        # ✅ FIXED CONDITION
         if stitch_blend and len(audio_files) >= 2:
             try:
                 print("🎧 starting stitch...")
@@ -124,7 +154,6 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
         else:
             print("⚠️ Not enough audio files to stitch")
 
-        # ✅ STEP 5: Return response
         return {
             "mode": "semantic_blend",
             "steps": len(clips),
@@ -142,6 +171,8 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
             "final_audio": None,
             "error": str(e),
         }
+
+
 
 
 
