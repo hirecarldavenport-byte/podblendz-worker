@@ -1,10 +1,11 @@
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 # -------------------------------------------------
-# Resolve project root reliably (IMPORTANT)
+# Resolve project root reliably
 # -------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -23,38 +24,26 @@ app = FastAPI(
 # -------------------------------------------------
 # CORS configuration
 # -------------------------------------------------
-# Allows frontend and media playback across domains
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # Safe for now; restrict later if needed
+    allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # -------------------------------------------------
-# Audio file serving endpoint
+# ✅ STATIC AUDIO SERVING (THIS REPLACES YOUR OLD ENDPOINT)
 # -------------------------------------------------
-# NOTE:
-# - Purely serves files already created by Blendz
-# - No ingestion or blending logic lives here
 
-@app.get("/audio/{filename}", tags=["Audio"])
-def get_audio(filename: str):
-    audio_path = AUDIO_DIR / filename
+# This serves EVERYTHING inside /audio
+# including /audio/final/*.mp3
 
-    if not audio_path.exists():
-        return {"error": "Audio file not found"}
-
-    return FileResponse(
-        path=audio_path,
-        media_type="audio/mpeg",
-        filename=filename,
-    )
+app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
 # -------------------------------------------------
-# Import routers (business logic lives in routes/)
+# Import routers
 # -------------------------------------------------
 
 from podpal.routes.health import router as health_router
