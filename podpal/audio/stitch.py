@@ -55,7 +55,7 @@ def process_audio(input_file: str) -> str:
         [
             ffmpeg,
             "-y",
-            "-ss", "5",  # skip intro
+            "-ss", "0",  # skip intro
             "-t", str(CLIP_DURATION),
             "-i", input_file,
             "-af",
