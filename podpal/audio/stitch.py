@@ -1,15 +1,15 @@
 """
-PodBlendz Stitch Engine (FINAL CLEAN VERSION)
+PodBlendz Stitch Engine (FAST + STABLE VERSION)
 
-✅ Works with local audio files only
-✅ Designed for Render / production
-✅ Smooth fades + normalization
+✅ Works in constrained environments (Render)
+✅ Uses short clips (fast response)
+✅ Safe loop limits (no hanging)
+✅ Clean audio processing
 """
 
 from pathlib import Path
 import subprocess
 import uuid
-import random
 from typing import List
 import imageio_ffmpeg
 
@@ -27,31 +27,18 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # -------------------------------------------------
-# ✅ CONFIG
+# ✅ CONFIG (FAST MODE)
 # -------------------------------------------------
-MIN_CLIPS_REQUIRED = 2   # lowered for flexibility
-CLIP_DURATION = 30
-TARGET_TOTAL_SEGMENTS = 12  # ~5 min
-
-USED_SEGMENTS = {}
-
+MIN_CLIPS_REQUIRED = 2
+CLIP_DURATION = 6            # VERY SHORT (fast)
+TARGET_TOTAL_SEGMENTS = 2    # VERY SMALL LOOP
 
 # -------------------------------------------------
-# ✅ TYPE DETECTION
+# ✅ AUDIO TYPE DETECTION
 # -------------------------------------------------
 def detect_audio_type(path: str) -> str:
     if "/tts/" in path:
-        name = Path(path).name.lower()
-
-        if "intro" in name:
-            return "intro"
-        if "transition" in name:
-            return "transition"
-        if "outro" in name:
-            return "outro"
-
         return "narration"
-
     return "clip"
 
 
@@ -68,16 +55,17 @@ def process_audio(input_file: str) -> str:
         [
             ffmpeg,
             "-y",
-            "-ss", "10",               # safe start
+            "-ss", "5",  # skip intro
             "-t", str(CLIP_DURATION),
             "-i", input_file,
             "-af",
+            # ✅ FIXED fade timing (matches 6s clip)
             "afade=t=in:st=0:d=1,"
-            "afade=t=out:st=27:d=1,"
+            "afade=t=out:st=4:d=1,"
             "loudnorm=I=-16:LRA=11:TP=-1.5",
             "-ar", "44100",
             "-ac", "2",
-            "-b:a", "192k",
+            "-b:a", "128k",
             str(output_file),
         ],
         check=True,
@@ -90,11 +78,8 @@ def process_audio(input_file: str) -> str:
 # ✅ VALIDATION
 # -------------------------------------------------
 def validate_sequence(audio_files: List[str]) -> None:
-
     if len(audio_files) < MIN_CLIPS_REQUIRED:
-        raise RuntimeError(
-            f"❌ Not enough clips ({len(audio_files)})"
-        )
+        raise RuntimeError(f"❌ Not enough clips ({len(audio_files)})")
 
 
 # -------------------------------------------------
@@ -117,29 +102,24 @@ def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
 
     print("\n🎯 Building PodBlend...")
 
-    # ✅ Ensure minimum clips
     validate_sequence(audio_files)
 
     processed_files = []
-    last_clip_source = None
     i = 0
+    iterations = 0
+    max_iterations = 4  # ✅ SAFE LIMIT
 
     print("\n🔄 Expanding sequence...")
 
-    # ✅ Expand until full duration
-    while len(processed_files) < TARGET_TOTAL_SEGMENTS:
+    while (
+        len(processed_files) < TARGET_TOTAL_SEGMENTS
+        and iterations < max_iterations
+    ):
+        iterations += 1
 
         audio = audio_files[i % len(audio_files)]
 
         try:
-            audio_type = detect_audio_type(audio)
-
-            if audio_type == "clip":
-                if audio == last_clip_source:
-                    i += 1
-                    continue
-                last_clip_source = audio
-
             processed = process_audio(audio)
             processed_files.append(processed)
 
@@ -147,6 +127,9 @@ def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
             print(f"⚠️ Failed: {audio} → {e}")
 
         i += 1
+
+    if not processed_files:
+        raise RuntimeError("❌ No audio processed")
 
     # -------------------------------------------------
     # ✅ FINAL CONCAT
@@ -166,7 +149,7 @@ def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
             "-safe", "0",
             "-i", str(concat_file),
             "-c:a", "libmp3lame",
-            "-q:a", "2",
+            "-q:a", "3",
             str(output_file),
         ],
         check=True,
