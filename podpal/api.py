@@ -1,23 +1,22 @@
-import os
-from pathlib import Path
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
 # -------------------------------------------------
-# ✅ SINGLE SOURCE OF TRUTH (CRITICAL FIX)
+# ✅ SINGLE SOURCE OF TRUTH (CRITICAL)
 # -------------------------------------------------
 
 AUDIO_DIR = Path("/app/audio")
 TEMP_DIR = AUDIO_DIR / "temp"
 FINAL_DIR = AUDIO_DIR / "final"
 
-# ✅ Ensure directories exist BEFORE mount
+# ✅ Ensure directories exist BEFORE FastAPI uses them
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 FINAL_DIR.mkdir(parents=True, exist_ok=True)
 
 print("✅ AUDIO DIR:", AUDIO_DIR)
+print("✅ TEMP DIR:", TEMP_DIR)
 print("✅ FINAL DIR:", FINAL_DIR)
 print("✅ FINAL EXISTS:", FINAL_DIR.exists())
 
@@ -44,7 +43,7 @@ app.add_middleware(
 )
 
 # -------------------------------------------------
-# ✅ STATIC AUDIO SERVING (CORRECTED)
+# ✅ STATIC AUDIO SERVING (FINAL FIX)
 # -------------------------------------------------
 
 app.mount(
@@ -97,3 +96,4 @@ def root():
         "service": "PodBlendz API",
         "description": "Blends multiple podcasts into one audio story by topic",
     }
+
