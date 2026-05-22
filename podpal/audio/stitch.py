@@ -1,3 +1,16 @@
+import os
+from pathlib import Path
+
+AUDIO_DIR = Path("/app/audio")
+TEMP_DIR = AUDIO_DIR / "temp"
+FINAL_DIR = AUDIO_DIR / "final"
+
+# Ensure directories exist
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
+FINAL_DIR.mkdir(parents=True, exist_ok=True)
+
+print("✅ AUDIO DIR:", AUDIO_DIR)
+print("✅ FINAL DIR:", FINAL_DIR)
 """
 PodBlendz Stitch Engine (FAST + STABLE VERSION)
 
@@ -17,10 +30,7 @@ import imageio_ffmpeg
 # -------------------------------------------------
 # ✅ PATHS
 # -------------------------------------------------
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-AUDIO_DIR = BASE_DIR / "audio"
-FINAL_DIR = AUDIO_DIR / "final"
-TEMP_DIR = AUDIO_DIR / "temp"
+
 
 FINAL_DIR.mkdir(parents=True, exist_ok=True)
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -130,6 +140,7 @@ def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
 
     if not processed_files:
         raise RuntimeError("❌ No audio processed")
+    
 
     # -------------------------------------------------
     # ✅ FINAL CONCAT
@@ -158,6 +169,7 @@ def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
     print(f"\n✅ Blend created → {output_file}")
 
     return output_file.name
+
 
 
 

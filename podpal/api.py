@@ -1,3 +1,14 @@
+import os
+from pathlib import Path
+
+AUDIO_DIR = Path("/app/audio")
+TEMP_DIR = AUDIO_DIR / "temp"
+FINAL_DIR = AUDIO_DIR / "final"
+
+# Ensure directories exist
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
+FINAL_DIR.mkdir(parents=True, exist_ok=True)
+
 from fastapi import FastAPI
 
 from fastapi.middleware.cors import CORSMiddleware
