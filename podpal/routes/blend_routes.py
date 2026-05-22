@@ -1,13 +1,14 @@
-from typing import Optional 
-
+from typing import Optional
 from fastapi import APIRouter
 import requests
 import uuid
+import os
+import boto3
 
 from podpal.semantic.blend_engine import build_blend
 
 # -------------------------------------------------
-# ✅ SAFE STITCH IMPORT (FIXED)
+# ✅ SAFE STITCH IMPORT
 # -------------------------------------------------
 stitch_blend = None
 
@@ -18,6 +19,7 @@ try:
 except Exception as e:
     print("⚠️ stitch import failed:", e)
 
+
 # -------------------------------------------------
 # ✅ ROUTER
 # -------------------------------------------------
@@ -27,15 +29,58 @@ print("✅ blend_routes.py loaded")
 
 
 # -------------------------------------------------
+# ✅ S3 CLIENT (PRESIGNED URL FIX)
+# -------------------------------------------------
+s3 = boto3.client(
+    "s3",
+    aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
+    aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+    region_name="us-east-1",
+)
+
+BUCKET_NAME = "podblendz-episode-audio"
+
+
+def generate_presigned_url(raw_url: str):
+    try:
+        # extract object key from URL
+        key = raw_url.split(".com/")[1]
+
+        presigned_url = s3.generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": BUCKET_NAME,
+                "Key": key
+            },
+            ExpiresIn=3600
+        )
+
+        print(f"✅ presigned URL generated for: {key}")
+        return presigned_url
+
+    except Exception as e:
+        print(f"❌ presigned url failed: {e}")
+        return None
+
+
+# -------------------------------------------------
 # ✅ DOWNLOAD HELPER
 # -------------------------------------------------
 def fetch_to_local(url: str):
     local_file = f"/tmp/{uuid.uuid4().hex}.mp3"
 
-    print(f"⬇️ downloading: {url}")
+    print(f"⬇️ original URL: {url}")
 
     try:
-        r = requests.get(url, timeout=20)
+        presigned_url = generate_presigned_url(url)
+
+        if not presigned_url:
+            print("❌ failed to generate presigned URL")
+            return None
+
+        print("⬇️ downloading via presigned URL...")
+
+        r = requests.get(presigned_url, timeout=20)
 
         if r.status_code != 200:
             print(f"❌ bad status: {r.status_code}")
@@ -54,7 +99,7 @@ def fetch_to_local(url: str):
 
 
 # -------------------------------------------------
-# ✅ /blend ENDPOINT (DEBUG VERSION)
+# ✅ /blend ENDPOINT
 # -------------------------------------------------
 @router.get("/blend")
 def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
@@ -62,13 +107,13 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
     print("\n🎯 /blend endpoint hit")
 
     try:
-        # ✅ STEP 1: BUILD SEQUENCE
+        # ✅ STEP 1: BUILD SEMANTIC SEQUENCE
         sequence = build_blend(theme_index=theme_index)
 
-        print("DEBUG sequence:", sequence)
+        print(f"DEBUG sequence length: {len(sequence)}")
 
         if not sequence:
-            print("❌ No sequence built")
+            print("❌ No sequence returned")
             return {
                 "mode": "semantic_blend",
                 "steps": 0,
@@ -100,7 +145,7 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
             local_file = fetch_to_local(url)
 
             if not local_file:
-                print("❌ Failed to download file")
+                print("❌ Download failed")
                 continue
 
             start = clip.get("start", 0)
@@ -117,7 +162,7 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
 
                 ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
 
-                print("🎧 Running ffmpeg trim...")
+                print("🎧 trimming clip...")
 
                 subprocess.run(
                     [
@@ -134,20 +179,17 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
                     check=True,
                 )
 
-                print(f"✅ trimmed file created: {trimmed_file}")
-
+                print(f"✅ trimmed file: {trimmed_file}")
                 audio_files.append(trimmed_file)
 
             except Exception as e:
                 print(f"❌ trimming failed: {e}")
-
-                # ✅ FALLBACK (IMPORTANT)
-                print("⚠️ Using original file as fallback")
+                print("⚠️ using original file instead")
                 audio_files.append(local_file)
 
-        # ✅ DEBUG OUTPUT
+        # ✅ DEBUG FILE LIST
         print("\n==============================")
-        print("DEBUG FINAL AUDIO FILES:")
+        print("DEBUG AUDIO FILES:")
         for f in audio_files:
             print(f)
         print(f"TOTAL FILES: {len(audio_files)}")
@@ -161,21 +203,23 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
 
         if stitch_blend and len(audio_files) >= 2:
             try:
-                print("🎧 Starting stitch...")
+                print("🎧 starting stitch...")
 
                 filename = stitch_blend(audio_files, minutes or 5)
 
-                print("✅ stitch returned filename:", filename)
+                print("✅ stitch returned:", filename)
 
-                final_audio = f"/audio/final/{filename}"
-
-                print("✅ FINAL AUDIO PATH:", final_audio)
+                if filename:
+                    final_audio = f"/audio/final/{filename}"
+                    print("✅ FINAL AUDIO:", final_audio)
+                else:
+                    print("❌ stitch returned empty filename")
 
             except Exception as err:
                 print("🔥 stitch error:", err)
 
         else:
-            print("⚠️ Not enough files or stitch not available")
+            print("⚠️ Not enough files to stitch")
 
         return {
             "mode": "semantic_blend",
@@ -194,6 +238,7 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
             "final_audio": None,
             "error": str(e),
         }
+
 
 
 
