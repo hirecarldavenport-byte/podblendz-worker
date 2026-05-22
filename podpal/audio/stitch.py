@@ -1,63 +1,43 @@
 import os
 from pathlib import Path
-
-AUDIO_DIR = Path("/app/audio")
-TEMP_DIR = AUDIO_DIR / "temp"
-FINAL_DIR = AUDIO_DIR / "final"
-
-# Ensure directories exist
-TEMP_DIR.mkdir(parents=True, exist_ok=True)
-FINAL_DIR.mkdir(parents=True, exist_ok=True)
-
-print("✅ AUDIO DIR:", AUDIO_DIR)
-print("✅ FINAL DIR:", FINAL_DIR)
-"""
-PodBlendz Stitch Engine (FAST + STABLE VERSION)
-
-✅ Works in constrained environments (Render)
-✅ Uses short clips (fast response)
-✅ Safe loop limits (no hanging)
-✅ Clean audio processing
-"""
-
-from pathlib import Path
 import subprocess
 import uuid
 from typing import List
 import imageio_ffmpeg
 
-
 # -------------------------------------------------
-# ✅ PATHS
+# ✅ SINGLE PATH SYSTEM (CRITICAL)
 # -------------------------------------------------
 
+AUDIO_DIR = Path("/app/audio")
+TEMP_DIR = AUDIO_DIR / "temp"
+FINAL_DIR = AUDIO_DIR / "final"
 
-FINAL_DIR.mkdir(parents=True, exist_ok=True)
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
+FINAL_DIR.mkdir(parents=True, exist_ok=True)
 
+print("✅ AUDIO DIR:", AUDIO_DIR)
+print("✅ FINAL DIR:", FINAL_DIR)
 
 # -------------------------------------------------
-# ✅ CONFIG (FAST MODE)
+# ✅ CONFIG
 # -------------------------------------------------
+
 MIN_CLIPS_REQUIRED = 2
-CLIP_DURATION = 6            # VERY SHORT (fast)
-TARGET_TOTAL_SEGMENTS = 2    # VERY SMALL LOOP
+CLIP_DURATION = 6
+TARGET_TOTAL_SEGMENTS = 2
 
 # -------------------------------------------------
-# ✅ AUDIO TYPE DETECTION
+# ✅ PROCESS AUDIO (FIXED)
 # -------------------------------------------------
-def detect_audio_type(path: str) -> str:
-    if "/tts/" in path:
-        return "narration"
-    return "clip"
 
-
-# -------------------------------------------------
-# ✅ PROCESS AUDIO
-# -------------------------------------------------
 def process_audio(input_file: str) -> str:
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     output_file = TEMP_DIR / f"{uuid.uuid4().hex}.mp3"
+
+    # ✅ CRITICAL: validate input file
+    if not os.path.exists(input_file) or os.path.getsize(input_file) < 2000:
+        raise RuntimeError("Invalid or corrupt audio file")
 
     print(f"🎧 Processing: {input_file}")
 
@@ -65,14 +45,11 @@ def process_audio(input_file: str) -> str:
         [
             ffmpeg,
             "-y",
-            "-ss", "0",  # skip intro
+            "-i", input_file,                 # ✅ moved BEFORE -ss
+            "-ss", "0",
             "-t", str(CLIP_DURATION),
-            "-i", input_file,
-            "-af",
-            # ✅ FIXED fade timing (matches 6s clip)
-            "afade=t=in:st=0:d=1,"
-            "afade=t=out:st=4:d=1,"
-            "loudnorm=I=-16:LRA=11:TP=-1.5",
+            "-vn",
+            "-acodec", "libmp3lame",
             "-ar", "44100",
             "-ac", "2",
             "-b:a", "128k",
@@ -81,28 +58,32 @@ def process_audio(input_file: str) -> str:
         check=True,
     )
 
+    # ✅ Validate output
+    if not output_file.exists() or output_file.stat().st_size < 2000:
+        raise RuntimeError("Processed file invalid")
+
     return str(output_file)
 
+# -------------------------------------------------
+# ✅ VALIDATE INPUT
+# -------------------------------------------------
 
-# -------------------------------------------------
-# ✅ VALIDATION
-# -------------------------------------------------
 def validate_sequence(audio_files: List[str]) -> None:
     if len(audio_files) < MIN_CLIPS_REQUIRED:
         raise RuntimeError(f"❌ Not enough clips ({len(audio_files)})")
 
-
 # -------------------------------------------------
 # ✅ CONCAT FILE
 # -------------------------------------------------
+
 def create_concat_file(audio_files: List[str], concat_file: Path):
     lines = [f"file '{Path(a).resolve().as_posix()}'" for a in audio_files]
     concat_file.write_text("\n".join(lines), encoding="utf-8")
 
+# -------------------------------------------------
+# ✅ MAIN STITCH (HARDENED)
+# -------------------------------------------------
 
-# -------------------------------------------------
-# ✅ MAIN STITCH
-# -------------------------------------------------
 def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
 
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
@@ -117,7 +98,7 @@ def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
     processed_files = []
     i = 0
     iterations = 0
-    max_iterations = 4  # ✅ SAFE LIMIT
+    max_iterations = 4
 
     print("\n🔄 Expanding sequence...")
 
@@ -134,17 +115,18 @@ def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
             processed_files.append(processed)
 
         except Exception as e:
-            print(f"⚠️ Failed: {audio} → {e}")
+            print(f"⚠️ Skipping bad file: {audio} → {e}")
 
         i += 1
 
-    if not processed_files:
-        raise RuntimeError("❌ No audio processed")
-    
+    # ✅ FINAL SAFETY CHECK
+    if len(processed_files) < 1:
+        raise RuntimeError("❌ No valid audio clips to stitch")
 
     # -------------------------------------------------
-    # ✅ FINAL CONCAT
+    # ✅ CONCAT + OUTPUT
     # -------------------------------------------------
+
     concat_file = TEMP_DIR / f"concat_{uuid.uuid4().hex}.txt"
     create_concat_file(processed_files, concat_file)
 
@@ -169,6 +151,7 @@ def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
     print(f"\n✅ Blend created → {output_file}")
 
     return output_file.name
+
 
 
 
