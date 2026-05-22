@@ -7,15 +7,14 @@ from urllib.parse import urlparse
 
 from podpal.semantic.blend_engine import build_blend
 
-# ✅ DEBUG: Confirm AWS key loads (CRITICAL)
 print("🔥 NEW BLEND ROUTES VERSION ACTIVE")
 print("AWS KEY LOADED:", os.environ.get("AWS_ACCESS_KEY_ID"))
 
 # -------------------------------------------------
 # ✅ SAFE STITCH IMPORT
 # -------------------------------------------------
-stitch_blend = None
 
+stitch_blend = None
 try:
     from podpal.audio.stitch import stitch_blendz
     stitch_blend = stitch_blendz
@@ -26,12 +25,14 @@ except Exception as e:
 # -------------------------------------------------
 # ✅ ROUTER
 # -------------------------------------------------
+
 router = APIRouter()
 print("✅ blend_routes.py loaded")
 
 # -------------------------------------------------
-# ✅ S3 CLIENT (NO HARDCODE — USE ENV VARS)
+# ✅ S3 CLIENT
 # -------------------------------------------------
+
 s3 = boto3.client(
     "s3",
     aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
@@ -42,8 +43,9 @@ s3 = boto3.client(
 BUCKET_NAME = "podblendz-episode-audio"
 
 # -------------------------------------------------
-# ✅ DOWNLOAD HELPER (FINAL VERSION — boto3)
+# ✅ DOWNLOAD HELPER (FIXED)
 # -------------------------------------------------
+
 def fetch_to_local(url: str):
     local_file = f"/tmp/{uuid.uuid4().hex}.mp3"
 
@@ -51,7 +53,7 @@ def fetch_to_local(url: str):
 
     try:
         parsed = urlparse(url)
-        key = "raw_audio/entrepreneurship/how_i_built_this/000df7db2e3453998677f4663a3b92cd.mp3"
+        key = parsed.path.lstrip("/")   # ✅ FIXED (dynamic key)
 
         print(f"DEBUG key: {key}")
 
@@ -63,6 +65,11 @@ def fetch_to_local(url: str):
         with open(local_file, "wb") as f:
             f.write(response["Body"].read())
 
+        # ✅ Validate download
+        if os.path.getsize(local_file) < 2000:
+            print("⚠️ downloaded file too small")
+            return None
+
         print(f"✅ saved via boto3: {local_file}")
         return local_file
 
@@ -73,6 +80,7 @@ def fetch_to_local(url: str):
 # -------------------------------------------------
 # ✅ /blend ENDPOINT
 # -------------------------------------------------
+
 @router.get("/blend")
 def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
 
@@ -109,7 +117,6 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
                 continue
 
             local_file = fetch_to_local(url)
-
             if not local_file:
                 continue
 
@@ -117,7 +124,11 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
             end = clip.get("end", start + 10)
             duration = end - start
 
-            print(f"DEBUG start={start}, duration={duration}")
+            # ✅ SAFE VALUES
+            safe_start = max(0, start)
+            safe_duration = min(max(duration, 1), 6)
+
+            print(f"DEBUG start={safe_start}, duration={safe_duration}")
 
             trimmed_file = f"/tmp/{uuid.uuid4().hex}.mp3"
 
@@ -132,9 +143,9 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
                         ffmpeg,
                         "-y",
                         "-loglevel", "error",
-                        "-ss", str(start),
-                        "-t", str(min(duration, 6)),
-                        "-i", local_file,
+                        "-i", local_file,                 # ✅ FIXED ordering
+                        "-ss", str(safe_start),
+                        "-t", str(safe_duration),
                         "-vn",
                         "-acodec", "libmp3lame",
                         trimmed_file,
@@ -142,12 +153,20 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
                     check=True,
                 )
 
+                # ✅ VALIDATE TRIM
+                if (
+                    not os.path.exists(trimmed_file)
+                    or os.path.getsize(trimmed_file) < 2000
+                ):
+                    print("⚠️ Skipping bad trim:", trimmed_file)
+                    continue
+
                 print(f"✅ trimmed: {trimmed_file}")
                 audio_files.append(trimmed_file)
 
             except Exception as e:
                 print(f"❌ trimming failed: {e}")
-                audio_files.append(local_file)
+                continue
 
         print("TOTAL FILES:", len(audio_files))
 
@@ -156,7 +175,6 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
         if stitch_blend and len(audio_files) >= 2:
             try:
                 print("🎧 starting stitch...")
-
                 filename = stitch_blend(audio_files, minutes or 5)
 
                 print("✅ stitch returned:", filename)
@@ -179,6 +197,7 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
 
     except Exception as e:
         print("❌ blend error:", e)
+
         return {
             "mode": "semantic_blend",
             "steps": 0,
@@ -186,3 +205,4 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
             "final_audio": None,
             "error": str(e),
         }
+
