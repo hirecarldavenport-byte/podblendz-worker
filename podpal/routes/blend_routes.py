@@ -86,32 +86,31 @@ def generate_presigned_url(raw_url: str):
 def fetch_to_local(url: str):
     local_file = f"/tmp/{uuid.uuid4().hex}.mp3"
 
-    print(f"⬇️ original URL: {url}")
+    print(f"⬇️ fetching via boto3: {url}")
 
     try:
-        presigned_url = generate_presigned_url(url)
+        # ✅ Extract S3 key
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        key = parsed.path.lstrip("/")
 
-        if not presigned_url:
-            print("❌ failed to generate presigned URL")
-            return None
+        print(f"DEBUG key: {key}")
 
-        print("⬇️ downloading via presigned URL...")
-
-        r = requests.get(presigned_url, timeout=20)
-
-        if r.status_code != 200:
-            print(f"❌ bad status: {r.status_code}")
-            return None
+        # ✅ Direct S3 fetch (bypasses 403 issue entirely)
+        response = s3.get_object(
+            Bucket=BUCKET_NAME,
+            Key=key
+        )
 
         with open(local_file, "wb") as f:
-            f.write(r.content)
+            f.write(response["Body"].read())
 
-        print(f"✅ saved: {local_file}")
+        print(f"✅ saved via boto3: {local_file}")
 
         return local_file
 
     except Exception as e:
-        print(f"❌ download failed: {e}")
+        print(f"❌ boto3 fetch failed: {e}")
         return None
 
 
