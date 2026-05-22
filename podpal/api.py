@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -10,7 +11,11 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 AUDIO_DIR = BASE_DIR / "audio"
 
-# ✅ Debug (optional)
+# ✅ Ensure directories exist (CRITICAL FIX)
+(AUDIO_DIR / "final").mkdir(parents=True, exist_ok=True)
+(AUDIO_DIR / "temp").mkdir(parents=True, exist_ok=True)
+
+print("✅ Ensured audio directories exist")
 print("✅ Static audio directory:", AUDIO_DIR)
 print("✅ Exists:", AUDIO_DIR.exists())
 
@@ -37,10 +42,11 @@ app.add_middleware(
 )
 
 # -------------------------------------------------
-# ✅ STATIC AUDIO SERVING (FIXED)
+# ✅ STATIC AUDIO SERVING (FINAL FIX)
 # -------------------------------------------------
 
-# IMPORTANT: Serves /audio/final/*.mp3 correctly
+# Serves:
+# /audio/final/*.mp3
 app.mount(
     "/audio",
     StaticFiles(directory=str(AUDIO_DIR), html=False),
@@ -76,3 +82,4 @@ def root():
         "service": "PodBlendz API",
         "description": "Blends multiple podcasts into one audio story by topic",
     }
+
