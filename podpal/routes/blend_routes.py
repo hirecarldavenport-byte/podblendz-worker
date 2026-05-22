@@ -41,7 +41,10 @@ s3 = boto3.client(
     aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
     aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
     region_name="us-east-1",
-    config=Config(signature_version="s3v4"),  # ✅ CRITICAL FIX
+    config=Config(
+        signature_version="s3v4",
+        s3={"addressing_style": "virtual"}  # ✅ CRITICAL FIX
+    )
 )
 
 BUCKET_NAME = "podblendz-episode-audio"
