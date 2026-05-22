@@ -1,34 +1,25 @@
 import os
 from pathlib import Path
 
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+# -------------------------------------------------
+# ✅ SINGLE SOURCE OF TRUTH (CRITICAL FIX)
+# -------------------------------------------------
+
 AUDIO_DIR = Path("/app/audio")
 TEMP_DIR = AUDIO_DIR / "temp"
 FINAL_DIR = AUDIO_DIR / "final"
 
-# Ensure directories exist
+# ✅ Ensure directories exist BEFORE mount
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 FINAL_DIR.mkdir(parents=True, exist_ok=True)
 
-from fastapi import FastAPI
-
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from pathlib import Path
-
-# -------------------------------------------------
-# ✅ Resolve project root correctly
-# -------------------------------------------------
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-AUDIO_DIR = BASE_DIR / "audio"
-
-# ✅ Ensure directories exist (CRITICAL FIX)
-(AUDIO_DIR / "final").mkdir(parents=True, exist_ok=True)
-(AUDIO_DIR / "temp").mkdir(parents=True, exist_ok=True)
-
-print("✅ Ensured audio directories exist")
-print("✅ Static audio directory:", AUDIO_DIR)
-print("✅ Exists:", AUDIO_DIR.exists())
+print("✅ AUDIO DIR:", AUDIO_DIR)
+print("✅ FINAL DIR:", FINAL_DIR)
+print("✅ FINAL EXISTS:", FINAL_DIR.exists())
 
 # -------------------------------------------------
 # ✅ App setup
@@ -53,18 +44,31 @@ app.add_middleware(
 )
 
 # -------------------------------------------------
-# ✅ STATIC AUDIO SERVING (FINAL FIX)
+# ✅ STATIC AUDIO SERVING (CORRECTED)
 # -------------------------------------------------
 
-# Serves:
-# /audio/final/*.mp3
 app.mount(
     "/audio",
-    StaticFiles(directory=str(AUDIO_DIR), html=False),
+    StaticFiles(directory=str(AUDIO_DIR)),
     name="audio"
 )
 
 print("✅ Static assets mounted")
+
+# -------------------------------------------------
+# ✅ DEBUG ROUTE (VERY IMPORTANT)
+# -------------------------------------------------
+
+@app.get("/debug/audio/{filename}")
+def debug_audio(filename: str):
+    file_path = FINAL_DIR / filename
+
+    print(f"🔍 Checking file: {file_path}")
+
+    return {
+        "exists": file_path.exists(),
+        "full_path": str(file_path)
+    }
 
 # -------------------------------------------------
 # ✅ Import routers
@@ -93,4 +97,3 @@ def root():
         "service": "PodBlendz API",
         "description": "Blends multiple podcasts into one audio story by topic",
     }
-
