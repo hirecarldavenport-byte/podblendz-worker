@@ -51,7 +51,7 @@ def fetch_to_local(url: str):
 
     try:
         parsed = urlparse(url)
-        key = parsed.path.lstrip("/")
+        key = "raw_audio/entrepreneurship/how_i_built_this/000df7db2e3453998677f4663a3b92cd.mp3"
 
         print(f"DEBUG key: {key}")
 
