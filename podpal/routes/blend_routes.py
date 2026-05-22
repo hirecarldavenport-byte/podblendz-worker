@@ -1,3 +1,4 @@
+print("🔥 NEW BLEND ROUTES VERSION ACTIVE")
 from typing import Optional
 import requests
 from fastapi import APIRouter
