@@ -1,9 +1,10 @@
 from typing import Optional
-from fastapi import APIRouter
 import requests
+from fastapi import APIRouter
 import uuid
 import os
 import boto3
+from urllib.parse import urlparse
 
 from podpal.semantic.blend_engine import build_blend
 
@@ -29,7 +30,7 @@ print("✅ blend_routes.py loaded")
 
 
 # -------------------------------------------------
-# ✅ S3 CLIENT (PRESIGNED URL FIX)
+# ✅ S3 CLIENT (PRESIGNED URL SUPPORT)
 # -------------------------------------------------
 s3 = boto3.client(
     "s3",
@@ -41,10 +42,17 @@ s3 = boto3.client(
 BUCKET_NAME = "podblendz-episode-audio"
 
 
+# -------------------------------------------------
+# ✅ PRESIGNED URL GENERATOR (FIXED VERSION)
+# -------------------------------------------------
 def generate_presigned_url(raw_url: str):
     try:
-        # extract object key from URL
-        key = raw_url.split(".com/")[1]
+        parsed = urlparse(raw_url)
+
+        # ✅ robust key extraction
+        key = parsed.path.lstrip("/")
+
+        print(f"DEBUG S3 key extracted: {key}")
 
         presigned_url = s3.generate_presigned_url(
             "get_object",
@@ -55,7 +63,8 @@ def generate_presigned_url(raw_url: str):
             ExpiresIn=3600
         )
 
-        print(f"✅ presigned URL generated for: {key}")
+        print("✅ presigned URL created")
+
         return presigned_url
 
     except Exception as e:
@@ -107,7 +116,7 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
     print("\n🎯 /blend endpoint hit")
 
     try:
-        # ✅ STEP 1: BUILD SEMANTIC SEQUENCE
+        # ✅ STEP 1: Build semantic sequence
         sequence = build_blend(theme_index=theme_index)
 
         print(f"DEBUG sequence length: {len(sequence)}")
@@ -121,7 +130,7 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
                 "final_audio": None,
             }
 
-        # ✅ STEP 2: EXTRACT CLIPS
+        # ✅ STEP 2: Extract clip segments
         clips = [
             step["content"]
             for step in sequence
@@ -130,7 +139,7 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
 
         print(f"✅ clips found: {len(clips)}")
 
-        # ✅ STEP 3: DOWNLOAD + TRIM
+        # ✅ STEP 3: Download + Trim clips
         audio_files = []
 
         for idx, clip in enumerate(clips):
@@ -187,7 +196,7 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
                 print("⚠️ using original file instead")
                 audio_files.append(local_file)
 
-        # ✅ DEBUG FILE LIST
+        # ✅ DEBUG AUDIO FILE LIST
         print("\n==============================")
         print("DEBUG AUDIO FILES:")
         for f in audio_files:
@@ -197,7 +206,7 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
 
         final_audio = None
 
-        # ✅ STEP 4: STITCH
+        # ✅ STEP 4: Stitch clips
         print("DEBUG stitch_blend exists:", stitch_blend is not None)
         print("DEBUG len(audio_files):", len(audio_files))
 
@@ -238,6 +247,7 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
             "final_audio": None,
             "error": str(e),
         }
+
 
 
 
