@@ -102,38 +102,24 @@ def extract_segments(jobs, audio_lookup):
 
         audio_path = audio_lookup[episode_id]
 
-        # ✅ CRITICAL: detect real segment structure
-        raw_segments = (
-            job.get("segments")
-            or job.get("chunks")
-            or job.get("results")
-            or []
-        )
+        # ✅ Pull FULL transcript
+        transcript = job.get("transcript") or ""
 
-        for seg in raw_segments:
+        if not transcript:
+            continue
 
-            # ✅ normalize fields
-            text = (
-                seg.get("text")
-                or seg.get("content")
-                or seg.get("transcript")
-                or ""
-            ).strip()
+        # ✅ Break transcript into chunks (simple segmentation)
+        sentences = transcript.split(". ")
 
-            if not text:
+        for i, sentence in enumerate(sentences):
+            text = sentence.strip()
+
+            if len(text) < 40:  # skip weak fragments
                 continue
 
-            start = (
-                seg.get("start")
-                or seg.get("start_time")
-                or 0
-            )
-
-            end = (
-                seg.get("end")
-                or seg.get("end_time")
-                or start + 6
-            )
+            # ✅ Create synthetic timestamps (safe fallback)
+            start = i * 6
+            end = start + 6
 
             segments.append({
                 "episode_id": episode_id,
