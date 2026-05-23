@@ -2,8 +2,8 @@
 blend_engine.py
 
 ✅ Resilient semantic blending
-✅ ALWAYS returns usable segments (cross-cluster fallback)
-✅ Clean + production-safe
+✅ Uses verified audio catalog (NO missing S3 files)
+✅ Always returns usable segments
 """
 
 import json
@@ -13,17 +13,23 @@ from typing import List, Dict, Optional, Any
 
 
 # -------------------------------------------------
-# ✅ FILE PATHS
+# ✅ PATHS
 # -------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent
+ROOT_DIR = BASE_DIR.parent.parent  # go to project root
+DATA_DIR = ROOT_DIR / "data"
+
 CLUSTERS_FILE = BASE_DIR / "clusters.json"
 THEMES_FILE = BASE_DIR / "themes.json"
 
+AUDIO_CATALOG_FILE = DATA_DIR / "audio_catalog.json"
+
 
 # -------------------------------------------------
-# ✅ LOAD DATA (SAFE)
+# ✅ LOAD JSON
 # -------------------------------------------------
+
 def load_json(path: Path) -> List[Dict[str, Any]]:
     if not path.exists():
         print(f"⚠️ Missing file: {path}")
@@ -37,18 +43,36 @@ def load_json(path: Path) -> List[Dict[str, Any]]:
         return []
 
 
-def load_clusters() -> List[Dict[str, Any]]:
+def load_clusters():
     return load_json(CLUSTERS_FILE)
 
 
-def load_themes() -> List[Dict[str, Any]]:
+def load_themes():
     return load_json(THEMES_FILE)
+
+
+# -------------------------------------------------
+# ✅ LOAD AUDIO CATALOG (CRITICAL NEW)
+# -------------------------------------------------
+
+def load_audio_lookup():
+    catalog = load_json(AUDIO_CATALOG_FILE)
+
+    lookup = {
+        item["episode_id"]: item["audio_path"]
+        for item in catalog
+    }
+
+    print(f"✅ Loaded audio catalog: {len(lookup)} entries")
+
+    return lookup
 
 
 # -------------------------------------------------
 # ✅ SELECT THEME
 # -------------------------------------------------
-def select_theme(themes: List[Dict[str, Any]], index: Optional[int] = None) -> Dict[str, Any]:
+
+def select_theme(themes, index=None):
     if not themes:
         raise ValueError("No themes available")
 
@@ -59,39 +83,46 @@ def select_theme(themes: List[Dict[str, Any]], index: Optional[int] = None) -> D
 
 
 # -------------------------------------------------
-# ✅ FIND CLUSTER (SAFE)
+# ✅ FIND CLUSTER
 # -------------------------------------------------
-def find_cluster(clusters: List[Dict[str, Any]], theme: Dict[str, Any]) -> Dict[str, Any]:
-    if not clusters:
-        raise ValueError("No clusters available")
 
+def find_cluster(clusters, theme):
     cluster_id = theme.get("cluster_id")
 
     if cluster_id is None or cluster_id >= len(clusters):
-        print("⚠️ Invalid cluster_id — using fallback cluster")
+        print("⚠️ Invalid cluster_id — fallback")
         return random.choice(clusters)
 
     return clusters[cluster_id]
 
 
 # -------------------------------------------------
-# ✅ CLEAN + FILTER ITEMS
+# ✅ CLEAN + VALIDATE ITEMS (UPDATED)
 # -------------------------------------------------
-def clean_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+
+def clean_items(items, audio_lookup):
     seen = set()
     clean = []
 
     for item in items:
         text = (item.get("text") or "").strip()
-        audio = item.get("audio_path")
+        episode_id = item.get("episode_id")
 
-        if not text or not audio:
+        if not text or not episode_id:
+            continue
+
+        # ✅ CRITICAL: ensure valid audio exists
+        audio_path = audio_lookup.get(episode_id)
+        if not audio_path:
             continue
 
         if text in seen:
             continue
 
         seen.add(text)
+
+        item["audio_path"] = audio_path  # ✅ inject real path
+
         clean.append(item)
 
     return clean
@@ -100,25 +131,27 @@ def clean_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # -------------------------------------------------
 # ✅ BUILD AUDIO PLAN
 # -------------------------------------------------
-def build_audio_plan(cluster: Dict[str, Any], max_segments: int = 3) -> List[Dict[str, Any]]:
-    items = clean_items(cluster.get("items", []))
+
+def build_audio_plan(cluster, audio_lookup, max_segments=3):
+    items = clean_items(cluster.get("items", []), audio_lookup)
 
     print("DEBUG cluster size:", len(cluster.get("items", [])))
-    print("DEBUG cleaned items:", len(items))
+    print("DEBUG valid items:", len(items))
 
     if not items:
         return []
 
-    # Sort shortest → longest for flow
+    # sort by length for flow
     items.sort(key=lambda x: len(x.get("text", "")))
 
     return items[:max_segments]
 
 
 # -------------------------------------------------
-# ✅ CROSS-CLUSTER FALLBACK
+# ✅ FALLBACK (UPDATED)
 # -------------------------------------------------
-def fallback_segments(clusters: List[Dict[str, Any]], max_segments: int = 3) -> List[Dict[str, Any]]:
+
+def fallback_segments(clusters, audio_lookup, max_segments=3):
     print("⚠️ Using cross-cluster fallback")
 
     all_items = []
@@ -126,7 +159,7 @@ def fallback_segments(clusters: List[Dict[str, Any]], max_segments: int = 3) -> 
     for cluster in clusters:
         all_items.extend(cluster.get("items", []))
 
-    all_items = clean_items(all_items)
+    all_items = clean_items(all_items, audio_lookup)
 
     if not all_items:
         return []
@@ -137,9 +170,10 @@ def fallback_segments(clusters: List[Dict[str, Any]], max_segments: int = 3) -> 
 
 
 # -------------------------------------------------
-# ✅ CONTEXT TRANSITION
+# ✅ TRANSITIONS
 # -------------------------------------------------
-def generate_context_transition(prev_text: str, next_text: str) -> str:
+
+def generate_context_transition(prev_text, next_text):
     next_snippet = next_text[:80].strip()
 
     connectors = [
@@ -156,7 +190,8 @@ def generate_context_transition(prev_text: str, next_text: str) -> str:
 # -------------------------------------------------
 # ✅ BUILD NARRATIVE
 # -------------------------------------------------
-def build_narrative(theme: str, segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+
+def build_narrative(theme, segments):
     sequence = []
 
     sequence.append({
@@ -184,42 +219,43 @@ def build_narrative(theme: str, segments: List[Dict[str, Any]]) -> List[Dict[str
 
 
 # -------------------------------------------------
-# ✅ MAIN ENGINE
+# ✅ MAIN ENGINE (UPDATED)
 # -------------------------------------------------
-def build_blend(theme_index: Optional[int] = None) -> List[Dict[str, Any]]:
+
+def build_blend(theme_index=None):
     print("\n🎧 BUILDING SEMANTIC BLEND\n")
 
     clusters = load_clusters()
     themes = load_themes()
+    audio_lookup = load_audio_lookup()  # ✅ NEW
 
     if not clusters or not themes:
         print("❌ Missing clusters or themes")
         return []
 
     theme = select_theme(themes, theme_index)
-
     print(f"🎯 Theme: {theme.get('theme')}")
 
     cluster = find_cluster(clusters, theme)
 
-    segments = build_audio_plan(cluster)
+    segments = build_audio_plan(cluster, audio_lookup)
 
-    # ✅ fallback if empty
     if not segments:
-        segments = fallback_segments(clusters)
+        segments = fallback_segments(clusters, audio_lookup)
 
     print(f"✅ Selected {len(segments)} segments")
 
     if not segments:
-        print("❌ Still no segments — data issue")
+        print("❌ Still no segments")
         return []
 
     return build_narrative(theme.get("theme", "this topic"), segments)
 
 
 # -------------------------------------------------
-# ✅ LOCAL TESTING
+# ✅ TEST
 # -------------------------------------------------
+
 if __name__ == "__main__":
     result = build_blend()
 
