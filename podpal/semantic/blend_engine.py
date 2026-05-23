@@ -4,6 +4,7 @@ blend_engine.py
 ✅ Resilient semantic blending
 ✅ Uses verified audio catalog (NO missing S3 files)
 ✅ Always returns usable segments
+✅ Robust episode_id resolution (FINAL FIX)
 """
 
 import json
@@ -17,12 +18,11 @@ from typing import List, Dict, Optional, Any
 # -------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent
-ROOT_DIR = BASE_DIR.parent.parent  # go to project root
+ROOT_DIR = BASE_DIR.parent.parent
 DATA_DIR = ROOT_DIR / "data"
 
 CLUSTERS_FILE = BASE_DIR / "clusters.json"
 THEMES_FILE = BASE_DIR / "themes.json"
-
 AUDIO_CATALOG_FILE = DATA_DIR / "audio_catalog.json"
 
 
@@ -52,7 +52,7 @@ def load_themes():
 
 
 # -------------------------------------------------
-# ✅ LOAD AUDIO CATALOG (CRITICAL NEW)
+# ✅ LOAD AUDIO LOOKUP (CRITICAL)
 # -------------------------------------------------
 
 def load_audio_lookup():
@@ -69,7 +69,7 @@ def load_audio_lookup():
 
 
 # -------------------------------------------------
-# ✅ SELECT THEME
+# ✅ THEME SELECTION
 # -------------------------------------------------
 
 def select_theme(themes, index=None):
@@ -83,7 +83,7 @@ def select_theme(themes, index=None):
 
 
 # -------------------------------------------------
-# ✅ FIND CLUSTER
+# ✅ CLUSTER SELECTION
 # -------------------------------------------------
 
 def find_cluster(clusters, theme):
@@ -97,7 +97,7 @@ def find_cluster(clusters, theme):
 
 
 # -------------------------------------------------
-# ✅ CLEAN + VALIDATE ITEMS (UPDATED)
+# ✅ CLEAN + VALIDATE ITEMS (FINAL FIXED)
 # -------------------------------------------------
 
 def clean_items(items, audio_lookup):
@@ -106,22 +106,30 @@ def clean_items(items, audio_lookup):
 
     for item in items:
         text = (item.get("text") or "").strip()
-        episode_id = item.get("episode_id")
+
+        # ✅ CRITICAL FIX: support multiple formats
+        episode_id = (
+            item.get("episode_id")
+            or item.get("episode")
+            or item.get("id")
+        )
 
         if not text or not episode_id:
             continue
 
-        # ✅ CRITICAL: ensure valid audio exists
         audio_path = audio_lookup.get(episode_id)
+
         if not audio_path:
-            continue
+            continue  # skip invalid/missing files
 
         if text in seen:
             continue
 
         seen.add(text)
 
-        item["audio_path"] = audio_path  # ✅ inject real path
+        # ✅ enforce consistent structure
+        item["episode_id"] = episode_id
+        item["audio_path"] = audio_path
 
         clean.append(item)
 
@@ -141,14 +149,13 @@ def build_audio_plan(cluster, audio_lookup, max_segments=3):
     if not items:
         return []
 
-    # sort by length for flow
     items.sort(key=lambda x: len(x.get("text", "")))
 
     return items[:max_segments]
 
 
 # -------------------------------------------------
-# ✅ FALLBACK (UPDATED)
+# ✅ FALLBACK SYSTEM
 # -------------------------------------------------
 
 def fallback_segments(clusters, audio_lookup, max_segments=3):
@@ -181,14 +188,14 @@ def generate_context_transition(prev_text, next_text):
         "Taking that further,",
         "From another perspective,",
         "Continuing this line of thinking,",
-        "Expanding on this concept,",
+        "Expanding on this concept,"
     ]
 
     return f"{random.choice(connectors)} {next_snippet}"
 
 
 # -------------------------------------------------
-# ✅ BUILD NARRATIVE
+# ✅ NARRATIVE BUILDER
 # -------------------------------------------------
 
 def build_narrative(theme, segments):
@@ -219,7 +226,7 @@ def build_narrative(theme, segments):
 
 
 # -------------------------------------------------
-# ✅ MAIN ENGINE (UPDATED)
+# ✅ MAIN ENGINE
 # -------------------------------------------------
 
 def build_blend(theme_index=None):
@@ -227,7 +234,7 @@ def build_blend(theme_index=None):
 
     clusters = load_clusters()
     themes = load_themes()
-    audio_lookup = load_audio_lookup()  # ✅ NEW
+    audio_lookup = load_audio_lookup()
 
     if not clusters or not themes:
         print("❌ Missing clusters or themes")
@@ -253,7 +260,7 @@ def build_blend(theme_index=None):
 
 
 # -------------------------------------------------
-# ✅ TEST
+# ✅ LOCAL TEST
 # -------------------------------------------------
 
 if __name__ == "__main__":
