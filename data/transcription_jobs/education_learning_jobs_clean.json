@@ -1,0 +1,226 @@
+[
+  {
+    "episode_id": "00e22f718e8e124cb3a49995b7a6e502",
+    "podcast_id": "99_percent_invisible",
+    "audio_s3_key": "raw_audio/education_learning/99_percent_invisible/00e22f718e8e124cb3a49995b7a6e502.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "01501ee3ac11f1401c5204936bd7abc2",
+    "podcast_id": "99_percent_invisible",
+    "audio_s3_key": "raw_audio/education_learning/99_percent_invisible/01501ee3ac11f1401c5204936bd7abc2.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "01fcaf6051782175565983debb950075",
+    "podcast_id": "99_percent_invisible",
+    "audio_s3_key": "raw_audio/education_learning/99_percent_invisible/01fcaf6051782175565983debb950075.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "0247ba45dbd04f20f23fe1306b0e081e",
+    "podcast_id": "99_percent_invisible",
+    "audio_s3_key": "raw_audio/education_learning/99_percent_invisible/0247ba45dbd04f20f23fe1306b0e081e.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "028aafc21c22a004b4015d56b12be4ec",
+    "podcast_id": "99_percent_invisible",
+    "audio_s3_key": "raw_audio/education_learning/99_percent_invisible/028aafc21c22a004b4015d56b12be4ec.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "03b5bea4f45d8352d4837d51a704f16d",
+    "podcast_id": "99_percent_invisible",
+    "audio_s3_key": "raw_audio/education_learning/99_percent_invisible/03b5bea4f45d8352d4837d51a704f16d.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "0485ae9ead16a07a6d08e933e0dfbf76",
+    "podcast_id": "99_percent_invisible",
+    "audio_s3_key": "raw_audio/education_learning/99_percent_invisible/0485ae9ead16a07a6d08e933e0dfbf76.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "0551f62b781fd2a93f710b22bb1d5390",
+    "podcast_id": "99_percent_invisible",
+    "audio_s3_key": "raw_audio/education_learning/99_percent_invisible/0551f62b781fd2a93f710b22bb1d5390.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "05d710619b561d6cb450cd8cf802ba04",
+    "podcast_id": "99_percent_invisible",
+    "audio_s3_key": "raw_audio/education_learning/99_percent_invisible/05d710619b561d6cb450cd8cf802ba04.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "06040dab6879ecbb1e2f18c5247c425b",
+    "podcast_id": "99_percent_invisible",
+    "audio_s3_key": "raw_audio/education_learning/99_percent_invisible/06040dab6879ecbb1e2f18c5247c425b.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "0023fb72763eb342b835085d38bd0a6e",
+    "podcast_id": "hidden_brain",
+    "audio_s3_key": "raw_audio/education_learning/hidden_brain/0023fb72763eb342b835085d38bd0a6e.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "00336b37363b611d86d53548bd005acb",
+    "podcast_id": "hidden_brain",
+    "audio_s3_key": "raw_audio/education_learning/hidden_brain/00336b37363b611d86d53548bd005acb.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "0034db8e64d47d5c2e6e519584ad0300",
+    "podcast_id": "hidden_brain",
+    "audio_s3_key": "raw_audio/education_learning/hidden_brain/0034db8e64d47d5c2e6e519584ad0300.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "00faedbb0a6ebcd0fc095f57fba3f477",
+    "podcast_id": "hidden_brain",
+    "audio_s3_key": "raw_audio/education_learning/hidden_brain/00faedbb0a6ebcd0fc095f57fba3f477.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "01c075a63da2a786ade61875bb051d7a",
+    "podcast_id": "hidden_brain",
+    "audio_s3_key": "raw_audio/education_learning/hidden_brain/01c075a63da2a786ade61875bb051d7a.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "01cd0a0991e5628008c671ca7464f237",
+    "podcast_id": "hidden_brain",
+    "audio_s3_key": "raw_audio/education_learning/hidden_brain/01cd0a0991e5628008c671ca7464f237.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "02abefa1d4ceff4d3a056180aea086a5",
+    "podcast_id": "hidden_brain",
+    "audio_s3_key": "raw_audio/education_learning/hidden_brain/02abefa1d4ceff4d3a056180aea086a5.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "02ca869b89a3015062be64d7a78fd55c",
+    "podcast_id": "hidden_brain",
+    "audio_s3_key": "raw_audio/education_learning/hidden_brain/02ca869b89a3015062be64d7a78fd55c.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "02df323977d1f6dae27169a65a42cc67",
+    "podcast_id": "hidden_brain",
+    "audio_s3_key": "raw_audio/education_learning/hidden_brain/02df323977d1f6dae27169a65a42cc67.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "032e1b77567c6bf2b5384e68bef0ba34",
+    "podcast_id": "hidden_brain",
+    "audio_s3_key": "raw_audio/education_learning/hidden_brain/032e1b77567c6bf2b5384e68bef0ba34.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "0338ec4a632a680ad81eeda371cf9e91",
+    "podcast_id": "hidden_brain",
+    "audio_s3_key": "raw_audio/education_learning/hidden_brain/0338ec4a632a680ad81eeda371cf9e91.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "03d4496e908afae944196b7dfbb654af",
+    "podcast_id": "hidden_brain",
+    "audio_s3_key": "raw_audio/education_learning/hidden_brain/03d4496e908afae944196b7dfbb654af.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "0011c71067466e876042ce559577a37d",
+    "podcast_id": "ted_talks_daily",
+    "audio_s3_key": "raw_audio/education_learning/ted_talks_daily/0011c71067466e876042ce559577a37d.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "002886a923a77286a9815a779beb7e49",
+    "podcast_id": "ted_talks_daily",
+    "audio_s3_key": "raw_audio/education_learning/ted_talks_daily/002886a923a77286a9815a779beb7e49.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "0054192a7c70c19c27987f10cb81f7ca",
+    "podcast_id": "ted_talks_daily",
+    "audio_s3_key": "raw_audio/education_learning/ted_talks_daily/0054192a7c70c19c27987f10cb81f7ca.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "00543b9848e66c4c195d23da5423c1a4",
+    "podcast_id": "ted_talks_daily",
+    "audio_s3_key": "raw_audio/education_learning/ted_talks_daily/00543b9848e66c4c195d23da5423c1a4.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "0065c2a5a0747978435ac917d59f416d",
+    "podcast_id": "ted_talks_daily",
+    "audio_s3_key": "raw_audio/education_learning/ted_talks_daily/0065c2a5a0747978435ac917d59f416d.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "00c97a02df0bd97468c744667e894cec",
+    "podcast_id": "ted_talks_daily",
+    "audio_s3_key": "raw_audio/education_learning/ted_talks_daily/00c97a02df0bd97468c744667e894cec.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "00df2849476b271121cd8cfd767a1481",
+    "podcast_id": "ted_talks_daily",
+    "audio_s3_key": "raw_audio/education_learning/ted_talks_daily/00df2849476b271121cd8cfd767a1481.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "00f453c699f7df36c3341a5b7d94ca9c",
+    "podcast_id": "ted_talks_daily",
+    "audio_s3_key": "raw_audio/education_learning/ted_talks_daily/00f453c699f7df36c3341a5b7d94ca9c.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "0101255a0aa59b466b87dc16247ceb39",
+    "podcast_id": "ted_talks_daily",
+    "audio_s3_key": "raw_audio/education_learning/ted_talks_daily/0101255a0aa59b466b87dc16247ceb39.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  },
+  {
+    "episode_id": "010390c6ae04b54d354996d775781ca0",
+    "podcast_id": "ted_talks_daily",
+    "audio_s3_key": "raw_audio/education_learning/ted_talks_daily/010390c6ae04b54d354996d775781ca0.mp3",
+    "model": "whisper-large-v3",
+    "language": "en"
+  }
+]
