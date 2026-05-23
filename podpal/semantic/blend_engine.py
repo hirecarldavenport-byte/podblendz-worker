@@ -1,10 +1,10 @@
 """
 blend_engine.py
 
-✅ Resilient semantic blending
-✅ Uses verified audio catalog (NO missing S3 files)
-✅ Always returns usable segments
-✅ Robust episode_id resolution (FINAL FIX)
+✅ Production-safe semantic blending
+✅ Uses transcription_jobs (ground truth segments)
+✅ Uses audio_catalog (verified S3 files)
+✅ Fully aligned pipeline (FINAL FIX)
 """
 
 import json
@@ -14,16 +14,19 @@ from typing import List, Dict, Optional, Any
 
 
 # -------------------------------------------------
-# ✅ PATHS
+# ✅ PATHS (UPDATED)
 # -------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent.parent
 DATA_DIR = ROOT_DIR / "data"
 
-CLUSTERS_FILE = BASE_DIR / "clusters.json"
-THEMES_FILE = BASE_DIR / "themes.json"
+# ✅ SWITCHED to clean transcription jobs
+JOBS_FILE = DATA_DIR / "transcription_jobs/education_learning_jobs_clean.json"
 AUDIO_CATALOG_FILE = DATA_DIR / "audio_catalog.json"
+
+# Themes still optional
+THEMES_FILE = BASE_DIR / "themes.json"
 
 
 # -------------------------------------------------
@@ -43,17 +46,15 @@ def load_json(path: Path) -> List[Dict[str, Any]]:
         return []
 
 
-def load_clusters():
-    return load_json(CLUSTERS_FILE)
-
-
-def load_themes():
-    return load_json(THEMES_FILE)
-
-
 # -------------------------------------------------
-# ✅ LOAD AUDIO LOOKUP (CRITICAL)
+# ✅ LOAD DATA SOURCES
 # -------------------------------------------------
+
+def load_jobs():
+    jobs = load_json(JOBS_FILE)
+    print(f"✅ Loaded jobs: {len(jobs)}")
+    return jobs
+
 
 def load_audio_lookup():
     catalog = load_json(AUDIO_CATALOG_FILE)
@@ -68,13 +69,17 @@ def load_audio_lookup():
     return lookup
 
 
+def load_themes():
+    return load_json(THEMES_FILE)
+
+
 # -------------------------------------------------
-# ✅ THEME SELECTION
+# ✅ SELECT THEME
 # -------------------------------------------------
 
 def select_theme(themes, index=None):
     if not themes:
-        raise ValueError("No themes available")
+        return {"theme": "interesting ideas"}
 
     if index is not None and 0 <= index < len(themes):
         return themes[index]
@@ -83,97 +88,51 @@ def select_theme(themes, index=None):
 
 
 # -------------------------------------------------
-# ✅ CLUSTER SELECTION
+# ✅ BUILD SEGMENTS FROM JOBS (CORE CHANGE)
 # -------------------------------------------------
 
-def find_cluster(clusters, theme):
-    cluster_id = theme.get("cluster_id")
+def extract_segments(jobs, audio_lookup):
+    segments = []
 
-    if cluster_id is None or cluster_id >= len(clusters):
-        print("⚠️ Invalid cluster_id — fallback")
-        return random.choice(clusters)
+    for job in jobs:
+        episode_id = job.get("episode_id")
 
-    return clusters[cluster_id]
-
-
-# -------------------------------------------------
-# ✅ CLEAN + VALIDATE ITEMS (FINAL FIXED)
-# -------------------------------------------------
-
-def clean_items(items, audio_lookup):
-    seen = set()
-    clean = []
-
-    for item in items:
-        text = (item.get("text") or "").strip()
-
-        # ✅ CRITICAL FIX: support multiple formats
-        episode_id = (
-            item.get("episode_id")
-            or item.get("episode")
-            or item.get("id")
-        )
-
-        if not text or not episode_id:
+        if episode_id not in audio_lookup:
             continue
 
-        audio_path = audio_lookup.get(episode_id)
+        audio_path = audio_lookup[episode_id]
 
-        if not audio_path:
-            continue  # skip invalid/missing files
+        for seg in job.get("segments", []):
+            text = (seg.get("text") or "").strip()
 
-        if text in seen:
-            continue
+            if not text:
+                continue
 
-        seen.add(text)
+            segment = {
+                "episode_id": episode_id,
+                "audio_path": audio_path,
+                "text": text,
+                "start": seg.get("start", 0),
+                "end": seg.get("end", 0),
+            }
 
-        # ✅ enforce consistent structure
-        item["episode_id"] = episode_id
-        item["audio_path"] = audio_path
+            segments.append(segment)
 
-        clean.append(item)
-
-    return clean
+    return segments
 
 
 # -------------------------------------------------
-# ✅ BUILD AUDIO PLAN
+# ✅ SELECT BEST SEGMENTS
 # -------------------------------------------------
 
-def build_audio_plan(cluster, audio_lookup, max_segments=3):
-    items = clean_items(cluster.get("items", []), audio_lookup)
-
-    print("DEBUG cluster size:", len(cluster.get("items", [])))
-    print("DEBUG valid items:", len(items))
-
-    if not items:
+def select_segments(segments, max_segments=3):
+    if not segments:
         return []
 
-    items.sort(key=lambda x: len(x.get("text", "")))
+    # Sort by text length (simple quality heuristic)
+    segments.sort(key=lambda x: len(x["text"]))
 
-    return items[:max_segments]
-
-
-# -------------------------------------------------
-# ✅ FALLBACK SYSTEM
-# -------------------------------------------------
-
-def fallback_segments(clusters, audio_lookup, max_segments=3):
-    print("⚠️ Using cross-cluster fallback")
-
-    all_items = []
-
-    for cluster in clusters:
-        all_items.extend(cluster.get("items", []))
-
-    all_items = clean_items(all_items, audio_lookup)
-
-    if not all_items:
-        return []
-
-    all_items.sort(key=lambda x: len(x.get("text", "")))
-
-    return all_items[:max_segments]
+    return segments[:max_segments]
 
 
 # -------------------------------------------------
@@ -195,7 +154,7 @@ def generate_context_transition(prev_text, next_text):
 
 
 # -------------------------------------------------
-# ✅ NARRATIVE BUILDER
+# ✅ BUILD NARRATIVE
 # -------------------------------------------------
 
 def build_narrative(theme, segments):
@@ -212,8 +171,8 @@ def build_narrative(theme, segments):
             sequence.append({
                 "type": "transition",
                 "text": generate_context_transition(
-                    segments[i - 1].get("text", ""),
-                    seg.get("text", "")
+                    segments[i - 1]["text"],
+                    seg["text"]
                 )
             })
 
@@ -226,34 +185,34 @@ def build_narrative(theme, segments):
 
 
 # -------------------------------------------------
-# ✅ MAIN ENGINE
+# ✅ MAIN ENGINE (FINAL)
 # -------------------------------------------------
 
 def build_blend(theme_index=None):
     print("\n🎧 BUILDING SEMANTIC BLEND\n")
 
-    clusters = load_clusters()
-    themes = load_themes()
+    jobs = load_jobs()
     audio_lookup = load_audio_lookup()
+    themes = load_themes()
 
-    if not clusters or not themes:
-        print("❌ Missing clusters or themes")
+    if not jobs or not audio_lookup:
+        print("❌ Missing jobs or audio catalog")
         return []
 
     theme = select_theme(themes, theme_index)
     print(f"🎯 Theme: {theme.get('theme')}")
 
-    cluster = find_cluster(clusters, theme)
+    # ✅ CORE: build segments from real data
+    segments = extract_segments(jobs, audio_lookup)
 
-    segments = build_audio_plan(cluster, audio_lookup)
+    print(f"DEBUG total segments available: {len(segments)}")
 
-    if not segments:
-        segments = fallback_segments(clusters, audio_lookup)
+    segments = select_segments(segments)
 
     print(f"✅ Selected {len(segments)} segments")
 
     if not segments:
-        print("❌ Still no segments")
+        print("❌ No usable segments")
         return []
 
     return build_narrative(theme.get("theme", "this topic"), segments)
@@ -268,6 +227,7 @@ if __name__ == "__main__":
 
     for step in result:
         print(step)
+
 
 
 
