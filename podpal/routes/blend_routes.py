@@ -180,7 +180,7 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
                 print("✅ stitch returned:", filename)
 
                 if filename:
-                    final_audio = f"/audio/final/{filename}"
+                    final_audio = filename  # already full S3 URL now
 
             except Exception as err:
                 print("🔥 stitch error:", err)

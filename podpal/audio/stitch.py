@@ -1,156 +1,126 @@
 import os
-from pathlib import Path
-import subprocess
 import uuid
-from typing import List
-import imageio_ffmpeg
+import subprocess
+from pathlib import Path
+import boto3
 
-# -------------------------------------------------
-# ✅ SINGLE PATH SYSTEM (CRITICAL)
-# -------------------------------------------------
+# ✅ S3 SETUP
+s3 = boto3.client("s3")
+BUCKET_NAME = "podblendz-episode-audio"
 
-AUDIO_DIR = Path("/app/audio")
-TEMP_DIR = AUDIO_DIR / "temp"
-FINAL_DIR = AUDIO_DIR / "final"
+# ✅ OUTPUT DIRECTORIES (Render-compatible)
+BASE_DIR = Path("/app/audio")
+TEMP_DIR = BASE_DIR / "temp"
+FINAL_DIR = BASE_DIR / "final"
 
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 FINAL_DIR.mkdir(parents=True, exist_ok=True)
 
-print("✅ AUDIO DIR:", AUDIO_DIR)
-print("✅ FINAL DIR:", FINAL_DIR)
 
 # -------------------------------------------------
-# ✅ CONFIG
+# ✅ MAIN STITCH FUNCTION
 # -------------------------------------------------
 
-MIN_CLIPS_REQUIRED = 2
-CLIP_DURATION = 6
-TARGET_TOTAL_SEGMENTS = 2
-
-# -------------------------------------------------
-# ✅ PROCESS AUDIO (FIXED)
-# -------------------------------------------------
-
-def process_audio(input_file: str) -> str:
-    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-    output_file = TEMP_DIR / f"{uuid.uuid4().hex}.mp3"
-
-    # ✅ CRITICAL: validate input file
-    if not os.path.exists(input_file) or os.path.getsize(input_file) < 2000:
-        raise RuntimeError("Invalid or corrupt audio file")
-
-    print(f"🎧 Processing: {input_file}")
-
-    subprocess.run(
-        [
-            ffmpeg,
-            "-y",
-            "-i", input_file,                 # ✅ moved BEFORE -ss
-            "-ss", "0",
-            "-t", str(CLIP_DURATION),
-            "-vn",
-            "-acodec", "libmp3lame",
-            "-ar", "44100",
-            "-ac", "2",
-            "-b:a", "128k",
-            str(output_file),
-        ],
-        check=True,
-    )
-
-    # ✅ Validate output
-    if not output_file.exists() or output_file.stat().st_size < 2000:
-        raise RuntimeError("Processed file invalid")
-
-    return str(output_file)
-
-# -------------------------------------------------
-# ✅ VALIDATE INPUT
-# -------------------------------------------------
-
-def validate_sequence(audio_files: List[str]) -> None:
-    if len(audio_files) < MIN_CLIPS_REQUIRED:
-        raise RuntimeError(f"❌ Not enough clips ({len(audio_files)})")
-
-# -------------------------------------------------
-# ✅ CONCAT FILE
-# -------------------------------------------------
-
-def create_concat_file(audio_files: List[str], concat_file: Path):
-    lines = [f"file '{Path(a).resolve().as_posix()}'" for a in audio_files]
-    concat_file.write_text("\n".join(lines), encoding="utf-8")
-
-# -------------------------------------------------
-# ✅ MAIN STITCH (HARDENED)
-# -------------------------------------------------
-
-def stitch_blendz(audio_files: List[str], target_minutes: int = 5) -> str:
-
-    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+def stitch_blendz(audio_files, minutes=5):
 
     if not audio_files:
-        raise RuntimeError("❌ No audio files provided")
+        return None
 
-    print("\n🎯 Building PodBlend...")
+    print("🎯 Building PodBlend...")
 
-    validate_sequence(audio_files)
+    max_files = max(1, min(len(audio_files), int(minutes)))
 
-    processed_files = []
-    i = 0
-    iterations = 0
-    max_iterations = 4
+    sequence = audio_files * (max_files // len(audio_files) + 1)
+    sequence = sequence[:max_files]
 
-    print("\n🔄 Expanding sequence...")
-
-    while (
-        len(processed_files) < TARGET_TOTAL_SEGMENTS
-        and iterations < max_iterations
-    ):
-        iterations += 1
-
-        audio = audio_files[i % len(audio_files)]
-
-        try:
-            processed = process_audio(audio)
-            processed_files.append(processed)
-
-        except Exception as e:
-            print(f"⚠️ Skipping bad file: {audio} → {e}")
-
-        i += 1
-
-    # ✅ FINAL SAFETY CHECK
-    if len(processed_files) < 1:
-        raise RuntimeError("❌ No valid audio clips to stitch")
+    temp_outputs = []
 
     # -------------------------------------------------
-    # ✅ CONCAT + OUTPUT
+    # ✅ STEP 1 — RE-ENCODE INDIVIDUAL CLIPS
+    # -------------------------------------------------
+
+    for file_path in sequence:
+        temp_out = TEMP_DIR / f"{uuid.uuid4().hex}.mp3"
+
+        print(f"🎧 Processing: {file_path}")
+
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i", file_path,
+                "-vn",
+                "-acodec", "libmp3lame",
+                "-ab", "128k",
+                str(temp_out),
+            ],
+            check=True,
+        )
+
+        temp_outputs.append(temp_out)
+
+    # -------------------------------------------------
+    # ✅ STEP 2 — CONCAT FILE LIST
     # -------------------------------------------------
 
     concat_file = TEMP_DIR / f"concat_{uuid.uuid4().hex}.txt"
-    create_concat_file(processed_files, concat_file)
+
+    with open(concat_file, "w") as f:
+        for fpath in temp_outputs:
+            f.write(f"file '{fpath}'\n")
+
+    # -------------------------------------------------
+    # ✅ STEP 3 — FINAL OUTPUT
+    # -------------------------------------------------
 
     output_file = FINAL_DIR / f"{uuid.uuid4().hex}.mp3"
 
-    print("\n🎧 Rendering final audio...")
+    print("🎧 Rendering final audio...")
 
     subprocess.run(
         [
-            ffmpeg,
+            "ffmpeg",
             "-y",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", str(concat_file),
-            "-c:a", "libmp3lame",
-            "-q:a", "3",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_file),
+            "-acodec",
+            "libmp3lame",
             str(output_file),
         ],
         check=True,
     )
 
-    print(f"\n✅ Blend created → {output_file}")
+    print(f"✅ Blend created → {output_file}")
 
-    return output_file.name
+    # -------------------------------------------------
+    # ✅ ✅ ✅ STEP 4 — UPLOAD TO S3 (CRITICAL ADDITION)
+    # -------------------------------------------------
+
+    try:
+        s3_key = f"final_blends/{output_file.name}"
+
+        print(f"☁️ Uploading to S3: {s3_key}")
+
+        s3.upload_file(
+            str(output_file),
+            BUCKET_NAME,
+            s3_key,
+            ExtraArgs={"ContentType": "audio/mpeg"}
+        )
+
+        public_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{s3_key}"
+
+        print(f"✅ Uploaded → {public_url}")
+
+        return public_url   # ✅ IMPORTANT: return URL, not filename
+
+    except Exception as e:
+        print("🔥 S3 upload failed:", e)
+        return None
 
 
 
