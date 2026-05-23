@@ -91,10 +91,12 @@ def select_theme(themes, index=None):
 # ✅ BUILD SEGMENTS FROM JOBS (CORE CHANGE)
 # -------------------------------------------------
 
+import random
+
 def extract_segments(jobs, audio_lookup):
     segments = []
 
-    for idx, job in enumerate(jobs):
+    for job in jobs:
         episode_id = job.get("episode_id")
 
         if episode_id not in audio_lookup:
@@ -102,57 +104,22 @@ def extract_segments(jobs, audio_lookup):
 
         audio_path = audio_lookup[episode_id]
 
-        # ✅ PRINT FIRST JOB STRUCTURE (CRITICAL)
-        if idx == 0:
-            print("🔍 SAMPLE JOB KEYS:", list(job.keys()))
-            print("🔍 SAMPLE JOB:", str(job)[:500])  # truncate for logs
-
-        # ✅ Try ALL possible text fields
-        possible_text_fields = [
-            "transcript",
-            "text",
-            "full_text",
-            "content",
-            "speech",
-        ]
-
-        transcript = None
-        for field in possible_text_fields:
-            if job.get(field):
-                transcript = job.get(field)
-                print(f"✅ Using field: {field}")
-                break
-
-        if not transcript:
-            continue
-
-        # ✅ Handle case where transcript is nested
-        if isinstance(transcript, dict):
-            transcript = transcript.get("text") or ""
-
-        if not isinstance(transcript, str):
-            continue
-
-        sentences = transcript.split(". ")
-
-        for i, sentence in enumerate(sentences):
-            text = sentence.strip()
-
-            if len(text) < 40:
-                continue
-
-            start = i * 6
+        # ✅ Generate synthetic segments from audio
+        # Assume long podcast → sample random chunks
+        for i in range(3):  # 3 clips per episode
+            start = random.randint(0, 1800)  # random start within first ~30 minutes
             end = start + 6
 
             segments.append({
                 "episode_id": episode_id,
                 "audio_path": audio_path,
-                "text": text,
+                "text": f"Segment from episode {episode_id}",  # placeholder
                 "start": start,
                 "end": end,
             })
 
     return segments
+
 # -------------------------------------------------
 # ✅ SELECT BEST SEGMENTS
 # -------------------------------------------------
