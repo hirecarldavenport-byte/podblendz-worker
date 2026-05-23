@@ -94,7 +94,7 @@ def select_theme(themes, index=None):
 def extract_segments(jobs, audio_lookup):
     segments = []
 
-    for job in jobs:
+    for idx, job in enumerate(jobs):
         episode_id = job.get("episode_id")
 
         if episode_id not in audio_lookup:
@@ -102,19 +102,37 @@ def extract_segments(jobs, audio_lookup):
 
         audio_path = audio_lookup[episode_id]
 
-        # ✅ CRITICAL: check ALL possible transcript fields
-        transcript = (
-            job.get("transcript")
-            or job.get("text")
-            or job.get("full_text")
-            or job.get("content")
-            or ""
-        )
+        # ✅ PRINT FIRST JOB STRUCTURE (CRITICAL)
+        if idx == 0:
+            print("🔍 SAMPLE JOB KEYS:", list(job.keys()))
+            print("🔍 SAMPLE JOB:", str(job)[:500])  # truncate for logs
+
+        # ✅ Try ALL possible text fields
+        possible_text_fields = [
+            "transcript",
+            "text",
+            "full_text",
+            "content",
+            "speech",
+        ]
+
+        transcript = None
+        for field in possible_text_fields:
+            if job.get(field):
+                transcript = job.get(field)
+                print(f"✅ Using field: {field}")
+                break
 
         if not transcript:
             continue
 
-        # ✅ Split into chunks
+        # ✅ Handle case where transcript is nested
+        if isinstance(transcript, dict):
+            transcript = transcript.get("text") or ""
+
+        if not isinstance(transcript, str):
+            continue
+
         sentences = transcript.split(". ")
 
         for i, sentence in enumerate(sentences):
@@ -135,7 +153,6 @@ def extract_segments(jobs, audio_lookup):
             })
 
     return segments
-
 # -------------------------------------------------
 # ✅ SELECT BEST SEGMENTS
 # -------------------------------------------------
