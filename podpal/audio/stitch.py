@@ -8,7 +8,7 @@ import boto3
 s3 = boto3.client("s3")
 BUCKET_NAME = "podblendz-episode-audio"
 
-# ✅ OUTPUT DIRECTORIES (Render-compatible)
+# ✅ OUTPUT DIRECTORIES
 BASE_DIR = Path("/app/audio")
 TEMP_DIR = BASE_DIR / "temp"
 FINAL_DIR = BASE_DIR / "final"
@@ -36,7 +36,7 @@ def stitch_blendz(audio_files, minutes=5):
     temp_outputs = []
 
     # -------------------------------------------------
-    # ✅ STEP 1 — RE-ENCODE INDIVIDUAL CLIPS
+    # ✅ STEP 1 — RE-ENCODE CLIPS
     # -------------------------------------------------
 
     for file_path in sequence:
@@ -60,17 +60,17 @@ def stitch_blendz(audio_files, minutes=5):
         temp_outputs.append(temp_out)
 
     # -------------------------------------------------
-    # ✅ STEP 2 — CONCAT FILE LIST
+    # ✅ STEP 2 — CREATE CONCAT FILE
     # -------------------------------------------------
 
     concat_file = TEMP_DIR / f"concat_{uuid.uuid4().hex}.txt"
 
     with open(concat_file, "w") as f:
-        for fpath in temp_outputs:
-            f.write(f"file '{fpath}'\n")
+        for file in temp_outputs:
+            f.write(f"file '{file}'\n")
 
     # -------------------------------------------------
-    # ✅ STEP 3 — FINAL OUTPUT
+    # ✅ STEP 3 — FINAL RENDER
     # -------------------------------------------------
 
     output_file = FINAL_DIR / f"{uuid.uuid4().hex}.mp3"
@@ -81,14 +81,10 @@ def stitch_blendz(audio_files, minutes=5):
         [
             "ffmpeg",
             "-y",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            str(concat_file),
-            "-acodec",
-            "libmp3lame",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(concat_file),
+            "-acodec", "libmp3lame",
             str(output_file),
         ],
         check=True,
@@ -97,7 +93,7 @@ def stitch_blendz(audio_files, minutes=5):
     print(f"✅ Blend created → {output_file}")
 
     # -------------------------------------------------
-    # ✅ ✅ ✅ STEP 4 — UPLOAD TO S3 (CRITICAL ADDITION)
+    # ✅ ✅ ✅ STEP 4 — UPLOAD TO S3 (FINAL FIX)
     # -------------------------------------------------
 
     try:
@@ -116,11 +112,12 @@ def stitch_blendz(audio_files, minutes=5):
 
         print(f"✅ Uploaded → {public_url}")
 
-        return public_url   # ✅ IMPORTANT: return URL, not filename
+        return public_url   # ✅ Final return
 
     except Exception as e:
-        print("🔥 S3 upload failed:", e)
-        return None
+        print("🔥🔥🔥 S3 UPLOAD ERROR:", str(e))
+        raise e
+
 
 
 
