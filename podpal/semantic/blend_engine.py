@@ -102,24 +102,48 @@ def extract_segments(jobs, audio_lookup):
 
         audio_path = audio_lookup[episode_id]
 
-        for seg in job.get("segments", []):
-            text = (seg.get("text") or "").strip()
+        # ✅ CRITICAL: detect real segment structure
+        raw_segments = (
+            job.get("segments")
+            or job.get("chunks")
+            or job.get("results")
+            or []
+        )
+
+        for seg in raw_segments:
+
+            # ✅ normalize fields
+            text = (
+                seg.get("text")
+                or seg.get("content")
+                or seg.get("transcript")
+                or ""
+            ).strip()
 
             if not text:
                 continue
 
-            segment = {
+            start = (
+                seg.get("start")
+                or seg.get("start_time")
+                or 0
+            )
+
+            end = (
+                seg.get("end")
+                or seg.get("end_time")
+                or start + 6
+            )
+
+            segments.append({
                 "episode_id": episode_id,
                 "audio_path": audio_path,
                 "text": text,
-                "start": seg.get("start", 0),
-                "end": seg.get("end", 0),
-            }
-
-            segments.append(segment)
+                "start": start,
+                "end": end,
+            })
 
     return segments
-
 
 # -------------------------------------------------
 # ✅ SELECT BEST SEGMENTS
