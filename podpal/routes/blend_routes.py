@@ -43,7 +43,7 @@ s3 = boto3.client(
 BUCKET_NAME = "podblendz-episode-audio"
 
 # -------------------------------------------------
-# ✅ DOWNLOAD HELPER (FIXED)
+# ✅ DOWNLOAD HELPER
 # -------------------------------------------------
 
 def fetch_to_local(url: str):
@@ -53,19 +53,15 @@ def fetch_to_local(url: str):
 
     try:
         parsed = urlparse(url)
-        key = parsed.path.lstrip("/")   # ✅ FIXED (dynamic key)
+        key = parsed.path.lstrip("/")
 
         print(f"DEBUG key: {key}")
 
-        response = s3.get_object(
-            Bucket=BUCKET_NAME,
-            Key=key
-        )
+        response = s3.get_object(Bucket=BUCKET_NAME, Key=key)
 
         with open(local_file, "wb") as f:
             f.write(response["Body"].read())
 
-        # ✅ Validate download
         if os.path.getsize(local_file) < 2000:
             print("⚠️ downloaded file too small")
             return None
@@ -94,11 +90,13 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
         if not sequence:
             return {
                 "mode": "semantic_blend",
+                "theme": None,
                 "steps": 0,
                 "segments": [],
                 "final_audio": None,
             }
 
+        # ✅ Extract clips
         clips = [
             step["content"]
             for step in sequence
@@ -106,6 +104,13 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
         ]
 
         print(f"✅ clips found: {len(clips)}")
+
+        # ✅ Extract theme from intro
+        theme = None
+        for step in sequence:
+            if step.get("type") == "intro":
+                theme = step.get("text")
+                break
 
         audio_files = []
 
@@ -121,12 +126,11 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
                 continue
 
             start = clip.get("start", 0)
-            end = clip.get("end", start + 10)
+            end = clip.get("end", start + 20)
             duration = end - start
 
-            # ✅ SAFE VALUES
             safe_start = max(0, start)
-            safe_duration = min(max(duration, 1), 6)
+            safe_duration = min(max(duration, 1), 20)
 
             print(f"DEBUG start={safe_start}, duration={safe_duration}")
 
@@ -143,7 +147,7 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
                         ffmpeg,
                         "-y",
                         "-loglevel", "error",
-                        "-i", local_file,                 # ✅ FIXED ordering
+                        "-i", local_file,
                         "-ss", str(safe_start),
                         "-t", str(safe_duration),
                         "-vn",
@@ -153,12 +157,8 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
                     check=True,
                 )
 
-                # ✅ VALIDATE TRIM
-                if (
-                    not os.path.exists(trimmed_file)
-                    or os.path.getsize(trimmed_file) < 2000
-                ):
-                    print("⚠️ Skipping bad trim:", trimmed_file)
+                if not os.path.exists(trimmed_file) or os.path.getsize(trimmed_file) < 2000:
+                    print("⚠️ Skipping bad trim")
                     continue
 
                 print(f"✅ trimmed: {trimmed_file}")
@@ -175,21 +175,17 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
         if stitch_blend and len(audio_files) >= 2:
             try:
                 print("🎧 starting stitch...")
-                filename = stitch_blend(audio_files, minutes or 5)
-
-                print("✅ stitch returned:", filename)
-
-                if filename:
-                    final_audio = filename  # already full S3 URL now
-
+                final_audio = stitch_blend(audio_files, minutes or 5)
+                print("✅ stitch returned:", final_audio)
             except Exception as err:
                 print("🔥 stitch error:", err)
-
         else:
             print("⚠️ Not enough files to stitch")
 
+        # ✅ ✅ FINAL RETURN (FIXED)
         return {
             "mode": "semantic_blend",
+            "theme": theme,
             "steps": len(clips),
             "segments": clips,
             "final_audio": final_audio,
@@ -200,9 +196,9 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
 
         return {
             "mode": "semantic_blend",
+            "theme": None,
             "steps": 0,
             "segments": [],
             "final_audio": None,
             "error": str(e),
         }
-

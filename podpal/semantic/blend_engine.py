@@ -2,9 +2,9 @@
 blend_engine.py
 
 ✅ Production-safe semantic blending
-✅ Uses transcription_jobs (ground truth segments)
-✅ Uses audio_catalog (verified S3 files)
-✅ Fully aligned pipeline (FINAL FIX)
+✅ Uses audio catalog (S3)
+✅ Uses synthetic segments (audio-first)
+✅ Adds diversity + longer clips
 """
 
 import json
@@ -14,18 +14,15 @@ from typing import List, Dict, Optional, Any
 
 
 # -------------------------------------------------
-# ✅ PATHS (UPDATED)
+# ✅ PATHS
 # -------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent.parent
 DATA_DIR = ROOT_DIR / "data"
 
-# ✅ SWITCHED to clean transcription jobs
 JOBS_FILE = DATA_DIR / "transcription_jobs/education_learning_jobs_clean.json"
 AUDIO_CATALOG_FILE = DATA_DIR / "audio_catalog.json"
-
-# Themes still optional
 THEMES_FILE = BASE_DIR / "themes.json"
 
 
@@ -47,7 +44,7 @@ def load_json(path: Path) -> List[Dict[str, Any]]:
 
 
 # -------------------------------------------------
-# ✅ LOAD DATA SOURCES
+# ✅ LOAD DATA
 # -------------------------------------------------
 
 def load_jobs():
@@ -65,7 +62,6 @@ def load_audio_lookup():
     }
 
     print(f"✅ Loaded audio catalog: {len(lookup)} entries")
-
     return lookup
 
 
@@ -74,7 +70,7 @@ def load_themes():
 
 
 # -------------------------------------------------
-# ✅ SELECT THEME
+# ✅ THEME
 # -------------------------------------------------
 
 def select_theme(themes, index=None):
@@ -88,10 +84,8 @@ def select_theme(themes, index=None):
 
 
 # -------------------------------------------------
-# ✅ BUILD SEGMENTS FROM JOBS (CORE CHANGE)
+# ✅ SEGMENT GENERATION (AUDIO-FIRST)
 # -------------------------------------------------
-
-import random
 
 def extract_segments(jobs, audio_lookup):
     segments = []
@@ -104,33 +98,30 @@ def extract_segments(jobs, audio_lookup):
 
         audio_path = audio_lookup[episode_id]
 
-        # ✅ Generate synthetic segments from audio
-        # Assume long podcast → sample random chunks
-        for i in range(3):  # 3 clips per episode
-            start = random.randint(0, 1800)  # random start within first ~30 minutes
-            end = start + 6
+        for _ in range(3):  # 3 random clips per episode
+            start = random.randint(0, 1800)
+            end = start + 20  # ✅ longer clips
 
             segments.append({
                 "episode_id": episode_id,
                 "audio_path": audio_path,
-                "text": f"Segment from episode {episode_id}",  # placeholder
+                "text": f"Segment from episode {episode_id}",
                 "start": start,
                 "end": end,
             })
 
     return segments
 
+
 # -------------------------------------------------
-# ✅ SELECT BEST SEGMENTS
+# ✅ SELECT SEGMENTS
 # -------------------------------------------------
 
 def select_segments(segments, max_segments=3):
     if not segments:
         return []
 
-    # Sort by text length (simple quality heuristic)
-    segments.sort(key=lambda x: len(x["text"]))
-
+    segments.sort(key=lambda x: x["start"])
     return segments[:max_segments]
 
 
@@ -139,17 +130,14 @@ def select_segments(segments, max_segments=3):
 # -------------------------------------------------
 
 def generate_context_transition(prev_text, next_text):
-    next_snippet = next_text[:80].strip()
-
     connectors = [
         "Building on that idea,",
         "Taking that further,",
         "From another perspective,",
-        "Continuing this line of thinking,",
-        "Expanding on this concept,"
+        "Continuing this line of thinking,"
     ]
 
-    return f"{random.choice(connectors)} {next_snippet}"
+    return f"{random.choice(connectors)} {next_text[:80]}"
 
 
 # -------------------------------------------------
@@ -184,7 +172,7 @@ def build_narrative(theme, segments):
 
 
 # -------------------------------------------------
-# ✅ MAIN ENGINE (FINAL)
+# ✅ MAIN ENGINE (FIXED)
 # -------------------------------------------------
 
 def build_blend(theme_index=None):
@@ -195,30 +183,46 @@ def build_blend(theme_index=None):
     themes = load_themes()
 
     if not jobs or not audio_lookup:
-        print("❌ Missing jobs or audio catalog")
+        print("❌ Missing data")
         return []
 
     theme = select_theme(themes, theme_index)
     print(f"🎯 Theme: {theme.get('theme')}")
 
-    # ✅ CORE: build segments from real data
+    # ✅ STEP 1: extract segments
     segments = extract_segments(jobs, audio_lookup)
+    print(f"DEBUG total segments: {len(segments)}")
 
-    print(f"DEBUG total segments available: {len(segments)}")
+    # ✅ STEP 2: diversity filter (FIXED LOCATION)
+    seen_episodes = set()
+    diverse_segments = []
 
+    for seg in segments:
+        ep_id = seg["episode_id"]
+
+        if ep_id in seen_episodes:
+            continue
+
+        seen_episodes.add(ep_id)
+        diverse_segments.append(seg)
+
+        if len(diverse_segments) >= 10:
+            break
+
+    segments = diverse_segments
+
+    # ✅ STEP 3: final selection
     segments = select_segments(segments)
-
     print(f"✅ Selected {len(segments)} segments")
 
     if not segments:
-        print("❌ No usable segments")
         return []
 
-    return build_narrative(theme.get("theme", "this topic"), segments)
+    return build_narrative(theme.get("theme"), segments)
 
 
 # -------------------------------------------------
-# ✅ LOCAL TEST
+# ✅ TEST
 # -------------------------------------------------
 
 if __name__ == "__main__":
