@@ -7,8 +7,9 @@ from urllib.parse import urlparse
 
 from podpal.semantic.blend_engine import build_blend
 
-print("🔥 NEW BLEND ROUTES VERSION ACTIVE")
-print("AWS KEY LOADED:", os.environ.get("AWS_ACCESS_KEY_ID"))
+import azure.cognitiveservices.speech as speechsdk
+
+print("🔥 FINAL BLEND ROUTES ACTIVE")
 
 # -------------------------------------------------
 # ✅ SAFE STITCH IMPORT
@@ -18,7 +19,7 @@ stitch_blend = None
 try:
     from podpal.audio.stitch import stitch_blendz
     stitch_blend = stitch_blendz
-    print("✅ stitch_blend loaded successfully")
+    print("✅ stitch loaded")
 except Exception as e:
     print("⚠️ stitch import failed:", e)
 
@@ -27,35 +28,24 @@ except Exception as e:
 # -------------------------------------------------
 
 router = APIRouter()
-print("✅ blend_routes.py loaded")
 
 # -------------------------------------------------
 # ✅ S3 CLIENT
 # -------------------------------------------------
 
-s3 = boto3.client(
-    "s3",
-    aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
-    aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
-    region_name="us-east-1",
-)
-
+s3 = boto3.client("s3")
 BUCKET_NAME = "podblendz-episode-audio"
 
 # -------------------------------------------------
-# ✅ DOWNLOAD HELPER
+# ✅ FETCH AUDIO
 # -------------------------------------------------
 
 def fetch_to_local(url: str):
     local_file = f"/tmp/{uuid.uuid4().hex}.mp3"
 
-    print(f"⬇️ fetching via boto3: {url}")
-
     try:
         parsed = urlparse(url)
         key = parsed.path.lstrip("/")
-
-        print(f"DEBUG key: {key}")
 
         response = s3.get_object(Bucket=BUCKET_NAME, Key=key)
 
@@ -63,15 +53,91 @@ def fetch_to_local(url: str):
             f.write(response["Body"].read())
 
         if os.path.getsize(local_file) < 2000:
-            print("⚠️ downloaded file too small")
             return None
 
-        print(f"✅ saved via boto3: {local_file}")
         return local_file
 
     except Exception as e:
-        print(f"❌ boto3 fetch failed: {e}")
+        print("❌ fetch error:", e)
         return None
+
+# -------------------------------------------------
+# ✅ AZURE TTS INTRO (FIXED)
+# -------------------------------------------------
+
+def generate_intro_audio(text: str):
+    try:
+        key = os.getenv("AZURE_SPEECH_KEY")
+        region = os.getenv("AZURE_SPEECH_REGION")
+
+        if not key or not region:
+            print("❌ Azure env missing")
+            return None
+
+        speech_config = speechsdk.SpeechConfig(subscription=key, region=region)
+        speech_config.speech_synthesis_voice_name = "en-US-JennyNeural"
+
+        output = f"/tmp/{uuid.uuid4().hex}.mp3"
+        audio_config = speechsdk.audio.AudioOutputConfig(filename=output)
+
+        synth = speechsdk.SpeechSynthesizer(
+            speech_config=speech_config,
+            audio_config=audio_config
+        )
+
+        # ✅ only ONE call (fixed)
+        result = synth.speak_text_async(text).get()
+
+        # ✅ FIX 1 (properly indented)
+        if result and result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+            print("✅ intro generated")
+            return output
+        else:
+            print("❌ Azure TTS failed:", getattr(result, "reason", None))
+
+    except Exception as e:
+        print("❌ TTS error:", e)
+
+    return None
+
+# -------------------------------------------------
+# ✅ SMOOTH CROSSFADE
+# -------------------------------------------------
+
+def apply_crossfade(inputs: list):
+    if len(inputs) <= 1:
+        return inputs
+
+    import subprocess
+    import imageio_ffmpeg
+
+    output = f"/tmp/{uuid.uuid4().hex}.mp3"
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+
+    filter_complex = ""
+
+    for i in range(len(inputs) - 1):
+        if i == 0:
+            filter_complex += f"[0:a][1:a]acrossfade=d=1[a1];"
+        else:
+            filter_complex += f"[a{i}][{i+1}:a]acrossfade=d=1[a{i+1}];"
+
+    last = f"a{len(inputs)-1}"
+
+    cmd = [ffmpeg, "-y"]
+
+    for inp in inputs:
+        cmd += ["-i", inp]
+
+    cmd += [
+        "-filter_complex", filter_complex[:-1],
+        "-map", f"[{last}]",
+        output
+    ]
+
+    subprocess.run(cmd, check=True)
+
+    return [output]
 
 # -------------------------------------------------
 # ✅ /blend ENDPOINT
@@ -80,12 +146,10 @@ def fetch_to_local(url: str):
 @router.get("/blend")
 def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
 
-    print("\n🎯 /blend endpoint hit")
+    print("\n🎯 /blend hit")
 
     try:
         sequence = build_blend(theme_index=theme_index)
-
-        print(f"DEBUG sequence length: {len(sequence)}")
 
         if not sequence:
             return {
@@ -96,93 +160,91 @@ def get_blend(minutes: Optional[int] = 5, theme_index: Optional[int] = None):
                 "final_audio": None,
             }
 
-        # ✅ Extract clips
-        clips = [
-            step["content"]
-            for step in sequence
-            if step.get("type") == "clip"
-        ]
-
-        print(f"✅ clips found: {len(clips)}")
-
-        # ✅ Extract theme from intro
+        # ✅ theme
         theme = None
         for step in sequence:
             if step.get("type") == "intro":
                 theme = step.get("text")
                 break
 
+        # ✅ intro audio
+        intro_audio = generate_intro_audio(theme) if theme else None
+
+        # ✅ clips
+        clips = [
+            step["content"]
+            for step in sequence
+            if step.get("type") == "clip"
+        ]
+
         audio_files = []
 
-        for idx, clip in enumerate(clips):
-            print(f"\n--- Processing clip {idx} ---")
+        if intro_audio:
+            audio_files.append(intro_audio)
 
+        import subprocess
+        import imageio_ffmpeg
+        ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+
+        for clip in clips:
             url = clip.get("audio_path")
             if not url:
                 continue
 
-            local_file = fetch_to_local(url)
-            if not local_file:
+            local = fetch_to_local(url)
+            if not local:
                 continue
 
             start = clip.get("start", 0)
-            end = clip.get("end", start + 20)
-            duration = end - start
+            duration = min(20, clip.get("end", start + 20) - start)
 
-            safe_start = max(0, start)
-            safe_duration = min(max(duration, 1), 20)
-
-            print(f"DEBUG start={safe_start}, duration={safe_duration}")
-
-            trimmed_file = f"/tmp/{uuid.uuid4().hex}.mp3"
+            out = f"/tmp/{uuid.uuid4().hex}.mp3"
 
             try:
-                import subprocess
-                import imageio_ffmpeg
-
-                ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-
                 subprocess.run(
                     [
                         ffmpeg,
                         "-y",
-                        "-loglevel", "error",
-                        "-i", local_file,
-                        "-ss", str(safe_start),
-                        "-t", str(safe_duration),
+                        "-i", local,
+                        "-ss", str(start),
+                        "-t", str(duration),
                         "-vn",
                         "-acodec", "libmp3lame",
-                        trimmed_file,
+                        out,
                     ],
-                    check=True,
+                    check=True
                 )
 
-                if not os.path.exists(trimmed_file) or os.path.getsize(trimmed_file) < 2000:
-                    print("⚠️ Skipping bad trim")
-                    continue
-
-                print(f"✅ trimmed: {trimmed_file}")
-                audio_files.append(trimmed_file)
+                if os.path.exists(out) and os.path.getsize(out) > 2000:
+                    audio_files.append(out)
 
             except Exception as e:
-                print(f"❌ trimming failed: {e}")
-                continue
+                print("❌ trim failed:", e)
 
-        print("TOTAL FILES:", len(audio_files))
+        if len(audio_files) < 2:
+            return {
+                "mode": "semantic_blend",
+                "theme": theme,
+                "steps": len(clips),
+                "segments": clips,
+                "final_audio": None,
+            }
 
+        print("🎧 applying crossfade...")
+        audio_files = apply_crossfade(audio_files)
+
+        print("🎧 stitching...")
+
+        # ✅ FIX 2 (safe call)
         final_audio = None
-
-        if stitch_blend and len(audio_files) >= 2:
+        if stitch_blend:
             try:
-                print("🎧 starting stitch...")
-                final_audio = stitch_blend(audio_files, minutes or 5)
-                print("✅ stitch returned:", final_audio)
-            except Exception as err:
-                print("🔥 stitch error:", err)
+                final_audio = stitch_blend(audio_files, minutes or 1)
+            except Exception as e:
+                print("🔥 stitch error:", e)
         else:
-            print("⚠️ Not enough files to stitch")
+            print("⚠️ stitch not available")
 
-        # ✅ ✅ FINAL RETURN (FIXED)
         return {
             "mode": "semantic_blend",
             "theme": theme,
