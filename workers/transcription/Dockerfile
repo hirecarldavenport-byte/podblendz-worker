@@ -1,16 +1,16 @@
-FROM runpod/pytorch:3.10-2.0.1-cuda11.8-runtime
+FROM runpod/base:0.4.0
 
 WORKDIR /app
 
-# Install system deps
+# System dependencies
 RUN apt-get update && apt-get install -y ffmpeg
 
-# Install Python deps
+# Python dependencies
 RUN pip install --upgrade pip
-RUN pip install boto3 runpod openai-whisper
+RUN pip install boto3 runpod openai-whisper torch
 
 # Copy your handler
 COPY handler.py /app/handler.py
 
-# Run the worker
-CMD ["python", "-u", "handler.py"]
+# Run handler
+CMD ["python3", "-u", "handler.py"]
