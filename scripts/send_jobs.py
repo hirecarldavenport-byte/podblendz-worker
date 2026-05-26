@@ -10,7 +10,7 @@ RUNPOD_API_KEY = os.environ.get("RUNPOD_API_KEY")
 ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID")
 
 DELAY_BETWEEN_JOBS = 2     # seconds (prevents overload)
-MAX_EPISODES = 50        # set to e.g. 10 for testing
+MAX_EPISODES = 200        # set to e.g. 10 for testing
 
 S3_BUCKET = "podblendz-episode-audio"
 S3_PREFIX = "raw_audio/"   # ✅ process EVERYTHING under this
