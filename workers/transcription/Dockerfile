@@ -1,28 +1,16 @@
-FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
-
-# Prevent interactive prompts
-ENV DEBIAN_FRONTEND=noninteractive
-
-# System deps
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    git \
-    python3 \
-    python3-pip \
-    && rm -rf /var/lib/apt/lists/*
-
-# Python deps
-RUN python3 -m pip install --upgrade pip
-RUN pip install \
-    runpod \
-    boto3 \
-    openai-whisper \
-    torch
+FROM runpod/pytorch:3.10-2.0.1-cuda11.8-runtime
 
 WORKDIR /app
 
-# Copy worker code
+# Install system deps
+RUN apt-get update && apt-get install -y ffmpeg
+
+# Install Python deps
+RUN pip install --upgrade pip
+RUN pip install boto3 runpod openai-whisper
+
+# Copy your handler
 COPY handler.py /app/handler.py
 
 # Run the worker
-CMD ["python3", "handler.py"]
+CMD ["python", "-u", "handler.py"]
