@@ -2,6 +2,8 @@ import os
 import tempfile
 import traceback
 import requests
+import json
+import boto3
 import runpod
 from faster_whisper import WhisperModel
 
@@ -104,6 +106,37 @@ def handler(job):
 
         print(f"✅ Completed transcription: {episode_id}")
 
+        # -------------------------
+        # ✅ Save to S3 (PERSISTENCE)
+        # -------------------------
+        try:
+            s3 = boto3.client("s3")
+
+            bucket = "podblendz-episode-audio"
+            key = f"segments/education_learning/hidden_brain/{episode_id}.json"
+
+            s3.put_object(
+                Bucket=bucket,
+                Key=key,
+                Body=json.dumps(result),
+                ContentType="application/json"
+            )
+
+            print(f"✅ Saved to S3: {key}")
+
+        except Exception as e:
+            print("🔥 FAILED TO SAVE TO S3")
+            traceback.print_exc()
+
+        # -------------------------
+        # ✅ Cleanup temp file
+        # -------------------------
+        try:
+            os.remove(audio_path)
+            print("🧹 Temp file removed")
+        except Exception:
+            pass
+
         return {
             "output": result
         }
@@ -122,3 +155,4 @@ def handler(job):
 runpod.serverless.start({
     "handler": handler
 })
+
