@@ -8,7 +8,7 @@ from faster_whisper import WhisperModel
 # -------------------------
 # Model initialization
 # -------------------------
-MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "base")  # ✅ safer
+MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "base")
 DEVICE = "cuda"
 COMPUTE_TYPE = "float16"
 
@@ -32,13 +32,29 @@ except Exception as e:
 # -------------------------
 def handler(job):
     try:
-        input_data = job["input"]
+        input_data = job.get("input", {})
 
-        episode_id = input_data["episode_id"]
-        audio_url = input_data["audio_url"]
+        episode_id = input_data.get("episode_id", "unknown")
         language = input_data.get("language", "en")
 
+        # -------------------------
+        # ✅ FLEXIBLE INPUT HANDLING
+        # -------------------------
+        audio_url = input_data.get("audio_url")
+
+        if not audio_url:
+            audio_s3_key = input_data.get("audio_s3_key")
+
+            if not audio_s3_key:
+                raise ValueError("Missing audio_url OR audio_s3_key")
+
+            bucket = "podblendz-episode-audio"
+            audio_url = f"https://{bucket}.s3.amazonaws.com/{audio_s3_key}"
+
+            print("🔁 Converted S3 key → URL")
+
         print(f"🎧 Starting transcription: {episode_id}")
+        print(f"🌐 Audio source: {audio_url}")
 
         # -------------------------
         # Download audio
@@ -46,13 +62,14 @@ def handler(job):
         with tempfile.NamedTemporaryFile(suffix=".audio", delete=False) as tmp:
             audio_path = tmp.name
 
-            print(f"⬇️ Downloading audio from {audio_url}")
+            print("⬇️ Downloading audio...")
 
             response = requests.get(audio_url, stream=True, timeout=60)
             response.raise_for_status()
 
             for chunk in response.iter_content(chunk_size=8192):
-                tmp.write(chunk)
+                if chunk:
+                    tmp.write(chunk)
 
         # -------------------------
         # Transcribe
@@ -100,7 +117,7 @@ def handler(job):
 
 
 # -------------------------
-# RUNPOD ENTRYPOINT ✅ CRITICAL
+# RUNPOD ENTRYPOINT ✅ REQUIRED
 # -------------------------
 runpod.serverless.start({
     "handler": handler
