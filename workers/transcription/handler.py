@@ -107,7 +107,7 @@ def handler(job):
         print(f"✅ Completed transcription: {episode_id}")
 
         # -------------------------
-        # ✅ Save to S3 (PERSISTENCE)
+        # ✅ Save to S3 (MUST HAPPEN BEFORE RETURN)
         # -------------------------
         try:
             s3 = boto3.client("s3")
@@ -124,7 +124,7 @@ def handler(job):
 
             print(f"✅ Saved to S3: {key}")
 
-        except Exception as e:
+        except Exception:
             print("🔥 FAILED TO SAVE TO S3")
             traceback.print_exc()
 
@@ -137,6 +137,9 @@ def handler(job):
         except Exception:
             pass
 
+        # -------------------------
+        # ✅ RETURN LAST (critical fix)
+        # -------------------------
         return {
             "output": result
         }
@@ -155,4 +158,3 @@ def handler(job):
 runpod.serverless.start({
     "handler": handler
 })
-print("🚀 New deploy trigger")
