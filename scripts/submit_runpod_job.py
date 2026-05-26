@@ -1,8 +1,7 @@
 """
 submit_runpod_job.py
 
-Submits a job to a RunPod Serverless endpoint using environment variables.
-Safe for GitHub (no secrets committed).
+Send a single test job to RunPod Serverless endpoint.
 """
 
 import os
@@ -10,47 +9,73 @@ import sys
 import requests
 
 
+# ---------------------------------------------------
+# ✅ ENV HELPERS
+# ---------------------------------------------------
+
 def get_required_env(name: str) -> str:
-    """Fetch a required environment variable or exit with a clear error."""
     value = os.environ.get(name)
     if not value:
-        print(f"ERROR: Missing required environment variable: {name}", file=sys.stderr)
+        print(f"❌ Missing environment variable: {name}")
         sys.exit(1)
     return value
 
 
-def main():
-    # --- Required configuration ---
-    runpod_api_key = get_required_env("RUNPOD_API_KEY")
-    endpoint_id = get_required_env("RUNPOD_ENDPOINT_ID")
+# ---------------------------------------------------
+# ✅ MAIN
+# ---------------------------------------------------
 
-    runpod_url = f"https://api.runpod.ai/v2/{endpoint_id}/run"
+def main():
+    # ✅ Load config
+    API_KEY = get_required_env("RUNPOD_API_KEY")
+    ENDPOINT_ID = get_required_env("RUNPOD_ENDPOINT_ID")
+
+    url = f"https://api.runpod.ai/v2/{ENDPOINT_ID}/run"
 
     headers = {
-        "Authorization": f"Bearer {runpod_api_key}",
-        "Content-Type": "application/json",
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
     }
 
-    # --- Minimal test payload ---
-    # Replace or extend this to match your worker handler contract.
+    # ---------------------------------------------------
+    # ✅ TEST INPUT (MATCHES YOUR HANDLER EXACTLY)
+    # ---------------------------------------------------
+
     payload = {
         "input": {
             "episode_id": "0023fb72763eb342b835085d38bd0a6e",
-            "audio_url": "https://podblendz-episode-audio.s3.us-east-1.amazonaws.com/raw_audio/education_learning/hidden_brain/0023fb72763eb342b835085d38bd0a6e.mp3",
-            "show": "Hidden Brain",
-            "category": "education_learning",
-            "published_at": "2026-04-19",
+            "podcast_id": "hidden_brain",
+            "audio_s3_key": "raw_audio/education_learning/hidden_brain/0023fb72763eb342b835085d38bd0a6e.mp3",
             "language": "en"
         }
     }
 
-    # --- Submit job ---
-    response = requests.post(runpod_url, headers=headers, json=payload, timeout=30)
+    # ---------------------------------------------------
+    # ✅ SEND JOB
+    # ---------------------------------------------------
 
-    print("Status:", response.status_code)
-    print("Body:")
-    print(response.text)
+    print("🚀 Sending job to RunPod...")
 
+    try:
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+
+        print("\n✅ Response:")
+        print("Status Code:", response.status_code)
+        print(response.text)
+
+        if response.status_code != 200:
+            print("⚠️ Warning: Non-200 response")
+
+    except requests.exceptions.RequestException as e:
+        print("🔥 Network error:", str(e))
+
+
+# ---------------------------------------------------
 
 if __name__ == "__main__":
     main()
