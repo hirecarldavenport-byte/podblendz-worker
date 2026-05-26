@@ -1,18 +1,16 @@
 """
-Master Topic Podcasters
------------------------
+master_topic_podcasters.py
 
-Canonical editorial registry of podcasters grouped by master topic.
-
-✅ AUTHORITATIVE SOURCE OF INGESTION
-✅ Only direct + stable RSS feeds are ingestible
+✅ Master ingestion registry
+✅ Safe ingestion only (direct RSS feeds)
+✅ Typed + structured for ingestion pipelines
 """
 
 from typing import Dict, List, Optional, TypedDict
 
 
 # =================================================
-# TYPE DEFINITION
+# ✅ TYPE DEFINITION
 # =================================================
 
 class CanonicalPodcaster(TypedDict):
@@ -27,21 +25,19 @@ class CanonicalPodcaster(TypedDict):
     feed_url: Optional[str]
     media_access: str  # "direct" | "blocked"
 
-    source_quality: str  # "core" | "experimental" | "blocked"
+    source_quality: str  # "core" | "experimental"
 
 
 # =================================================
-# MASTER REGISTRY
+# ✅ MASTER REGISTRY
 # =================================================
 
 TOP_PODCASTERS_BY_MASTER_TOPIC: Dict[str, List[CanonicalPodcaster]] = {
 
     # =================================================
-    # 🧠 CORE BLENDZ FOUNDATION
+    # 🧠 CORE THINKING
     # =================================================
     "core_blendz": [
-
-        # ✅ WORKING
         {
             "id": "econtalk",
             "name": "EconTalk",
@@ -52,120 +48,6 @@ TOP_PODCASTERS_BY_MASTER_TOPIC: Dict[str, List[CanonicalPodcaster]] = {
             "media_access": "direct",
             "source_quality": "core",
         },
-
-        # ❌ Broken RSS (returns HTML)
-        {
-            "id": "knowledge_project",
-            "name": "The Knowledge Project",
-            "ingestible": False,
-            "primary_topic": "education_learning",
-            "allow_cross_topic": True,
-            "feed_url": "https://feeds.simplecast.com/ClmzXJj7",
-            "media_access": "blocked",
-            "source_quality": "experimental",
-        },
-
-        {
-            "id": "invest_like_the_best",
-            "name": "Invest Like the Best",
-            "ingestible": False,
-            "primary_topic": "finance",
-            "allow_cross_topic": True,
-            "feed_url": "https://feeds.simplecast.com/4T39_jAj",
-            "media_access": "blocked",
-            "source_quality": "experimental",
-        },
-
-        {
-            "id": "acquired",
-            "name": "Acquired",
-            "ingestible": False,
-            "primary_topic": "business_strategy",
-            "allow_cross_topic": True,
-            "feed_url": "https://feeds.simplecast.com/i2yC1nFQ",
-            "media_access": "blocked",
-            "source_quality": "experimental",
-        },
-
-        {
-            "id": "my_first_million",
-            "name": "My First Million",
-            "ingestible": False,
-            "primary_topic": "business",
-            "allow_cross_topic": True,
-            "feed_url": "https://feeds.simplecast.com/0M0F0QSn",
-            "media_access": "blocked",
-            "source_quality": "experimental",
-        },
-    ],
-
-
-    # =================================================
-    # 🧬 SCIENCE / HUMAN PERFORMANCE
-    # =================================================
-    "science_general": [
-
-        # ✅ WORKING
-        {
-            "id": "huberman_lab",
-            "name": "Huberman Lab Podcast",
-            "ingestible": True,
-            "primary_topic": "science_general",
-            "allow_cross_topic": True,
-            "feed_url": "https://feeds.libsyn.com/204095/rss",
-            "media_access": "direct",
-            "source_quality": "core",
-        },
-
-        # ❌ Broken RSS
-        {
-            "id": "big_biology",
-            "name": "Big Biology",
-            "ingestible": False,
-            "primary_topic": "science_general",
-            "allow_cross_topic": True,
-            "feed_url": "https://feeds.simplecast.com/XFJZy2r3",
-            "media_access": "blocked",
-            "source_quality": "experimental",
-        },
-    ],
-
-
-    # =================================================
-    # 💰 FINANCE
-    # =================================================
-    "finance": [
-
-        {
-            "id": "earn_your_leisure",
-            "name": "Earn Your Leisure",
-            "ingestible": False,
-            "primary_topic": "finance",
-            "allow_cross_topic": True,
-            "feed_url": None,
-            "media_access": "blocked",
-            "source_quality": "experimental",
-        },
-
-        {
-            "id": "freakonomics_radio",
-            "name": "Freakonomics Radio",
-            "ingestible": False,
-            "primary_topic": "finance",
-            "allow_cross_topic": True,
-            "feed_url": "https://feeds.simplecast.com/Y8lFbOT4",
-            "media_access": "blocked",
-            "source_quality": "blocked",
-        },
-    ],
-
-
-    # =================================================
-    # 📚 EDUCATION / THINKING
-    # =================================================
-    "education_learning": [
-
-        # ✅ FIXED NAME + WORKING FEED
         {
             "id": "as_a_man_readeth",
             "name": "As a Man Readeth (LibriVox)",
@@ -176,45 +58,110 @@ TOP_PODCASTERS_BY_MASTER_TOPIC: Dict[str, List[CanonicalPodcaster]] = {
             "media_access": "direct",
             "source_quality": "core",
         },
-
         {
             "id": "hidden_brain",
             "name": "Hidden Brain",
-            "ingestible": False,
+            "ingestible": True,
             "primary_topic": "education_learning",
-            "allow_cross_topic": False,
+            "allow_cross_topic": True,
             "feed_url": "https://feeds.npr.org/510308/podcast.xml",
-            "media_access": "blocked",
-            "source_quality": "experimental",
+            "media_access": "direct",
+            "source_quality": "core",
         },
     ],
 
+    # =================================================
+    # 🧬 SCIENCE
+    # =================================================
+    "science_general": [
+        {
+            "id": "huberman_lab",
+            "name": "Huberman Lab Podcast",
+            "ingestible": True,
+            "primary_topic": "science_general",
+            "allow_cross_topic": True,
+            "feed_url": "https://feeds.libsyn.com/204095/rss",
+            "media_access": "direct",
+            "source_quality": "core",
+        },
+        {
+            "id": "the_drive",
+            "name": "The Drive (Peter Attia)",
+            "ingestible": True,
+            "primary_topic": "science_general",
+            "allow_cross_topic": True,
+            "feed_url": "https://peterattiamd.com/feed/podcast/",
+            "media_access": "direct",
+            "source_quality": "core",
+        },
+    ],
 
     # =================================================
-    # 🎭 CULTURE / IDEAS
+    # 💰 ECONOMICS
+    # =================================================
+    "finance": [
+        {
+            "id": "planet_money",
+            "name": "Planet Money",
+            "ingestible": True,
+            "primary_topic": "finance",
+            "allow_cross_topic": True,
+            "feed_url": "https://feeds.npr.org/510289/podcast.xml",
+            "media_access": "direct",
+            "source_quality": "core",
+        },
+        {
+            "id": "indicator",
+            "name": "The Indicator",
+            "ingestible": True,
+            "primary_topic": "finance",
+            "allow_cross_topic": True,
+            "feed_url": "https://feeds.npr.org/510325/podcast.xml",
+            "media_access": "direct",
+            "source_quality": "core",
+        },
+    ],
+
+    # =================================================
+    # 🧠 PSYCHOLOGY
+    # =================================================
+    "education_learning": [
+        {
+            "id": "therapy_black_girls",
+            "name": "Therapy for Black Girls",
+            "ingestible": True,
+            "primary_topic": "education_learning",
+            "allow_cross_topic": True,
+            "feed_url": "https://feeds.simplecast.com/tb7MZdl7",
+            "media_access": "direct",
+            "source_quality": "core",
+        },
+    ],
+
+    # =================================================
+    # 🎭 CULTURE
     # =================================================
     "media_culture": [
-
         {
-            "id": "higher_learning",
-            "name": "Higher Learning",
-            "ingestible": False,
+            "id": "code_switch",
+            "name": "Code Switch",
+            "ingestible": True,
             "primary_topic": "media_culture",
             "allow_cross_topic": True,
-            "feed_url": None,
-            "media_access": "blocked",
-            "source_quality": "blocked",
-        }
+            "feed_url": "https://feeds.npr.org/510312/podcast.xml",
+            "media_access": "direct",
+            "source_quality": "core",
+        },
     ],
 }
 
 
 # =================================================
-# SAFE ITERATOR
+# ✅ SAFE ITERATOR (CRITICAL)
 # =================================================
 
 def iter_ingestible_podcasters():
-    """Yield only clean, direct-ingestible feeds"""
+    """Yield only valid ingestible feeds"""
 
     for topic, podcasters in TOP_PODCASTERS_BY_MASTER_TOPIC.items():
         for podcaster in podcasters:
@@ -224,5 +171,8 @@ def iter_ingestible_podcasters():
                 and podcaster.get("feed_url")
             ):
                 yield topic, podcaster
+
+
+
 
 

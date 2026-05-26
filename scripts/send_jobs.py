@@ -2,6 +2,7 @@ import os
 import time
 import requests
 import boto3
+from botocore.exceptions import ClientError
 
 # --------------------------------------
 # ✅ CONFIG
@@ -9,11 +10,11 @@ import boto3
 RUNPOD_API_KEY = os.environ.get("RUNPOD_API_KEY")
 ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID")
 
-DELAY_BETWEEN_JOBS = 2     # seconds (prevents overload)
-MAX_EPISODES = 200        # set to e.g. 10 for testing
+DELAY_BETWEEN_JOBS = 2
+MAX_EPISODES = 200
 
 S3_BUCKET = "podblendz-episode-audio"
-S3_PREFIX = "raw_audio/"   # ✅ process EVERYTHING under this
+S3_PREFIX = "raw_audio/"
 
 url = f"https://api.runpod.ai/v2/{ENDPOINT_ID}/run"
 
@@ -22,30 +23,59 @@ headers = {
     "Content-Type": "application/json"
 }
 
+s3 = boto3.client("s3")
+
 # --------------------------------------
-# ✅ FETCH ALL AUDIO FROM S3
+# ✅ CHECK IF TRANSCRIPT EXISTS
+# --------------------------------------
+def transcript_exists(category, podcast, episode_id):
+    output_key = f"segments/{category}/{podcast}/{episode_id}.json"
+
+    try:
+        s3.head_object(Bucket=S3_BUCKET, Key=output_key)
+        return True
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "404":
+            return False
+        raise
+
+
+# --------------------------------------
+# ✅ FETCH ALL AUDIO FROM S3 (MULTI-PODCAST)
 # --------------------------------------
 def get_episodes():
     print("🔍 Scanning S3 for audio files...")
 
-    s3 = boto3.client("s3")
     paginator = s3.get_paginator("list_objects_v2")
-
     episodes = []
 
     for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=S3_PREFIX):
         for obj in page.get("Contents", []):
             key = obj["Key"]
 
-            # ✅ ONLY process mp3 files
-            if key.endswith(".mp3"):
-                episode_id = key.split("/")[-1].replace(".mp3", "")
+            if not key.endswith(".mp3"):
+                continue
 
-                episodes.append({
-                    "episode_id": episode_id,
-                    "audio_s3_key": key,
-                    "language": "en"
-                })
+            # Expected format:
+            # raw_audio/category/podcast/file.mp3
+            parts = key.split("/")
+
+            if len(parts) < 4:
+                continue
+
+            category = parts[1]
+            podcast = parts[2]
+            filename = parts[3]
+
+            episode_id = filename.replace(".mp3", "")
+
+            episodes.append({
+                "episode_id": episode_id,
+                "audio_s3_key": key,
+                "category": category,
+                "podcast": podcast,
+                "language": "en"
+            })
 
     print(f"✅ Found {len(episodes)} audio files")
 
@@ -79,7 +109,7 @@ def send_job(ep):
 
 
 # --------------------------------------
-# ✅ MAIN RUNNER
+# ✅ MAIN RUNNER (WITH SKIP LOGIC)
 # --------------------------------------
 def main():
     episodes = get_episodes()
@@ -87,10 +117,17 @@ def main():
     print(f"\n🚀 Starting batch for {len(episodes)} episodes...\n")
 
     success = 0
+    skipped = 0
     failed = []
 
     for i, ep in enumerate(episodes, 1):
         print(f"\n👉 [{i}/{len(episodes)}] {ep['episode_id']}")
+
+        # ✅ DUPLICATE PROTECTION
+        if transcript_exists(ep["category"], ep["podcast"], ep["episode_id"]):
+            print(f"⏭ Skipping (already processed)")
+            skipped += 1
+            continue
 
         ok = send_job(ep)
 
@@ -106,6 +143,7 @@ def main():
     # --------------------------------------
     print("\n🎉 DONE")
     print(f"✅ Success: {success}")
+    print(f"⏭ Skipped: {skipped}")
     print(f"❌ Failed: {len(failed)}")
 
     if failed:
