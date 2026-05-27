@@ -12,7 +12,7 @@ RUNPOD_API_KEY = os.environ.get("RUNPOD_API_KEY")
 ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID")
 
 DELAY_BETWEEN_JOBS = 2
-MAX_EPISODES = 10
+MAX_EPISODES = 1   # ✅ FOR DEBUG (change later)
 
 S3_BUCKET = "podblendz-episode-audio"
 S3_PREFIX = "raw_audio/"
@@ -30,10 +30,10 @@ s3 = boto3.client("s3")
 # ✅ CHECK IF TRANSCRIPT EXISTS
 # --------------------------------------
 def transcript_exists(category, podcast, episode_id):
-    output_key = f"segments/{category}/{podcast}/{episode_id}.json"
+    key = f"segments/{category}/{podcast}/{episode_id}.json"
 
     try:
-        s3.head_object(Bucket=S3_BUCKET, Key=output_key)
+        s3.head_object(Bucket=S3_BUCKET, Key=key)
         return True
     except ClientError as e:
         if e.response["Error"]["Code"] == "404":
@@ -59,15 +59,11 @@ def get_all_episodes():
 
             parts = key.split("/")
 
-            # ✅ STRICT STRUCTURE CHECK
             if len(parts) < 4:
                 continue
 
             category, podcast, filename = parts[1], parts[2], parts[3]
             episode_id = filename.replace(".mp3", "")
-
-            if not category or not podcast:
-                continue
 
             episodes.append({
                 "episode_id": episode_id,
@@ -87,12 +83,16 @@ def get_all_episodes():
 def send_job(ep):
     payload = {"input": ep}
 
+    # ✅ DEBUG: show EXACT payload leaving your system
+    print("\n🚀 PAYLOAD BEING SENT:")
+    print(payload)
+
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=30)
 
         if response.status_code == 200:
             data = response.json()
-            print(f"✅ Sent: {ep['episode_id']} | {ep['podcast']} | {data.get('status')}")
+            print(f"✅ Sent: {ep['episode_id']} | {ep['category']} | {ep['podcast']}")
             return True
         else:
             print(f"❌ Failed: {ep['episode_id']} | {response.text}")
@@ -104,65 +104,41 @@ def send_job(ep):
 
 
 # --------------------------------------
-# ✅ MAIN (FILTER FIRST → THEN LIMIT)
+# ✅ MAIN
 # --------------------------------------
 def main():
     all_episodes = get_all_episodes()
 
     print("\n🔍 Filtering out already processed episodes...\n")
 
-    new_episodes = []
-
-    for ep in all_episodes:
-        if not transcript_exists(ep["category"], ep["podcast"], ep["episode_id"]):
-            new_episodes.append(ep)
-
-    skipped = len(all_episodes) - len(new_episodes)
+    new_episodes = [
+        ep for ep in all_episodes
+        if not transcript_exists(ep["category"], ep["podcast"], ep["episode_id"])
+    ]
 
     print(f"✅ New episodes available: {len(new_episodes)}")
-    print(f"⏭ Already processed: {skipped}")
 
-    # ✅ VISIBILITY: PODCAST DISTRIBUTION
-    counts = Counter([ep["podcast"] for ep in new_episodes])
+    # ✅ Show distribution
+    counts = Counter(ep["podcast"] for ep in new_episodes)
     print("\n📊 New episodes by podcast:")
-    for p, c in counts.most_common(10):
+    for p, c in counts.most_common(5):
         print(f" - {p}: {c}")
 
     # ✅ LIMIT AFTER FILTERING
-    if MAX_EPISODES:
-        new_episodes = new_episodes[:MAX_EPISODES]
-        print(f"\n⚠️ Processing first {len(new_episodes)} new episodes")
+    new_episodes = new_episodes[:MAX_EPISODES]
 
-    print("\n🚀 Starting batch...\n")
-
-    success = 0
-    failed = []
+    print(f"\n⚠️ Processing {len(new_episodes)} episodes...\n")
 
     for i, ep in enumerate(new_episodes, 1):
-        print(f"\n👉 [{i}/{len(new_episodes)}] {ep['episode_id']} ({ep['podcast']})")
+        print(f"\n👉 [{i}] {ep['episode_id']} ({ep['podcast']})")
 
-        ok = send_job(ep)
-
-        if ok:
-            success += 1
-        else:
-            failed.append(ep["episode_id"])
-
+        send_job(ep)
         time.sleep(DELAY_BETWEEN_JOBS)
 
-    # --------------------------------------
-    # ✅ SUMMARY
-    # --------------------------------------
-    print("\n🎉 DONE")
-    print(f"✅ Success: {success}")
-    print(f"❌ Failed: {len(failed)}")
-
-    if failed:
-        print("\n⚠️ Failed IDs:")
-        for f in failed:
-            print(f" - {f}")
+    print("\n✅ DONE")
 
 
 if __name__ == "__main__":
     main()
+
 
