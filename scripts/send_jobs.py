@@ -3,6 +3,7 @@ import time
 import requests
 import boto3
 from botocore.exceptions import ClientError
+from collections import Counter
 
 # --------------------------------------
 # ✅ CONFIG
@@ -41,9 +42,9 @@ def transcript_exists(category, podcast, episode_id):
 
 
 # --------------------------------------
-# ✅ FETCH ALL AUDIO FROM S3 (MULTI-PODCAST)
+# ✅ FETCH ALL AUDIO FILES
 # --------------------------------------
-def get_episodes():
+def get_all_episodes():
     print("🔍 Scanning S3 for audio files...")
 
     paginator = s3.get_paginator("list_objects_v2")
@@ -56,18 +57,17 @@ def get_episodes():
             if not key.endswith(".mp3"):
                 continue
 
-            # Expected format:
-            # raw_audio/category/podcast/file.mp3
             parts = key.split("/")
 
+            # ✅ STRICT STRUCTURE CHECK
             if len(parts) < 4:
                 continue
 
-            category = parts[1]
-            podcast = parts[2]
-            filename = parts[3]
-
+            category, podcast, filename = parts[1], parts[2], parts[3]
             episode_id = filename.replace(".mp3", "")
+
+            if not category or not podcast:
+                continue
 
             episodes.append({
                 "episode_id": episode_id,
@@ -77,12 +77,7 @@ def get_episodes():
                 "language": "en"
             })
 
-    print(f"✅ Found {len(episodes)} audio files")
-
-    if MAX_EPISODES:
-        print(f"⚠️ Limiting to first {MAX_EPISODES} episodes")
-        episodes = episodes[:MAX_EPISODES]
-
+    print(f"✅ Found {len(episodes)} total audio files")
     return episodes
 
 
@@ -97,7 +92,7 @@ def send_job(ep):
 
         if response.status_code == 200:
             data = response.json()
-            print(f"✅ Sent: {ep['episode_id']} | {data.get('status')}")
+            print(f"✅ Sent: {ep['episode_id']} | {ep['podcast']} | {data.get('status')}")
             return True
         else:
             print(f"❌ Failed: {ep['episode_id']} | {response.text}")
@@ -109,25 +104,42 @@ def send_job(ep):
 
 
 # --------------------------------------
-# ✅ MAIN RUNNER (WITH SKIP LOGIC)
+# ✅ MAIN (FILTER FIRST → THEN LIMIT)
 # --------------------------------------
 def main():
-    episodes = get_episodes()
+    all_episodes = get_all_episodes()
 
-    print(f"\n🚀 Starting batch for {len(episodes)} episodes...\n")
+    print("\n🔍 Filtering out already processed episodes...\n")
+
+    new_episodes = []
+
+    for ep in all_episodes:
+        if not transcript_exists(ep["category"], ep["podcast"], ep["episode_id"]):
+            new_episodes.append(ep)
+
+    skipped = len(all_episodes) - len(new_episodes)
+
+    print(f"✅ New episodes available: {len(new_episodes)}")
+    print(f"⏭ Already processed: {skipped}")
+
+    # ✅ VISIBILITY: PODCAST DISTRIBUTION
+    counts = Counter([ep["podcast"] for ep in new_episodes])
+    print("\n📊 New episodes by podcast:")
+    for p, c in counts.most_common(10):
+        print(f" - {p}: {c}")
+
+    # ✅ LIMIT AFTER FILTERING
+    if MAX_EPISODES:
+        new_episodes = new_episodes[:MAX_EPISODES]
+        print(f"\n⚠️ Processing first {len(new_episodes)} new episodes")
+
+    print("\n🚀 Starting batch...\n")
 
     success = 0
-    skipped = 0
     failed = []
 
-    for i, ep in enumerate(episodes, 1):
-        print(f"\n👉 [{i}/{len(episodes)}] {ep['episode_id']}")
-
-        # ✅ DUPLICATE PROTECTION
-        if transcript_exists(ep["category"], ep["podcast"], ep["episode_id"]):
-            print(f"⏭ Skipping (already processed)")
-            skipped += 1
-            continue
+    for i, ep in enumerate(new_episodes, 1):
+        print(f"\n👉 [{i}/{len(new_episodes)}] {ep['episode_id']} ({ep['podcast']})")
 
         ok = send_job(ep)
 
@@ -143,7 +155,6 @@ def main():
     # --------------------------------------
     print("\n🎉 DONE")
     print(f"✅ Success: {success}")
-    print(f"⏭ Skipped: {skipped}")
     print(f"❌ Failed: {len(failed)}")
 
     if failed:
@@ -154,3 +165,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
