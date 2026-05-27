@@ -158,3 +158,4 @@ def handler(job):
 runpod.serverless.start({
     "handler": handler
 })
+print("🚀 NEW BUILD VERSION ACTIVE")
