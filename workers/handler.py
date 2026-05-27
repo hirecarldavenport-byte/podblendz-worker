@@ -1,3 +1,4 @@
+print("🔥🔥 HANDLER FILE VERSION 2 LOADED 🔥🔥")
 import json
 import tempfile
 import uuid
@@ -25,7 +26,7 @@ MODEL_NAME = "base"  # ✅ can upgrade later
 s3 = boto3.client("s3")
 model = whisper.load_model(MODEL_NAME)
 
-print("✅ Whisper model loaded")
+print("✅ Whisper model loaded — NEW FILE")
 print("✅ S3 connected")
 
 # ============================================================
