@@ -1,5 +1,5 @@
-raise Exception("🔥 IF YOU SEE THIS, HANDLER IS RUNNING 🔥")
-print("🔥🔥 FINAL HANDLER VERSION LOADED 🔥🔥")
+
+print("🚨🚨 NEW VERSION DEPLOYED 🚨🚨")
 
 import json
 import tempfile
@@ -180,19 +180,22 @@ def handler(job):
             print("✅ DIRECT SAVE COMPLETE:", output_key)
 
         return {
-            "status": "success",
-            "episode_id": episode_id,
-            "segments": len(segments),
-            "s3_output": output_key
-        }
+    "status": "COMPLETED",
+    "output": {
+        "episode_id": episode_id,
+        "segment_count": len(segments),
+        "s3_output": output_key
+    }
+}
 
     except Exception as e:
         print("🔥 ERROR:", str(e))
 
         return {
-            "status": "error",
-            "error": str(e)
-        }
+    "status": "FAILED",
+    "error": str(e)
+}
+
 
 
 # ============================================================
