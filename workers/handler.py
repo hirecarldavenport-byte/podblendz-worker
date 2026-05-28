@@ -1,4 +1,5 @@
-print("🔥🔥 HANDLER FILE VERSION 2 LOADED 🔥🔥")
+print("🔥🔥 FINAL HANDLER VERSION LOADED 🔥🔥")
+
 import json
 import tempfile
 import uuid
@@ -15,9 +16,8 @@ import whisper
 # ============================================================
 
 BUCKET = "podblendz-episode-audio"
-SEGMENT_PREFIX = "segments"   # ✅ FIXED (no hardcoding)
-
-MODEL_NAME = "base"  # ✅ can upgrade later
+SEGMENT_PREFIX = "segments"
+MODEL_NAME = "base"
 
 # ============================================================
 # GLOBAL SETUP
@@ -26,7 +26,7 @@ MODEL_NAME = "base"  # ✅ can upgrade later
 s3 = boto3.client("s3")
 model = whisper.load_model(MODEL_NAME)
 
-print("✅ Whisper model loaded — NEW FILE")
+print("✅ Whisper model loaded (FINAL)")
 print("✅ S3 connected")
 
 # ============================================================
@@ -47,14 +47,6 @@ def download_audio(s3_key: str, local_path: Path):
     s3.download_file(BUCKET, s3_key, str(local_path))
 
 
-def upload_segments(s3_key: str, data: dict):
-    s3.put_object(
-        Bucket=BUCKET,
-        Key=s3_key,
-        Body=json.dumps(data, indent=2).encode("utf-8"),
-        ContentType="application/json"
-    )
-
 # ============================================================
 # SEGMENT CLEANER
 # ============================================================
@@ -68,14 +60,12 @@ def clean_segments(raw_segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
         text = str(seg.get("text", "")).strip()
 
-        # ✅ remove very short / junk text
         if len(text) < 15:
             continue
 
         start = float(seg.get("start", 0))
         end = float(seg.get("end", 0))
 
-        # ✅ remove tiny audio slices
         if end - start < 2:
             continue
 
@@ -88,6 +78,7 @@ def clean_segments(raw_segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         })
 
     return cleaned
+
 
 # ============================================================
 # TRANSCRIPTION
@@ -103,46 +94,58 @@ def transcribe_audio(audio_path: Path, language: str):
 
     return clean_segments(result.get("segments", []))
 
+
 # ============================================================
 # RUNPOD HANDLER
 # ============================================================
 
 def handler(job):
-    payload = job["input"]
-
-    # ✅ FIXED INPUT KEYS
-    episode_id: str = payload["episode_id"]
-    podcast: str = payload["podcast"]
-    category: str = payload["category"]
-    audio_s3_key: str = payload["audio_s3_key"]
-    language: str = payload.get("language", "en")
-
-    print(f"\n🎧 Processing: {category}/{podcast}/{episode_id}")
-
-    # ✅ DUPLICATE PROTECTION (NOW CORRECT PATH)
-    if already_processed(category, podcast, episode_id):
-        print("⏭️ Skipping (already processed)")
-        return {
-            "status": "skipped",
-            "episode_id": episode_id
-        }
-
     try:
+        payload = job["input"]
+
+        # 🔥 FULL VISIBILITY
+        print("🔥 PAYLOAD RECEIVED:", payload)
+
+        # ✅ STRICT EXTRACTION (NO DEFAULTS)
+        if "episode_id" not in payload:
+            raise Exception("Missing episode_id")
+
+        if "category" not in payload:
+            raise Exception("Missing category")
+
+        if "podcast" not in payload:
+            raise Exception("Missing podcast")
+
+        episode_id = payload["episode_id"]
+        category = payload["category"]
+        podcast = payload["podcast"]
+        audio_s3_key = payload["audio_s3_key"]
+        language = payload.get("language", "en")
+
+        print(f"🎧 Processing: {category}/{podcast}/{episode_id}")
+
+        # ✅ Check duplicate
+        if already_processed(category, podcast, episode_id):
+            print("⏭️ Skipping (already processed)")
+            return {
+                "status": "skipped",
+                "episode_id": episode_id
+            }
+
         with tempfile.TemporaryDirectory() as tmpdir:
             audio_path = Path(tmpdir) / f"{episode_id}.mp3"
 
-            # ✅ 1. DOWNLOAD
+            # 1. DOWNLOAD
             print("⬇️ Downloading audio...")
             download_audio(audio_s3_key, audio_path)
 
-            # ✅ 2. TRANSCRIBE
+            # 2. TRANSCRIBE
             print("🧠 Running Whisper...")
             segments = transcribe_audio(audio_path, language)
 
-            if not segments:
-                print("⚠️ No valid segments found")
+            print(f"✅ Segments created: {len(segments)}")
 
-            # ✅ 3. BUILD OUTPUT
+            # 3. BUILD OUTPUT
             output = {
                 "episode_id": episode_id,
                 "podcast": podcast,
@@ -155,15 +158,25 @@ def handler(job):
                 "created_at": datetime.utcnow().isoformat() + "Z"
             }
 
-            # ✅ FIXED OUTPUT PATH (CRITICAL)
-            output_key = f"{SEGMENT_PREFIX}/{category}/{podcast}/{episode_id}.json"
+            # 🔥 FORCE PATH (NO INTERMEDIATES)
+            output_key = (
+                "segments/"
+                + category + "/"
+                + podcast + "/"
+                + episode_id + ".json"
+            )
 
-            print(f"✅ Saving to: {output_key}")
+            print("🚨 FINAL OUTPUT KEY:", output_key)
 
-            # ✅ 4. SAVE
-            upload_segments(output_key, output)
+            # 🔥 DIRECT WRITE (NO HELPER — CRITICAL)
+            s3.put_object(
+                Bucket=BUCKET,
+                Key=output_key,
+                Body=json.dumps(output, indent=2).encode("utf-8"),
+                ContentType="application/json"
+            )
 
-        print(f"✅ Stored → {output_key}")
+            print("✅ DIRECT SAVE COMPLETE:", output_key)
 
         return {
             "status": "success",
@@ -173,13 +186,13 @@ def handler(job):
         }
 
     except Exception as e:
-        print(f"🔥 Error: {e}")
+        print("🔥 ERROR:", str(e))
 
         return {
             "status": "error",
-            "episode_id": episode_id,
             "error": str(e)
         }
+
 
 # ============================================================
 # ENTRYPOINT
