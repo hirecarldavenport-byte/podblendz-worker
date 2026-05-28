@@ -1,4 +1,4 @@
-# REBUILD_TRIGGER_001
+# REBUILD_TRIGGER_002
 FROM python:3.10-slim
 
 WORKDIR /app
@@ -16,4 +16,4 @@ RUN pip install --no-cache-dir \
     torch \
     openai-whisper
 
-CMD ["python", "-u", "-m", "runpod.serverless"]
+CMD ["python", "-u", "workers/handler.py"]
