@@ -1,4 +1,3 @@
-
 print("🚀 HANDLER FILE STARTED")
 
 import json
@@ -21,31 +20,51 @@ SEGMENT_PREFIX = "segments"
 MODEL_NAME = "base"
 
 # ============================================================
-# GLOBAL SETUP
+# GLOBALS (SAFE INIT)
 # ============================================================
 
-s3 = boto3.client("s3")
-model = whisper.load_model(MODEL_NAME)
+model = None
+s3 = None
 
-print("✅ Whisper model loaded (FINAL)")
-print("✅ S3 connected")
+print("✅ Globals initialized")
 
 # ============================================================
 # HELPERS
 # ============================================================
 
+def get_s3():
+    global s3
+    if s3 is None:
+        print("🔌 Connecting to S3...")
+        s3 = boto3.client("s3")
+    return s3
+
+
+def get_model():
+    global model
+    if model is None:
+        print("⚠️ Loading Whisper model...")
+        model = whisper.load_model(MODEL_NAME)
+        print("✅ Whisper model loaded")
+    return model
+
+
 def already_processed(category: str, podcast: str, episode_id: str) -> bool:
     key = f"{SEGMENT_PREFIX}/{category}/{podcast}/{episode_id}.json"
 
     try:
-        s3.head_object(Bucket=BUCKET, Key=key)
+        s3_client = get_s3()
+        s3_client.head_object(Bucket=BUCKET, Key=key)
         return True
-    except:
+    except Exception as e:
+        print(f"⚠️ S3 check failed (treated as not processed): {e}")
         return False
 
 
 def download_audio(s3_key: str, local_path: Path):
-    s3.download_file(BUCKET, s3_key, str(local_path))
+    print("⬇️ Downloading from S3:", s3_key)
+    s3_client = get_s3()
+    s3_client.download_file(BUCKET, s3_key, str(local_path))
 
 
 # ============================================================
@@ -60,7 +79,6 @@ def clean_segments(raw_segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             continue
 
         text = str(seg.get("text", "")).strip()
-
         if len(text) < 15:
             continue
 
@@ -86,7 +104,9 @@ def clean_segments(raw_segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # ============================================================
 
 def transcribe_audio(audio_path: Path, language: str):
-    result: Dict[str, Any] = model.transcribe(
+    model_instance = get_model()
+
+    result: Dict[str, Any] = model_instance.transcribe(
         str(audio_path),
         language=language,
         word_timestamps=True,
@@ -104,18 +124,12 @@ def handler(job):
     try:
         payload = job["input"]
 
-        # 🔥 FULL VISIBILITY
         print("🔥 PAYLOAD RECEIVED:", payload)
 
-        # ✅ STRICT EXTRACTION (NO DEFAULTS)
-        if "episode_id" not in payload:
-            raise Exception("Missing episode_id")
-
-        if "category" not in payload:
-            raise Exception("Missing category")
-
-        if "podcast" not in payload:
-            raise Exception("Missing podcast")
+        # ✅ Validation
+        for field in ["episode_id", "category", "podcast", "audio_s3_key"]:
+            if field not in payload:
+                raise Exception(f"Missing {field}")
 
         episode_id = payload["episode_id"]
         category = payload["category"]
@@ -125,28 +139,25 @@ def handler(job):
 
         print(f"🎧 Processing: {category}/{podcast}/{episode_id}")
 
-        # ✅ Check duplicate
+        # ✅ Skip duplicates
         if already_processed(category, podcast, episode_id):
             print("⏭️ Skipping (already processed)")
             return {
-                "status": "skipped",
-                "episode_id": episode_id
+                "status": "COMPLETED",
+                "output": {"status": "skipped"}
             }
 
         with tempfile.TemporaryDirectory() as tmpdir:
             audio_path = Path(tmpdir) / f"{episode_id}.mp3"
 
-            # 1. DOWNLOAD
             print("⬇️ Downloading audio...")
             download_audio(audio_s3_key, audio_path)
 
-            # 2. TRANSCRIBE
             print("🧠 Running Whisper...")
             segments = transcribe_audio(audio_path, language)
 
             print(f"✅ Segments created: {len(segments)}")
 
-            # 3. BUILD OUTPUT
             output = {
                 "episode_id": episode_id,
                 "podcast": podcast,
@@ -159,18 +170,12 @@ def handler(job):
                 "created_at": datetime.utcnow().isoformat() + "Z"
             }
 
-            # 🔥 FORCE PATH (NO INTERMEDIATES)
-            output_key = (
-                "segments/"
-                + category + "/"
-                + podcast + "/"
-                + episode_id + ".json"
-            )
+            output_key = f"{SEGMENT_PREFIX}/{category}/{podcast}/{episode_id}.json"
 
             print("🚨 FINAL OUTPUT KEY:", output_key)
 
-            # 🔥 DIRECT WRITE (NO HELPER — CRITICAL)
-            s3.put_object(
+            s3_client = get_s3()
+            s3_client.put_object(
                 Bucket=BUCKET,
                 Key=output_key,
                 Body=json.dumps(output, indent=2).encode("utf-8"),
@@ -180,22 +185,21 @@ def handler(job):
             print("✅ DIRECT SAVE COMPLETE:", output_key)
 
         return {
-    "status": "COMPLETED",
-    "output": {
-        "episode_id": episode_id,
-        "segment_count": len(segments),
-        "s3_output": output_key
-    }
-}
+            "status": "COMPLETED",
+            "output": {
+                "episode_id": episode_id,
+                "segment_count": len(segments),
+                "s3_output": output_key
+            }
+        }
 
     except Exception as e:
         print("🔥 ERROR:", str(e))
 
         return {
-    "status": "FAILED",
-    "error": str(e)
-}
-
+            "status": "FAILED",
+            "error": str(e)
+        }
 
 
 # ============================================================
