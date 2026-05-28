@@ -9,4 +9,4 @@ RUN pip install --no-cache-dir \
     boto3 \
     openai-whisper
 
-CMD ["python", "handler.py"]
+CMD ["python", "workers/handler.py"]
