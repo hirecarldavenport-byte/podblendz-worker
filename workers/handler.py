@@ -1,5 +1,5 @@
 
-print("🚨🚨 NEW VERSION DEPLOYED 🚨🚨")
+print("🚀 HANDLER FILE STARTED")
 
 import json
 import tempfile
