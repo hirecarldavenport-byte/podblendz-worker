@@ -15,4 +15,4 @@ RUN pip install --no-cache-dir \
     torch \
     openai-whisper
 
-CMD ["python", "-u", "workers/handler.py"]
+CMD ["python", "-u", "-m", "runpod.serverless"]
