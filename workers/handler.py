@@ -1,3 +1,4 @@
+raise Exception("🔥 IF YOU SEE THIS, HANDLER IS RUNNING 🔥")
 print("🔥🔥 FINAL HANDLER VERSION LOADED 🔥🔥")
 
 import json
