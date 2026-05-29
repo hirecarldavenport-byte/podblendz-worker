@@ -1,9 +1,10 @@
 import os
 import time
+import random
 import requests
 import boto3
 from botocore.exceptions import ClientError
-from collections import Counter
+from collections import Counter, defaultdict
 
 # --------------------------------------
 # ✅ CONFIG
@@ -12,7 +13,7 @@ RUNPOD_API_KEY = os.environ.get("RUNPOD_API_KEY")
 ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID")
 
 DELAY_BETWEEN_JOBS = 2
-MAX_EPISODES = 50   # ✅ FOR DEBUG (change later)
+MAX_EPISODES = 50
 
 S3_BUCKET = "podblendz-episode-audio"
 S3_PREFIX = "raw_audio/"
@@ -39,7 +40,6 @@ def transcript_exists(category, podcast, episode_id):
         if e.response["Error"]["Code"] == "404":
             return False
         raise
-
 
 # --------------------------------------
 # ✅ FETCH ALL AUDIO FILES
@@ -76,6 +76,36 @@ def get_all_episodes():
     print(f"✅ Found {len(episodes)} total audio files")
     return episodes
 
+# --------------------------------------
+# ✅ SMART DIVERSIFICATION
+# --------------------------------------
+def diversify_episodes(episodes, limit):
+    print("\n🎯 Diversifying episode selection...")
+
+    # Group by podcast
+    grouped = defaultdict(list)
+    for ep in episodes:
+        grouped[ep["podcast"]].append(ep)
+
+    # Shuffle each podcast bucket
+    for podcast in grouped:
+        random.shuffle(grouped[podcast])
+
+    # Round-robin selection
+    diversified = []
+    podcast_keys = list(grouped.keys())
+    
+    while len(diversified) < limit and podcast_keys:
+        for podcast in list(podcast_keys):
+            if grouped[podcast]:
+                diversified.append(grouped[podcast].pop())
+                if len(diversified) >= limit:
+                    break
+            else:
+                podcast_keys.remove(podcast)
+
+    print(f"✅ Diversified selection created ({len(diversified)} episodes)")
+    return diversified
 
 # --------------------------------------
 # ✅ SEND JOB
@@ -83,7 +113,6 @@ def get_all_episodes():
 def send_job(ep):
     payload = {"input": ep}
 
-    # ✅ DEBUG: show EXACT payload leaving your system
     print("\n🚀 PAYLOAD BEING SENT:")
     print(payload)
 
@@ -91,7 +120,6 @@ def send_job(ep):
         response = requests.post(url, headers=headers, json=payload, timeout=30)
 
         if response.status_code == 200:
-            data = response.json()
             print(f"✅ Sent: {ep['episode_id']} | {ep['category']} | {ep['podcast']}")
             return True
         else:
@@ -101,7 +129,6 @@ def send_job(ep):
     except Exception as e:
         print(f"🔥 Error: {ep['episode_id']} | {str(e)}")
         return False
-
 
 # --------------------------------------
 # ✅ MAIN
@@ -118,14 +145,20 @@ def main():
 
     print(f"✅ New episodes available: {len(new_episodes)}")
 
-    # ✅ Show distribution
+    # 📊 BEFORE distribution
     counts = Counter(ep["podcast"] for ep in new_episodes)
-    print("\n📊 New episodes by podcast:")
+    print("\n📊 BEFORE distribution (top podcasts):")
     for p, c in counts.most_common(5):
         print(f" - {p}: {c}")
 
-    # ✅ LIMIT AFTER FILTERING
-    new_episodes = new_episodes[:MAX_EPISODES]
+    # ✅ DIVERSIFY HERE
+    new_episodes = diversify_episodes(new_episodes, MAX_EPISODES)
+
+    # 📊 AFTER distribution
+    counts_after = Counter(ep["podcast"] for ep in new_episodes)
+    print("\n📊 AFTER distribution:")
+    for p, c in counts_after.most_common():
+        print(f" - {p}: {c}")
 
     print(f"\n⚠️ Processing {len(new_episodes)} episodes...\n")
 
@@ -137,8 +170,8 @@ def main():
 
     print("\n✅ DONE")
 
-
 if __name__ == "__main__":
     main()
+
 
 
