@@ -2,33 +2,38 @@ from search_test import search
 from openai import OpenAI
 import os
 
+# ✅ OpenAI client
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 
+# ✅ ✅ AI Narration Generator (MULTI-PERSPECTIVE AWARE)
 def generate_narration(prev_text, next_text, query, position="middle"):
-    """
-    Generate contextual narration using AI
-    """
-
     if position == "intro":
         prompt = f"""
 Create a compelling intro for a guided audio experience.
 
 Topic: {query}
 
-Make it reflective, engaging, and concise (2-3 sentences).
+This experience blends ideas from multiple perspectives.
+
+Make it reflective, engaging, and natural (2–3 sentences).
+Do NOT sound like one person explaining everything.
 """
+
     elif position == "outro":
         prompt = f"""
-Create a thoughtful closing reflection for a guided audio experience.
+Create a thoughtful closing reflection.
 
 Topic: {query}
 
-End with a sense of insight or perspective (2-3 sentences).
+You have explored multiple perspectives.
+
+Synthesize them into a meaningful takeaway (2–3 sentences).
 """
+
     else:
         prompt = f"""
-You are guiding someone through a set of ideas.
+You are guiding a listener through different perspectives.
 
 Topic: {query}
 
@@ -38,7 +43,12 @@ Previous idea:
 Next idea:
 "{next_text}"
 
-Write a natural, thoughtful transition (1-2 sentences) that connects the ideas.
+Instructions:
+- Treat these as different viewpoints
+- Highlight contrast or expansion
+- Do NOT sound like one continuous speaker
+
+Write a short, natural transition (1–2 sentences).
 """
 
     response = client.chat.completions.create(
@@ -46,10 +56,14 @@ Write a natural, thoughtful transition (1-2 sentences) that connects the ideas.
         messages=[{"role": "user", "content": prompt}]
     )
 
+    if not response or not response.choices:
+        return ""
+
     content = response.choices[0].message.content
     return content.strip() if content else ""
 
 
+# ✅ ✅ MAIN BLEND BUILDER
 def build_blend(query, max_segments=10):
     print(f"\n🎧 Building Blend: {query}\n")
 
@@ -59,11 +73,11 @@ def build_blend(query, max_segments=10):
         print("❌ No results found.")
         return []
 
-    selected_pool = []
-
     KEYWORDS = ["fail", "failure", "mistake", "growth", "change", "identity", "learn", "struggle"]
 
-    # ✅ Step 1: Light filtering + scoring
+    selected_pool = []
+
+    # ✅ Step 1 — Lightweight filtering + scoring
     for r in results:
         text = r.get("text", "").strip()
         text_lower = text.lower()
@@ -71,9 +85,7 @@ def build_blend(query, max_segments=10):
         start = r.get("start")
         end = r.get("end")
 
-        duration = 0
-        if start is not None and end is not None:
-            duration = end - start
+        duration = (end - start) if (start is not None and end is not None) else 0
 
         if (
             not text
@@ -94,23 +106,47 @@ def build_blend(query, max_segments=10):
         print("❌ No usable segments.")
         return []
 
-    # ✅ Step 2: Sort by relevance + semantic score
+    # ✅ Step 2 — Sort by relevance + similarity
     selected_pool = sorted(
         selected_pool,
         key=lambda x: (x["relevance"], x["score"]),
         reverse=True
     )
 
-    # ✅ Step 3: Create selection pool
-    selected_candidates = selected_pool[:max_segments * 3]
+    # ✅ Step 3 — Create candidate pool
+    candidates = selected_pool[:max_segments * 4]
 
-    # ✅ Step 4: Final selection
-    selected = selected_candidates[:max_segments]
+    # ✅ Step 4 — Enforce source diversity
+    selected = []
+    source_counts = {}
 
-    # ✅ Step 5: Build blend with AI narration
+    for r in candidates:
+        source = r.get("source") or ""
+
+        # ✅ Extract high-level source (podcast/channel)
+        parts = source.split("/")
+        source_key = parts[2] if len(parts) > 2 else source
+
+        count = source_counts.get(source_key, 0)
+
+        # ✅ Limit per source (changeable later)
+        if count >= 2:
+            continue
+
+        selected.append(r)
+        source_counts[source_key] = count + 1
+
+        if len(selected) >= max_segments:
+            break
+
+    if not selected:
+        print("❌ No segments selected after diversity filtering.")
+        return []
+
+    # ✅ Step 5 — Build Blend with AI narration
     blend = []
 
-    # ✅ Intro (AI)
+    # ✅ Intro
     intro_text = generate_narration("", "", query, position="intro")
 
     blend.append({
@@ -121,7 +157,7 @@ def build_blend(query, max_segments=10):
     # ✅ Main flow
     for i, segment in enumerate(selected):
 
-        # Clip
+        # ✅ Clip
         blend.append({
             "type": "clip",
             "text": segment["text"],
@@ -130,13 +166,13 @@ def build_blend(query, max_segments=10):
             "source": segment.get("source")
         })
 
-        # Transition
+        # ✅ Transition
         if i < len(selected) - 1:
             next_seg = selected[i + 1]
 
             transition_text = generate_narration(
-                prev_text=segment["text"],
-                next_text=next_seg["text"],
+                prev_text=f"[Perspective A] {segment['text']}",
+                next_text=f"[Perspective B] {next_seg['text']}",
                 query=query
             )
 
@@ -145,7 +181,7 @@ def build_blend(query, max_segments=10):
                 "text": transition_text
             })
 
-    # ✅ Outro (AI)
+    # ✅ Outro
     outro_text = generate_narration("", "", query, position="outro")
 
     blend.append({
@@ -156,6 +192,7 @@ def build_blend(query, max_segments=10):
     return blend
 
 
+# ✅ ✅ RUN TEST
 if __name__ == "__main__":
     blend = build_blend("reinventing yourself after failure")
 
