@@ -1,11 +1,16 @@
-from search_test import search
+from search_faiss import search
 from openai import OpenAI
 import os
+import random
 
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 
-# ✅ ✅ FINAL NARRATION ENGINE (OBSERVATIONAL / NON-ADVISORY)
+def shorten(text, max_words=40):
+    return " ".join(text.split()[:max_words])
+
+
+# ✅ FINAL NARRATION ENGINE
 def generate_narration(prev_text, next_text, query, position="middle", style_hint=None):
 
     if position == "intro":
@@ -14,10 +19,7 @@ Start in the middle of a thoughtful conversation.
 
 Topic: {query}
 
-Make one specific observation. No "welcome" or setup language.
-Avoid general statements about life, failure, or growth.
-
-Keep it natural and grounded.
+Make one specific observation. No "welcome" language.
 
 Max 22 words.
 """
@@ -28,15 +30,14 @@ Offer a closing thought.
 
 Topic: {query}
 
-Do not summarize. Do not resolve.
-Leave a lingering idea or open-ended thought.
+Leave a lingering idea. No summary.
 
 Max 22 words.
 """
 
     else:
         prompt = f"""
-You are noticing patterns between ideas.
+You are noticing patterns.
 
 Topic: {query}
 
@@ -46,14 +47,10 @@ Previous idea:
 Next idea:
 "{next_text}"
 
-Instructions:
-- Point out something specific or interesting
-- Do NOT give advice
-- Do NOT suggest what someone should do
-- Do NOT resolve the situation
-- Avoid general phrases about "growth" or "failure"
-- Let uncertainty or tension remain
-- Speak like you're noticing something in real time
+- No advice
+- No resolution
+- Be specific
+- Stay observational
 
 Style hint: {style_hint}
 
@@ -69,10 +66,15 @@ Max 16 words.
         return ""
 
     content = response.choices[0].message.content
-    return content.strip() if content else ""
+
+    if not content:
+       return ""
+
+    return content.strip()
 
 
-# ✅ ✅ MAIN BUILDER
+
+# ✅ MAIN BUILDER
 def build_blend(query, max_segments=12):
     print(f"\n🎧 Building Blend: {query}\n")
 
@@ -83,14 +85,13 @@ def build_blend(query, max_segments=12):
         return []
 
     KEYWORDS = [
-        "fail", "failure", "mistake", "growth", "change",
-        "identity", "learn", "struggle", "success",
-        "risk", "reinvent", "adapt", "stuck", "uncertain"
+        "fail", "failure", "mistake", "growth",
+        "change", "identity", "learn",
+        "struggle", "success", "risk"
     ]
 
     selected_pool = []
 
-    # ✅ Step 1 — Filter + score
     for r in results:
         text = r.get("text", "").strip()
         text_lower = text.lower()
@@ -98,14 +99,9 @@ def build_blend(query, max_segments=12):
         start = r.get("start")
         end = r.get("end")
 
-        duration = (end - start) if (start is not None and end is not None) else 0
+        duration = (end - start) if (start and end) else 0
 
-        if (
-            not text
-            or len(text) < 35
-            or len(text.split()) < 6
-            or duration < 5
-        ):
+        if not text or len(text) < 35 or duration < 5:
             continue
 
         relevance = sum(1 for k in KEYWORDS if k in text_lower)
@@ -119,90 +115,78 @@ def build_blend(query, max_segments=12):
         print("❌ No usable segments.")
         return []
 
-    # ✅ Step 2 — Deduplicate
-    seen_texts = set()
+    # ✅ dedupe
+    seen = set()
     unique_pool = []
-
     for r in selected_pool:
-        t = r.get("text")
-        if t not in seen_texts:
-            seen_texts.add(t)
+        if r["text"] not in seen:
+            seen.add(r["text"])
             unique_pool.append(r)
 
     selected_pool = unique_pool
 
-    # ✅ Step 3 — Sort
+    # ✅ CORRECT FAISS SORT
     selected_pool = sorted(
         selected_pool,
-        key=lambda x: (x["relevance"], x["score"]),
+        key=lambda x: (x["relevance"], -x["score"]),
         reverse=True
     )
 
-    # ✅ Step 4 — Candidate pool
+    # ✅ shuffle for natural flow
     candidates = selected_pool[:max_segments * 5]
+    random.shuffle(candidates)
 
-    # ✅ Step 5 — Soft diversity
     selected = []
     source_counts = {}
 
     for r in candidates:
-        source = r.get("source") or ""
-        parts = source.split("/")
-        source_key = parts[2] if len(parts) > 2 else source
+        source = r.get("source", "")
+        source_key = source.split("/")[2] if "/" in source else source
 
         count = source_counts.get(source_key, 0)
 
-        if count < 2:
+        if count < 1:
             selected.append(r)
             source_counts[source_key] = count + 1
-        elif len(selected) < max_segments:
-            selected.append(r)
 
         if len(selected) >= max_segments:
             break
 
-    if len(selected) < max_segments:
-        print(f"⚠️ Only {len(selected)} segments selected")
-
-    # ✅ Step 6 — Build blend
     blend = []
 
-    # ✅ Intro
+    # ✅ intro
     blend.append({
         "type": "narration",
         "text": generate_narration("", "", query, position="intro")
     })
 
-    # ✅ Style variation (keeps rhythm natural)
-    style_options = [
-        "make it reflective",
-        "make it conversational",
-        "highlight contrast",
-        "point out something subtle",
-        "notice something unexpected",
-        "keep it very simple"
+    styles = [
+        "reflective",
+        "conversational",
+        "contrast",
+        "subtle",
+        "unexpected",
+        "simple"
     ]
 
-    # ✅ Flow
-    for i, segment in enumerate(selected):
+    for i, seg in enumerate(selected):
 
         blend.append({
             "type": "clip",
-            "text": segment["text"],
-            "start": segment.get("start"),
-            "end": segment.get("end"),
-            "source": segment.get("source")
+            "text": seg["text"],
+            "start": seg.get("start"),
+            "end": seg.get("end"),
+            "source": seg.get("source")
         })
 
         if i < len(selected) - 1:
-            next_seg = selected[i + 1]
-            style_hint = style_options[i % len(style_options)]
+            nxt = selected[i + 1]
 
             transition = generate_narration(
-                prev_text=segment["text"],
-                next_text=next_seg["text"],
+                prev_text=shorten(seg["text"]),
+                next_text=shorten(nxt["text"]),
                 query=query,
-                style_hint=style_hint
+                style_hint=styles[i % len(styles)]
             )
 
             blend.append({
@@ -210,7 +194,7 @@ def build_blend(query, max_segments=12):
                 "text": transition
             })
 
-    # ✅ Outro
+    # ✅ outro
     blend.append({
         "type": "narration",
         "text": generate_narration("", "", query, position="outro")
@@ -219,17 +203,14 @@ def build_blend(query, max_segments=12):
     return blend
 
 
-# ✅ ✅ RUN
 if __name__ == "__main__":
     blend = build_blend("fear vs courage in decision making")
 
     print("\n🔥 BLEND OUTPUT:\n")
 
-    if not blend:
-        print("No blend generated.")
-    else:
-        for step in blend:
-            print(step)
+    for step in blend:
+        print(step)
+
 
 
 
