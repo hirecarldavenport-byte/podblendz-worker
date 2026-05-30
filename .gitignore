@@ -49,7 +49,27 @@ workspace/
 episode_manifest*.jsonl
 
 .env
-audio/
 processed_chunks/
-clusters.json
+
 audio/temp/
+# Ignore generated audio files but NOT source code
+audio/*.mp3
+audio/*.wav
+audio/*.m4a
+audio/*.aac
+audio/temp/
+
+# ✅ allow cluster + theme data for production
+!podpal/semantic/clusters.json
+!podpal/semantic/themes.json
+*.json
+
+# ✅ allow cluster + theme data for production
+!podpal/semantic/clusters.json
+!podpal/semantic/themes.json
+
+# ✅ allow critical production data
+!data/
+!data/audio_catalog.json
+!data/transcription_jobs/*.json
+!data/selected_episodes/*.json
