@@ -2,39 +2,43 @@ from search_test import search
 from openai import OpenAI
 import os
 
-# ✅ OpenAI client
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 
-# ✅ ✅ Narration Generator (FLOW-OPTIMIZED)
+# ✅ ✅ HIGH-LEVEL ANALYTICAL NARRATION
 def generate_narration(prev_text, next_text, query, position="middle"):
+
     if position == "intro":
         prompt = f"""
-Create a short intro for a guided audio experience.
+You are an expert in educational research and analytical writing.
+
+Introduce a guided intellectual exploration.
 
 Topic: {query}
 
-This blends multiple perspectives.
+Frame this as an investigation of multiple perspectives.
+Avoid clichés. Avoid motivational tone.
 
-Keep it engaging, NOT conclusive.
-Max 30 words.
+Be precise, reflective, and grounded.
+
+Max 35 words.
 """
 
     elif position == "outro":
         prompt = f"""
-Create a short closing reflection.
+Provide a closing reflection as a research-oriented thinker.
 
 Topic: {query}
 
 Do NOT summarize everything.
-Leave the listener thinking.
+Instead, surface a deeper insight or open-ended reflection.
 
-Max 30 words.
+Max 35 words.
 """
 
     else:
         prompt = f"""
-You are guiding a listener through different perspectives.
+You are synthesizing insights across perspectives as a scholarly thinker.
 
 Topic: {query}
 
@@ -44,13 +48,15 @@ Previous idea:
 Next idea:
 "{next_text}"
 
-Rules:
-- DO NOT summarize the topic
-- DO NOT conclude
-- Highlight contrast or curiosity
-- Keep flow moving forward
+Instructions:
+- Identify contrast, tension, or shift in perspective
+- Avoid generic phrasing like "this shows" or "this highlights"
+- Avoid summarizing the topic
+- Maintain intellectual tone (like an essay or lecture)
+- Keep it concise and precise
 
-Max 20 words.
+Max 25 words.
+Avoid repetition of phrasing used earlier.
 """
 
     response = client.chat.completions.create(
@@ -75,11 +81,15 @@ def build_blend(query, max_segments=12):
         print("❌ No results found.")
         return []
 
-    KEYWORDS = ["fail", "failure", "mistake", "growth", "change", "identity", "learn", "struggle"]
+    KEYWORDS = [
+        "fail", "failure", "mistake", "growth", "change",
+        "identity", "learn", "struggle", "success",
+        "risk", "reinvent", "adapt"
+    ]
 
     selected_pool = []
 
-    # ✅ Step 1 — Filtering + scoring
+    # ✅ Step 1 — Filtering + relevance scoring
     for r in results:
         text = r.get("text", "").strip()
         text_lower = text.lower()
@@ -108,17 +118,29 @@ def build_blend(query, max_segments=12):
         print("❌ No usable segments.")
         return []
 
-    # ✅ Step 2 — Rank by relevance + score
+    # ✅ Step 2 — Deduplicate by text (IMPORTANT FIX)
+    seen_texts = set()
+    unique_pool = []
+
+    for r in selected_pool:
+        t = r.get("text")
+        if t not in seen_texts:
+            seen_texts.add(t)
+            unique_pool.append(r)
+
+    selected_pool = unique_pool
+
+    # ✅ Step 3 — Sort by relevance + semantic score
     selected_pool = sorted(
         selected_pool,
         key=lambda x: (x["relevance"], x["score"]),
         reverse=True
     )
 
-    # ✅ Step 3 — Expand pool (prevents collapse)
+    # ✅ Step 4 — Expand pool size
     candidates = selected_pool[:max_segments * 5]
 
-    # ✅ ✅ Step 4 — SOFT diversity (FIXED)
+    # ✅ Step 5 — Soft diversity
     selected = []
     source_counts = {}
 
@@ -129,26 +151,19 @@ def build_blend(query, max_segments=12):
 
         count = source_counts.get(source_key, 0)
 
-        # ✅ Prefer diversity first
         if count < 2:
             selected.append(r)
             source_counts[source_key] = count + 1
-
-        # ✅ Then allow overflow to fill required segments
         elif len(selected) < max_segments:
             selected.append(r)
 
         if len(selected) >= max_segments:
             break
 
-    if not selected:
-        print("❌ No segments selected.")
-        return []
-
     if len(selected) < max_segments:
-        print(f"⚠️ Only {len(selected)} segments found — consider loosening filters")
+        print(f"⚠️ Only {len(selected)} segments selected")
 
-    # ✅ Step 5 — Build Blend
+    # ✅ Step 6 — Build Blend
     blend = []
 
     # ✅ Intro
@@ -157,7 +172,7 @@ def build_blend(query, max_segments=12):
         "text": generate_narration("", "", query, position="intro")
     })
 
-    # ✅ Flow (clip → short narration → clip)
+    # ✅ Flow
     for i, segment in enumerate(selected):
 
         blend.append({
@@ -191,7 +206,7 @@ def build_blend(query, max_segments=12):
     return blend
 
 
-# ✅ ✅ RUN TEST
+# ✅ ✅ TEST RUN
 if __name__ == "__main__":
     blend = build_blend("reinventing yourself after failure")
 
@@ -202,6 +217,7 @@ if __name__ == "__main__":
     else:
         for step in blend:
             print(step)
+
 
 
 
