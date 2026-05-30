@@ -1,4 +1,4 @@
-from scripts.search_test import search
+from search_test import search
 import random
 
 
