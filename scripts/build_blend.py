@@ -5,7 +5,7 @@ import os
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 
-# ✅ ✅ NATURAL + GROUNDED NARRATION
+# ✅ ✅ FINAL NARRATION ENGINE (OBSERVATIONAL / NON-ADVISORY)
 def generate_narration(prev_text, next_text, query, position="middle", style_hint=None):
 
     if position == "intro":
@@ -14,10 +14,10 @@ Start in the middle of a thoughtful conversation.
 
 Topic: {query}
 
-No “welcome” or setup language.
-Make one clear observation that pulls the listener in.
+Make one specific observation. No "welcome" or setup language.
+Avoid general statements about life, failure, or growth.
 
-Natural, simple, engaging.
+Keep it natural and grounded.
 
 Max 22 words.
 """
@@ -28,15 +28,15 @@ Offer a closing thought.
 
 Topic: {query}
 
-Do not summarize everything.
-Leave the listener with a reflective idea or unanswered question.
+Do not summarize. Do not resolve.
+Leave a lingering idea or open-ended thought.
 
 Max 22 words.
 """
 
     else:
         prompt = f"""
-You are guiding a listener through ideas.
+You are noticing patterns between ideas.
 
 Topic: {query}
 
@@ -47,10 +47,13 @@ Next idea:
 "{next_text}"
 
 Instructions:
-- Refer to something specific from one of the ideas
-- Avoid generic statements about failure/growth
-- Show contrast, continuation, or shift
-- Keep it natural and spoken, not written
+- Point out something specific or interesting
+- Do NOT give advice
+- Do NOT suggest what someone should do
+- Do NOT resolve the situation
+- Avoid general phrases about "growth" or "failure"
+- Let uncertainty or tension remain
+- Speak like you're noticing something in real time
 
 Style hint: {style_hint}
 
@@ -82,7 +85,7 @@ def build_blend(query, max_segments=12):
     KEYWORDS = [
         "fail", "failure", "mistake", "growth", "change",
         "identity", "learn", "struggle", "success",
-        "risk", "reinvent", "adapt"
+        "risk", "reinvent", "adapt", "stuck", "uncertain"
     ]
 
     selected_pool = []
@@ -170,14 +173,14 @@ def build_blend(query, max_segments=12):
         "text": generate_narration("", "", query, position="intro")
     })
 
-    # ✅ Style rotation (keeps flow fresh)
+    # ✅ Style variation (keeps rhythm natural)
     style_options = [
         "make it reflective",
         "make it conversational",
-        "ask a grounded question",
         "highlight contrast",
-        "point out something specific",
-        "keep it simple",
+        "point out something subtle",
+        "notice something unexpected",
+        "keep it very simple"
     ]
 
     # ✅ Flow
