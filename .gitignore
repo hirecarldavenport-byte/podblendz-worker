@@ -73,3 +73,18 @@ audio/temp/
 !data/audio_catalog.json
 !data/transcription_jobs/*.json
 !data/selected_episodes/*.json
+# FAISS (VERY IMPORTANT)
+*.faiss
+
+# Large mappings
+id_map.json
+
+# Optional: large json datasets
+data/
+
+# Python
+__pycache__/
+*.pyc
+
+# Env
+.venv/
