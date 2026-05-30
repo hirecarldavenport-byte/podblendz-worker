@@ -24,7 +24,7 @@ def get_embedding(text):
 
 
 def run():
-    chunks = load_chunks()
+    chunks = load_chunks()[:5000]
 
     batch_embeddings = []
 
