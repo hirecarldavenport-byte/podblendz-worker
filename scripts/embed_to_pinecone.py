@@ -15,7 +15,7 @@ BUCKET = "podblendz-episode-audio"
 
 # ✅ Settings (improved)
 BATCH_SIZE = 100
-MAX_SEGMENTS = 200000 # 🔥 increased for better search quality
+MAX_SEGMENTS = 500000 # 🔥 increased for better search quality
 
 
 def get_batches():
