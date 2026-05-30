@@ -66,4 +66,4 @@ def search(query, top_k=30):
 
 
 if __name__ == "__main__":
-    search("reinventing yourself after failure")
+    search("feeling stuck in life and what to do")
