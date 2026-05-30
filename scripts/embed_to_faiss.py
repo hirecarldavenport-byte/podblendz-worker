@@ -1,94 +1,119 @@
+import boto3
+import json
+import os
 import faiss
 import numpy as np
-import sqlite3
-import json
 from openai import OpenAI
 
+# ✅ --- Setup clients ---
+client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+s3 = boto3.client("s3")
+
 # ✅ CONFIG
-DB_PATH = "podcast_pal.db"
+BUCKET = "podblendz-episode-audio"
+BATCH_SIZE = 100
+MAX_SEGMENTS = 500000   # keep your limit
+DIM = 1536
+
 INDEX_FILE = "podcast_index.faiss"
 ID_MAP_FILE = "id_map.json"
-MODEL = "text-embedding-3-small"
-BATCH_SIZE = 100
-LIMIT = 5000   # ✅ change later (set to None for full run)
 
-client = OpenAI()
+# ✅ FAISS index
+index = faiss.IndexFlatL2(DIM)
 
-# ✅ LOAD CHUNKS FROM DB
-def load_chunks(limit=None):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    query = "SELECT id, text FROM chunks"
-    if limit:
-        query += f" LIMIT {limit}"
-
-    cursor.execute(query)
-    rows = cursor.fetchall()
-    conn.close()
-
-    chunks = [{"id": r[0], "text": r[1]} for r in rows]
-
-    print(f"✅ Loaded {len(chunks)} chunks from DB")
-    return chunks
+# ✅ ID mapping (FAISS index → your segment ID)
+id_map = []
 
 
-# ✅ GET EMBEDDING
-def get_embedding(text):
-    response = client.embeddings.create(
-        model=MODEL,
-        input=text
-    )
-    return response.data[0].embedding
+def get_batches():
+    paginator = s3.get_paginator("list_objects_v2")
+
+    batch_texts = []
+    batch_ids = []
+    total = 0
+
+    for page in paginator.paginate(Bucket=BUCKET, Prefix="segments/"):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+
+            if not key.endswith(".json"):
+                continue
+
+            response = s3.get_object(Bucket=BUCKET, Key=key)
+            data = json.loads(response["Body"].read())
+
+            for i, seg in enumerate(data.get("segments", [])):
+                text = seg.get("text")
+
+                # ✅ same filtering logic
+                if (
+                    not text
+                    or len(text.strip()) < 40
+                    or len(text.split()) < 8
+                ):
+                    continue
+
+                segment_id = f"{key}_{i}"
+
+                batch_texts.append(text)
+                batch_ids.append(segment_id)
+
+                total += 1
+
+                if len(batch_texts) >= BATCH_SIZE:
+                    yield batch_texts, batch_ids
+                    batch_texts = []
+                    batch_ids = []
+
+                if total >= MAX_SEGMENTS:
+                    if batch_texts:
+                        yield batch_texts, batch_ids
+                    print("✅ Reached max segment limit")
+                    return
+
+    if batch_texts:
+        yield batch_texts, batch_ids
 
 
-# ✅ MAIN RUN FUNCTION
 def run():
-    # ✅ Load data
-    chunks = load_chunks(LIMIT)
+    total_processed = 0
 
-    # ✅ Initialize FAISS index
-    dim = 1536
-    index = faiss.IndexFlatL2(dim)
+    print("🚀 Starting FAISS ingestion...\n")
 
-    # ✅ Storage
-    id_map = []
-    batch_embeddings = []
+    for texts, ids in get_batches():
+        print(f"🔄 Embedding {len(texts)} segments...")
 
-    print("🚀 Starting embedding + FAISS ingestion...")
+        response = client.embeddings.create(
+            model="text-embedding-3-small",
+            input=texts
+        )
 
-    # ✅ Process chunks
-    for i, chunk in enumerate(chunks):
-        embedding = get_embedding(chunk["text"])
+        # ✅ Convert embeddings to numpy array
+        vectors = np.array(
+            [emb.embedding for emb in response.data]
+        ).astype("float32")
 
-        batch_embeddings.append(embedding)
-        id_map.append(chunk["id"])
-
-        # ✅ Batch insert
-        if len(batch_embeddings) == BATCH_SIZE:
-            vectors = np.array(batch_embeddings).astype("float32")
-            index.add(vectors)
-
-            print(f"✅ Added {len(id_map)} vectors")
-
-            batch_embeddings = []
-
-    # ✅ Handle remainder
-    if batch_embeddings:
-        vectors = np.array(batch_embeddings).astype("float32")
+        # ✅ Add to FAISS
         index.add(vectors)
 
-    print(f"✅ Final total vectors: {index.ntotal}")
+        # ✅ Save ID mapping
+        id_map.extend(ids)
 
-    # ✅ Save FAISS index
+        total_processed += len(ids)
+
+        print(f"✅ Total indexed: {total_processed}")
+
+    print("\n💾 Saving FAISS index...")
+
     faiss.write_index(index, INDEX_FILE)
 
-    # ✅ Save ID map
     with open(ID_MAP_FILE, "w") as f:
         json.dump(id_map, f)
 
-    print("✅ Saved FAISS index + ID map")
-    print("🎉 DONE")
+    print("✅ Saved:")
+    print(f"   - {INDEX_FILE}")
+    print(f"   - {ID_MAP_FILE}")
+    print("\n🎯 DONE — FAISS ready!")
 
 
 if __name__ == "__main__":
