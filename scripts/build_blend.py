@@ -6,11 +6,34 @@ import random
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 
+# ✅ shorten long segments for GPT clarity
 def shorten(text, max_words=40):
     return " ".join(text.split()[:max_words])
 
 
-# ✅ FINAL NARRATION ENGINE (UPGRADED)
+# ✅ NEW: stronger semantic quality filter
+def is_strong_sentence(text):
+    if not text:
+        return False
+
+    text = text.strip()
+    words = text.split()
+
+    if len(words) < 8:
+        return False
+
+    # avoid mid-fragment starts
+    if text[0].islower():
+        return False
+
+    # prefer complete sentences
+    if not text.endswith((".", "?", "!")):
+        return False
+
+    return True
+
+
+# ✅ FINAL NARRATION ENGINE (IMPROVED)
 def generate_narration(prev_text, next_text, query, position="middle", style_hint=None):
 
     if position == "intro":
@@ -20,7 +43,7 @@ Start mid-thought.
 Topic: {query}
 
 Make one grounded observation.
-Avoid repeating the topic words directly.
+Avoid repeating key topic words.
 No general life advice.
 
 Max 22 words.
@@ -28,19 +51,19 @@ Max 22 words.
 
     elif position == "outro":
         prompt = f"""
-End with an unresolved idea.
+End with an unresolved thought.
 
 Topic: {query}
 
 Do not summarize.
-Leave tension or ambiguity.
+Leave tension or open possibility.
 
 Max 22 words.
 """
 
     else:
         prompt = f"""
-You are noticing a relationship between two ideas.
+You are noticing a meaningful relationship between two ideas.
 
 Topic: {query}
 
@@ -51,11 +74,12 @@ Next idea:
 "{next_text}"
 
 Instructions:
-- Point out a specific contrast or tension
-- Avoid repeating "fear", "courage", or obvious keywords
+- Highlight a specific contrast or tension
+- Avoid repeating core topic words
+- Avoid phrases like "the tension lies"
 - Do NOT generalize
 - Do NOT give advice
-- Stay grounded in what is actually said
+- Keep it grounded and specific
 
 Style: {style_hint}
 
@@ -84,7 +108,7 @@ def build_blend(query, max_segments=16):
         print("❌ No results found.")
         return []
 
-    # ✅ DEBUG: Raw results
+    # ✅ DEBUG: raw results
     print("\n🔎 RAW SEARCH RESULTS (Top 10):\n")
     for i, r in enumerate(results[:10]):
         print(f"{i+1}. {r['text'][:120]}")
@@ -108,7 +132,12 @@ def build_blend(query, max_segments=16):
 
         duration = (end - start) if (start is not None and end is not None) else 0
 
-        if not text or len(text) < 25 or duration < 3:
+        if (
+            not text
+            or len(text) < 25
+            or duration < 3
+            or not is_strong_sentence(text)
+        ):
             continue
 
         relevance = sum(1 for k in KEYWORDS if k in text_lower)
@@ -132,16 +161,22 @@ def build_blend(query, max_segments=16):
 
     selected_pool = unique_pool
 
-    # ✅ correct FAISS sort
+    # ✅ correct FAISS sort (lower score = better)
     selected_pool = sorted(
         selected_pool,
         key=lambda x: (x["relevance"], -x["score"]),
         reverse=True
     )
 
-    # ✅ shuffle for natural variation
+    # ✅ structure-aware ordering (replaces full shuffle)
     candidates = selected_pool[:max_segments * 5]
-    random.shuffle(candidates)
+    candidates = sorted(candidates, key=lambda x: x["score"])
+
+    # small local shuffle for natural variation
+    for i in range(0, len(candidates), 3):
+        chunk = candidates[i:i+3]
+        random.shuffle(chunk)
+        candidates[i:i+3] = chunk
 
     selected = []
     source_counts = {}
@@ -153,6 +188,7 @@ def build_blend(query, max_segments=16):
 
         count = source_counts.get(source_key, 0)
 
+        # strong diversity early, flexible later
         if count < 1:
             selected.append(r)
             source_counts[source_key] = count + 1
@@ -162,7 +198,7 @@ def build_blend(query, max_segments=16):
         if len(selected) >= max_segments:
             break
 
-    # ✅ DEBUG: Selected segments
+    # ✅ DEBUG: selected segments
     print("\n✅ SELECTED SEGMENTS:\n")
     for i, s in enumerate(selected):
         print(f"{i+1}. {s['text'][:120]}")
@@ -178,12 +214,12 @@ def build_blend(query, max_segments=16):
     })
 
     styles = [
-        "reflective",
         "observational",
         "contrast-driven",
         "subtle",
         "unexpected",
-        "minimal"
+        "minimal",
+        "grounded"
     ]
 
     for i, seg in enumerate(selected):
@@ -228,6 +264,7 @@ if __name__ == "__main__":
 
     for step in blend:
         print(step)
+
 
 
 
