@@ -221,7 +221,7 @@ def build_blend(query, max_segments=12):
 
 # ✅ ✅ RUN
 if __name__ == "__main__":
-    blend = build_blend("feeling stuck in life and what to do")
+    blend = build_blend("fear vs courage in decision making")
 
     print("\n🔥 BLEND OUTPUT:\n")
 
