@@ -13,9 +13,9 @@ index = pc.Index("podblendz")
 s3 = boto3.client("s3")
 BUCKET = "podblendz-episode-audio"
 
-# ✅ Settings (safe for MVP)
+# ✅ Settings (improved)
 BATCH_SIZE = 100
-MAX_SEGMENTS = 5000  # increase later after testing
+MAX_SEGMENTS = 20000  # 🔥 increased for better search quality
 
 
 def get_batches():
@@ -38,13 +38,17 @@ def get_batches():
             for i, seg in enumerate(data.get("segments", [])):
                 text = seg.get("text")
 
-                # ✅ skip bad segments
-                if not text or len(text.strip()) < 20:
+                # ✅ 🔥 Improved filtering
+                if (
+                    not text
+                    or len(text.strip()) < 40        # longer minimum length
+                    or len(text.split()) < 8        # avoid short phrases
+                ):
                     continue
 
                 batch_texts.append(text)
 
-                # ✅ important: unique ID per segment
+                # ✅ metadata remains critical
                 batch_meta.append({
                     "id": f"{key}_{i}",
                     "metadata": {
@@ -63,7 +67,7 @@ def get_batches():
                     batch_texts = []
                     batch_meta = []
 
-                # ✅ stop early for testing
+                # ✅ stop early for iteration control
                 if total >= MAX_SEGMENTS:
                     if batch_texts:
                         yield batch_texts, batch_meta
