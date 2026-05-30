@@ -19,6 +19,7 @@ This blends multiple perspectives.
 Keep it engaging, NOT conclusive.
 Max 30 words.
 """
+
     elif position == "outro":
         prompt = f"""
 Create a short closing reflection.
@@ -30,6 +31,7 @@ Leave the listener thinking.
 
 Max 30 words.
 """
+
     else:
         prompt = f"""
 You are guiding a listener through different perspectives.
@@ -77,7 +79,7 @@ def build_blend(query, max_segments=12):
 
     selected_pool = []
 
-    # ✅ Step 1 — Filter + relevance score
+    # ✅ Step 1 — Filtering + scoring
     for r in results:
         text = r.get("text", "").strip()
         text_lower = text.lower()
@@ -106,17 +108,17 @@ def build_blend(query, max_segments=12):
         print("❌ No usable segments.")
         return []
 
-    # ✅ Step 2 — Rank
+    # ✅ Step 2 — Rank by relevance + score
     selected_pool = sorted(
         selected_pool,
         key=lambda x: (x["relevance"], x["score"]),
         reverse=True
     )
 
-    # ✅ Step 3 — Larger pool (prevents collapse)
+    # ✅ Step 3 — Expand pool (prevents collapse)
     candidates = selected_pool[:max_segments * 5]
 
-    # ✅ Step 4 — Diversity control
+    # ✅ ✅ Step 4 — SOFT diversity (FIXED)
     selected = []
     source_counts = {}
 
@@ -127,21 +129,24 @@ def build_blend(query, max_segments=12):
 
         count = source_counts.get(source_key, 0)
 
-        if count >= 2:
-            continue
+        # ✅ Prefer diversity first
+        if count < 2:
+            selected.append(r)
+            source_counts[source_key] = count + 1
 
-        selected.append(r)
-        source_counts[source_key] = count + 1
+        # ✅ Then allow overflow to fill required segments
+        elif len(selected) < max_segments:
+            selected.append(r)
 
         if len(selected) >= max_segments:
             break
 
+    if not selected:
+        print("❌ No segments selected.")
+        return []
+
     if len(selected) < max_segments:
         print(f"⚠️ Only {len(selected)} segments found — consider loosening filters")
-
-    if not selected:
-        print("❌ No segments selected after diversity filtering.")
-        return []
 
     # ✅ Step 5 — Build Blend
     blend = []
@@ -152,8 +157,9 @@ def build_blend(query, max_segments=12):
         "text": generate_narration("", "", query, position="intro")
     })
 
-    # ✅ Flow
+    # ✅ Flow (clip → short narration → clip)
     for i, segment in enumerate(selected):
+
         blend.append({
             "type": "clip",
             "text": segment["text"],
@@ -166,8 +172,8 @@ def build_blend(query, max_segments=12):
             next_seg = selected[i + 1]
 
             transition = generate_narration(
-                prev_text=f"[Perspective A] {segment['text']}",
-                next_text=f"[Perspective B] {next_seg['text']}",
+                prev_text=segment["text"],
+                next_text=next_seg["text"],
                 query=query
             )
 
@@ -196,5 +202,6 @@ if __name__ == "__main__":
     else:
         for step in blend:
             print(step)
+
 
 
