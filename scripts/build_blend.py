@@ -1,43 +1,42 @@
 from search_test import search
 from openai import OpenAI
 import os
-import random
 
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 
-# ✅ ✅ NATURAL, INTELLIGENT NARRATION
+# ✅ ✅ NATURAL + GROUNDED NARRATION
 def generate_narration(prev_text, next_text, query, position="middle", style_hint=None):
 
     if position == "intro":
         prompt = f"""
-You are a thoughtful podcast host guiding a listener through ideas.
+Start in the middle of a thoughtful conversation.
 
 Topic: {query}
 
-Set up the exploration in a clear, natural, engaging way.
-Avoid sounding academic or overly motivational.
+No “welcome” or setup language.
+Make one clear observation that pulls the listener in.
 
-Max 25 words.
+Natural, simple, engaging.
+
+Max 22 words.
 """
 
     elif position == "outro":
         prompt = f"""
-Offer a closing reflection.
+Offer a closing thought.
 
 Topic: {query}
 
-Do NOT summarize everything.
-Leave the listener with a thought or question.
+Do not summarize everything.
+Leave the listener with a reflective idea or unanswered question.
 
-Keep it simple and natural.
-
-Max 25 words.
+Max 22 words.
 """
 
     else:
         prompt = f"""
-You are guiding a listener through different perspectives.
+You are guiding a listener through ideas.
 
 Topic: {query}
 
@@ -48,14 +47,14 @@ Next idea:
 "{next_text}"
 
 Instructions:
-- Connect or contrast the ideas
-- Keep language natural and conversational
-- Avoid repetitive phrasing about failure/growth
-- Vary how you speak (observation, question, contrast)
+- Refer to something specific from one of the ideas
+- Avoid generic statements about failure/growth
+- Show contrast, continuation, or shift
+- Keep it natural and spoken, not written
 
 Style hint: {style_hint}
 
-Max 18 words.
+Max 16 words.
 """
 
     response = client.chat.completions.create(
@@ -70,7 +69,7 @@ Max 18 words.
     return content.strip() if content else ""
 
 
-# ✅ ✅ MAIN BLEND BUILDER
+# ✅ ✅ MAIN BUILDER
 def build_blend(query, max_segments=12):
     print(f"\n🎧 Building Blend: {query}\n")
 
@@ -171,14 +170,14 @@ def build_blend(query, max_segments=12):
         "text": generate_narration("", "", query, position="intro")
     })
 
-    # ✅ Style rotation (critical improvement)
+    # ✅ Style rotation (keeps flow fresh)
     style_options = [
         "make it reflective",
-        "make it slightly conversational",
-        "frame it as a question",
+        "make it conversational",
+        "ask a grounded question",
         "highlight contrast",
+        "point out something specific",
         "keep it simple",
-        "point out something unexpected"
     ]
 
     # ✅ Flow
@@ -194,7 +193,6 @@ def build_blend(query, max_segments=12):
 
         if i < len(selected) - 1:
             next_seg = selected[i + 1]
-
             style_hint = style_options[i % len(style_options)]
 
             transition = generate_narration(
@@ -229,6 +227,7 @@ if __name__ == "__main__":
     else:
         for step in blend:
             print(step)
+
 
 
 
