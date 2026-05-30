@@ -75,10 +75,10 @@ Max 16 words.
 
 
 # ✅ MAIN BUILDER
-def build_blend(query, max_segments=12):
+def build_blend(query, max_segments=16):
     print(f"\n🎧 Building Blend: {query}\n")
 
-    results = search(query) or []
+    results = search(query, k=100)
 
     if not results:
         print("❌ No results found.")
@@ -101,7 +101,7 @@ def build_blend(query, max_segments=12):
 
         duration = (end - start) if (start and end) else 0
 
-        if not text or len(text) < 35 or duration < 5:
+        if not text or len(text) < 25 or duration < 3:
             continue
 
         relevance = sum(1 for k in KEYWORDS if k in text_lower)
