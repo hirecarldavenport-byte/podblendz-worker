@@ -10,34 +10,37 @@ def shorten(text, max_words=40):
     return " ".join(text.split()[:max_words])
 
 
-# ✅ FINAL NARRATION ENGINE
+# ✅ FINAL NARRATION ENGINE (UPGRADED)
 def generate_narration(prev_text, next_text, query, position="middle", style_hint=None):
 
     if position == "intro":
         prompt = f"""
-Start in the middle of a thoughtful conversation.
+Start mid-thought.
 
 Topic: {query}
 
-Make one specific observation. No "welcome" language.
+Make one grounded observation.
+Avoid repeating the topic words directly.
+No general life advice.
 
 Max 22 words.
 """
 
     elif position == "outro":
         prompt = f"""
-Offer a closing thought.
+End with an unresolved idea.
 
 Topic: {query}
 
-Leave a lingering idea. No summary.
+Do not summarize.
+Leave tension or ambiguity.
 
 Max 22 words.
 """
 
     else:
         prompt = f"""
-You are noticing patterns.
+You are noticing a relationship between two ideas.
 
 Topic: {query}
 
@@ -47,12 +50,14 @@ Previous idea:
 Next idea:
 "{next_text}"
 
-- No advice
-- No resolution
-- Be specific
-- Stay observational
+Instructions:
+- Point out a specific contrast or tension
+- Avoid repeating "fear", "courage", or obvious keywords
+- Do NOT generalize
+- Do NOT give advice
+- Stay grounded in what is actually said
 
-Style hint: {style_hint}
+Style: {style_hint}
 
 Max 16 words.
 """
@@ -66,23 +71,25 @@ Max 16 words.
         return ""
 
     content = response.choices[0].message.content
-
-    if not content:
-       return ""
-
-    return content.strip()
-
+    return content.strip() if content else ""
 
 
 # ✅ MAIN BUILDER
 def build_blend(query, max_segments=16):
     print(f"\n🎧 Building Blend: {query}\n")
 
-    results = search(query, k=100)
+    results = search(query, k=100) or []
 
     if not results:
         print("❌ No results found.")
         return []
+
+    # ✅ DEBUG: Raw results
+    print("\n🔎 RAW SEARCH RESULTS (Top 10):\n")
+    for i, r in enumerate(results[:10]):
+        print(f"{i+1}. {r['text'][:120]}")
+        print(f"   Source: {r['source']}")
+        print(f"   Score: {r['score']}\n")
 
     KEYWORDS = [
         "fail", "failure", "mistake", "growth",
@@ -99,7 +106,7 @@ def build_blend(query, max_segments=16):
         start = r.get("start")
         end = r.get("end")
 
-        duration = (end - start) if (start and end) else 0
+        duration = (end - start) if (start is not None and end is not None) else 0
 
         if not text or len(text) < 25 or duration < 3:
             continue
@@ -125,14 +132,14 @@ def build_blend(query, max_segments=16):
 
     selected_pool = unique_pool
 
-    # ✅ CORRECT FAISS SORT
+    # ✅ correct FAISS sort
     selected_pool = sorted(
         selected_pool,
         key=lambda x: (x["relevance"], -x["score"]),
         reverse=True
     )
 
-    # ✅ shuffle for natural flow
+    # ✅ shuffle for natural variation
     candidates = selected_pool[:max_segments * 5]
     random.shuffle(candidates)
 
@@ -141,16 +148,26 @@ def build_blend(query, max_segments=16):
 
     for r in candidates:
         source = r.get("source", "")
-        source_key = source.split("/")[2] if "/" in source else source
+        parts = source.split("/")
+        source_key = parts[2] if len(parts) > 2 else source
 
         count = source_counts.get(source_key, 0)
 
         if count < 1:
             selected.append(r)
             source_counts[source_key] = count + 1
+        elif len(selected) < max_segments:
+            selected.append(r)
 
         if len(selected) >= max_segments:
             break
+
+    # ✅ DEBUG: Selected segments
+    print("\n✅ SELECTED SEGMENTS:\n")
+    for i, s in enumerate(selected):
+        print(f"{i+1}. {s['text'][:120]}")
+        print(f"   Source: {s['source']}")
+        print(f"   Relevance: {s['relevance']} | Score: {s['score']}\n")
 
     blend = []
 
@@ -162,11 +179,11 @@ def build_blend(query, max_segments=16):
 
     styles = [
         "reflective",
-        "conversational",
-        "contrast",
+        "observational",
+        "contrast-driven",
         "subtle",
         "unexpected",
-        "simple"
+        "minimal"
     ]
 
     for i, seg in enumerate(selected):
@@ -203,6 +220,7 @@ def build_blend(query, max_segments=16):
     return blend
 
 
+# ✅ RUN
 if __name__ == "__main__":
     blend = build_blend("fear vs courage in decision making")
 
