@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
+import html
 from pathlib import Path
 from datetime import datetime
 
@@ -27,14 +28,20 @@ TTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # -------------------------------------------------
-# ✅ CLEAN TEXT
+# ✅ TEXT HELPERS
 # -------------------------------------------------
 def clean_text(text: str) -> str:
+    """Normalize spacing"""
     return " ".join(text.split())
 
 
+def safe_ssml(text: str) -> str:
+    """Escape characters that break XML"""
+    return html.escape(text)
+
+
 # -------------------------------------------------
-# ✅ MAIN: DUAL VOICE TTS
+# ✅ MAIN FUNCTION
 # -------------------------------------------------
 def generate_dual_voice_audio(
     blend,
@@ -43,9 +50,10 @@ def generate_dual_voice_audio(
     filename_prefix="blend"
 ) -> str:
     """
-    Generate audio using:
-    🎙 narrator voice
-    🎧 speaker voice
+    Generate dual-voice audio:
+
+    🎙 Narrator = guided storytelling
+    🎧 Speaker = segment voice
     """
 
     print("🔐 AZURE KEY LOADED:", bool(AZURE_KEY))
@@ -55,7 +63,7 @@ def generate_dual_voice_audio(
         raise RuntimeError("❌ Missing Azure Speech credentials")
 
     # -------------------------
-    # ✅ FILE PATH
+    # ✅ FILE NAME
     # -------------------------
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     uid = uuid.uuid4().hex[:6]
@@ -82,32 +90,32 @@ def generate_dual_voice_audio(
     )
 
     # -------------------------
-    # ✅ BUILD SSML (SAFE + SIMPLE)
+    # ✅ BUILD SAFE SSML
     # -------------------------
     ssml_parts = [
-        '<speak xmlns="http://www.w3.org/2001/10/synthesis" version="1.0">'
+        '<speak xmlns="http://www.w3.org/2001/10/synthesis" '
+        'version="1.0" xml:lang="en-US">'
     ]
 
     for step in blend:
 
         if step["type"] == "narration":
-            text = clean_text(step["text"])
+            text = safe_ssml(clean_text(step["text"]))
 
             ssml_parts.append(
-                f'<voice name="{narrator_voice}">{text} ...</voice>'
+                f'<voice name="{narrator_voice}">{text}</voice>'
             )
 
         elif step["type"] == "speaker":
-            text = clean_text(step["text"])
+            text = safe_ssml(clean_text(step["text"]))
 
             ssml_parts.append(
-                f'<voice name="{speaker_voice}">{text} ...</voice>'
+                f'<voice name="{speaker_voice}">{text}</voice>'
             )
 
         elif step["type"] == "pause":
             duration_ms = int(step.get("duration", 0.4) * 1000)
 
-            # ✅ safe SSML pause
             ssml_parts.append(
                 f'<break time="{duration_ms}ms"/>'
             )
@@ -116,12 +124,38 @@ def generate_dual_voice_audio(
 
     ssml = "\n".join(ssml_parts)
 
+    # OPTIONAL DEBUG
+    # print("----- SSML START -----")
+    # print(ssml)
+    # print("----- SSML END -----")
+
     # -------------------------
-    # ✅ SYNTHESIS
+    # ✅ SYNTHESIZE
     # -------------------------
     result = synthesizer.speak_ssml_async(ssml).get()
 
+    # -------------------------
+    # ✅ ERROR HANDLING (CLEAN)
+    # -------------------------
+    if result is None:
+        raise RuntimeError("❌ Azure returned no result")
+
     if result.reason != speechsdk.ResultReason.SynthesizingAudioCompleted:
+
+        if result.reason == speechsdk.ResultReason.Canceled:
+            cancellation = result.cancellation_details
+
+            print("❌ Azure TTS canceled")
+
+            if cancellation:
+                print("🔹 Reason:", cancellation.reason)
+                print("🔹 Error details:", cancellation.error_details)
+            else:
+                print("⚠️ No cancellation details available")
+
+        else:
+            print("❌ Unexpected result:", result.reason)
+
         raise RuntimeError("❌ Dual voice TTS failed")
 
     # -------------------------
@@ -133,6 +167,7 @@ def generate_dual_voice_audio(
     print(f"✅ Dual voice audio created → {output_path}")
 
     return str(output_path)
+
 
 
 
