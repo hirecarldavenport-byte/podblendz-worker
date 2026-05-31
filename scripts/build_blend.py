@@ -6,12 +6,12 @@ import random
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 
-# ✅ shorten long segments for GPT clarity
+# ✅ shorten for better narration clarity
 def shorten(text, max_words=40):
     return " ".join(text.split()[:max_words])
 
 
-# ✅ NEW: stronger semantic quality filter
+# ✅ strong sentence filter (prevents bad audio clips)
 def is_strong_sentence(text):
     if not text:
         return False
@@ -22,18 +22,30 @@ def is_strong_sentence(text):
     if len(words) < 8:
         return False
 
-    # avoid mid-fragment starts
-    if text[0].islower():
+    if not text[0].isupper():
         return False
 
-    # prefer complete sentences
     if not text.endswith((".", "?", "!")):
         return False
 
     return True
 
 
-# ✅ FINAL NARRATION ENGINE (IMPROVED)
+# ✅ categorize for narrative arc
+def categorize_segment(text):
+    t = text.lower()
+
+    if any(w in t for w in ["fear", "uncertainty", "anxiety"]):
+        return "setup"
+
+    elif any(w in t for w in ["decision", "risk", "process", "system"]):
+        return "middle"
+
+    else:
+        return "end"
+
+
+# ✅ narration engine (TTS-friendly)
 def generate_narration(prev_text, next_text, query, position="middle", style_hint=None):
 
     if position == "intro":
@@ -42,48 +54,46 @@ Start mid-thought.
 
 Topic: {query}
 
-Make one grounded observation.
-Avoid repeating key topic words.
-No general life advice.
+Make a grounded observation about how people behave under uncertainty.
+Avoid abstract philosophy.
 
-Max 22 words.
+Max 20 words.
 """
 
     elif position == "outro":
         prompt = f"""
-End with an unresolved thought.
+Close with an open-ended reflection.
 
 Topic: {query}
 
 Do not summarize.
-Leave tension or open possibility.
+Leave something unresolved.
 
-Max 22 words.
+Max 20 words.
 """
 
     else:
         prompt = f"""
-You are noticing a meaningful relationship between two ideas.
+You are noticing a connection between two ideas.
 
 Topic: {query}
 
-Previous idea:
+Previous:
 "{prev_text}"
 
-Next idea:
+Next:
 "{next_text}"
 
 Instructions:
-- Highlight a specific contrast or tension
-- Avoid repeating core topic words
+- Highlight a specific contrast or shift
+- Avoid repeating the topic words
 - Avoid phrases like "the tension lies"
-- Do NOT generalize
-- Do NOT give advice
-- Keep it grounded and specific
+- No advice
+- Keep it natural and conversational
 
 Style: {style_hint}
 
-Max 16 words.
+Max 14 words.
 """
 
     response = client.chat.completions.create(
@@ -108,7 +118,7 @@ def build_blend(query, max_segments=16):
         print("❌ No results found.")
         return []
 
-    # ✅ DEBUG: raw results
+    # ✅ DEBUG — RAW
     print("\n🔎 RAW SEARCH RESULTS (Top 10):\n")
     for i, r in enumerate(results[:10]):
         print(f"{i+1}. {r['text'][:120]}")
@@ -161,65 +171,77 @@ def build_blend(query, max_segments=16):
 
     selected_pool = unique_pool
 
-    # ✅ correct FAISS sort (lower score = better)
+    # ✅ correct FAISS ordering
     selected_pool = sorted(
         selected_pool,
         key=lambda x: (x["relevance"], -x["score"]),
         reverse=True
     )
 
-    # ✅ structure-aware ordering (replaces full shuffle)
+    # ✅ candidate pool
     candidates = selected_pool[:max_segments * 5]
-    candidates = sorted(candidates, key=lambda x: x["score"])
 
-    # small local shuffle for natural variation
-    for i in range(0, len(candidates), 3):
-        chunk = candidates[i:i+3]
-        random.shuffle(chunk)
-        candidates[i:i+3] = chunk
-
-    selected = []
-    source_counts = {}
+    # ✅ categorize for flow
+    setup, middle, end = [], [], []
 
     for r in candidates:
+        cat = categorize_segment(r["text"])
+
+        if cat == "setup":
+            setup.append(r)
+        elif cat == "middle":
+            middle.append(r)
+        else:
+            end.append(r)
+
+    # ✅ build structured narrative
+    selected = []
+
+    selected += setup[:4]
+    selected += middle[:6]
+
+    remaining = max_segments - len(selected)
+    selected += end[:remaining]
+
+    # ✅ enforce diversity
+    final_selected = []
+    source_counts = {}
+
+    for r in selected:
         source = r.get("source", "")
-        parts = source.split("/")
-        source_key = parts[2] if len(parts) > 2 else source
+        source_key = source.split("/")[2] if "/" in source else source
 
         count = source_counts.get(source_key, 0)
 
-        # strong diversity early, flexible later
-        if count < 1:
-            selected.append(r)
+        if count < 2 or len(final_selected) < 5:
+            final_selected.append(r)
             source_counts[source_key] = count + 1
-        elif len(selected) < max_segments:
-            selected.append(r)
 
-        if len(selected) >= max_segments:
-            break
+    selected = final_selected
 
-    # ✅ DEBUG: selected segments
+    # ✅ DEBUG — SELECTED
     print("\n✅ SELECTED SEGMENTS:\n")
     for i, s in enumerate(selected):
         print(f"{i+1}. {s['text'][:120]}")
         print(f"   Source: {s['source']}")
-        print(f"   Relevance: {s['relevance']} | Score: {s['score']}\n")
+        print(f"   Score: {s['score']}\n")
 
+    # ✅ BUILD BLEND
     blend = []
 
-    # ✅ intro
+    # Intro
     blend.append({
         "type": "narration",
         "text": generate_narration("", "", query, position="intro")
     })
 
     styles = [
+        "natural",
         "observational",
-        "contrast-driven",
+        "contrast",
         "subtle",
-        "unexpected",
-        "minimal",
-        "grounded"
+        "curious",
+        "minimal"
     ]
 
     for i, seg in enumerate(selected):
@@ -236,9 +258,9 @@ def build_blend(query, max_segments=16):
             nxt = selected[i + 1]
 
             transition = generate_narration(
-                prev_text=shorten(seg["text"]),
-                next_text=shorten(nxt["text"]),
-                query=query,
+                shorten(seg["text"]),
+                shorten(nxt["text"]),
+                query,
                 style_hint=styles[i % len(styles)]
             )
 
@@ -247,7 +269,7 @@ def build_blend(query, max_segments=16):
                 "text": transition
             })
 
-    # ✅ outro
+    # Outro
     blend.append({
         "type": "narration",
         "text": generate_narration("", "", query, position="outro")
