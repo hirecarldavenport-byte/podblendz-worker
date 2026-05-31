@@ -1,133 +1,89 @@
-import os
-import glob
-import json
+from search_faiss import search
 from collections import Counter
+import json
 
 
-# =========================
-# ✅ RESOLVE PROJECT PATH
-# =========================
+SEED_QUERIES = [
+    "science", "technology", "health", "mind",
+    "learning", "risk", "money", "relationships",
+    "future", "innovation", "biology", "space"
+]
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SEGMENTS_PATH = os.path.join(BASE_DIR, "segments", "**", "*.json")
-
-
-# =========================
-# ✅ PHRASE EXTRACTION
-# =========================
 
 def extract_phrases(text):
     words = text.lower().split()
-
     phrases = []
 
-    # 2-word phrases
     for i in range(len(words) - 1):
-        phrases.append(f"{words[i]} {words[i + 1]}")
+        phrases.append(words[i] + " " + words[i + 1])
 
-    # 3-word phrases
     for i in range(len(words) - 2):
-        phrases.append(f"{words[i]} {words[i + 1]} {words[i + 2]}")
+        phrases.append(words[i] + " " + words[i + 1] + " " + words[i + 2])
 
     return phrases
 
 
-def clean_phrase(phrase):
-    stop_words = {
-        "the", "and", "that", "this", "with", "for", "you",
-        "have", "from", "they", "your", "about"
-    }
-
-    words = phrase.split()
-
-    # remove junk edges
-    if words[0] in stop_words or words[-1] in stop_words:
+def clean_phrase(p):
+    if len(p) < 10:
         return False
 
-    # remove short garbage phrases
-    if len(phrase) < 8:
+    stop = {"the", "and", "that", "this", "with", "for", "you"}
+
+    words = p.split()
+
+    if words[0] in stop or words[-1] in stop:
         return False
 
-    # avoid numeric/random artifacts
-    if any(char.isdigit() for char in phrase):
+    if any(char.isdigit() for char in p):
         return False
 
     return True
 
 
-# =========================
-# ✅ MAIN ANALYSIS
-# =========================
-
 def build_topic_patterns():
-
-    print("🔍 Searching for segment files...\n")
-
-    files = glob.glob(SEGMENTS_PATH, recursive=True)
-
-    print(f"📂 Found {len(files)} files\n")
-
-    if len(files) == 0:
-        print("❌ No files found — check your segments path.")
-        return
+    print("🔍 Building patterns from FAISS...\n")
 
     counter = Counter()
+    total_segments = 0
 
-    processed_files = 0
-    processed_segments = 0
+    for q in SEED_QUERIES:
+        print(f"➡️ Query: {q}")
 
-    for f in files:
-        try:
-            with open(f, "r", encoding="utf-8") as file:
-                data = json.load(file)
+        results = search(q, k=80)
 
-                for seg in data:
-                    text = seg.get("text", "")
-                    if not text or len(text) < 20:
-                        continue
+        for r in results:
+            text = r.get("text", "")
 
-                    phrases = extract_phrases(text)
+            if not text or len(text) < 25:
+                continue
 
-                    for p in phrases:
-                        if clean_phrase(p):
-                            counter[p] += 1
+            phrases = extract_phrases(text)
 
-                    processed_segments += 1
+            for p in phrases:
+                if clean_phrase(p):
+                    counter[p] += 1
 
-            processed_files += 1
+            total_segments += 1
 
-        except Exception:
-            continue
+    print(f"\n✅ Segments processed: {total_segments}")
+    print(f"🔢 Unique phrases: {len(counter)}")
 
-    print(f"✅ Processed files: {processed_files}")
-    print(f"✅ Processed segments: {processed_segments}")
-    print(f"🔢 Unique phrases: {len(counter)}\n")
-
-    # ✅ RELAXED FILTER (important)
     patterns = [
-        p for p, count in counter.most_common(300)
-        if count >= 3
+        p for p, c in counter.most_common(200)
+        if c >= 2
     ]
 
-    print(f"✅ Patterns selected: {len(patterns)}\n")
+    print(f"✅ Patterns selected: {len(patterns)}")
 
-    OUTPUT_PATH = os.path.join(BASE_DIR, "topic_patterns.json")
-
-    with open(OUTPUT_PATH, "w") as f:
+    with open("topic_patterns.json", "w") as f:
         json.dump(patterns[:100], f, indent=2)
 
-    print("✅ Saved topic_patterns.json")
-    print(f"📁 Location: {OUTPUT_PATH}\n")
+    print("\n✅ topic_patterns.json created!\n")
 
-    # ✅ show preview
     print("🔎 Sample patterns:")
-    for p in patterns[:20]:
-        print(f"- {p}")
+    for p in patterns[:15]:
+        print("-", p)
 
-
-# =========================
-# ✅ RUN
-# =========================
 
 if __name__ == "__main__":
     build_topic_patterns()
