@@ -5,12 +5,12 @@ import os
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 
-# ✅ shorten long clips for narration clarity
+# ✅ shorten clip for narration clarity
 def shorten(text, max_words=40):
     return " ".join(text.split()[:max_words])
 
 
-# ✅ strong clip filter (important for audio quality)
+# ✅ filter weak / bad audio clips
 def is_strong_sentence(text):
     if not text:
         return False
@@ -37,24 +37,33 @@ def is_strong_sentence(text):
         if text.lower().startswith(b):
             return False
 
+    # ❌ avoid bland/flat sentences
+    if any(p in text.lower() for p in [
+        "is just",
+        "is basically",
+        "it's just",
+        "these are"
+    ]):
+        return False
+
     return True
 
 
-# ✅ narrative grouping (for story flow)
+# ✅ narrative grouping
 def categorize_segment(text):
     t = text.lower()
 
-    if any(w in t for w in ["fear", "uncertainty", "anxiety"]):
+    if any(w in t for w in ["fear", "uncertainty", "anxiety", "start"]):
         return "setup"
 
-    elif any(w in t for w in ["decision", "habit", "risk", "process", "system"]):
+    elif any(w in t for w in ["habit", "decision", "process", "system", "discipline"]):
         return "middle"
 
     else:
         return "end"
 
 
-# ✅ narration engine (TTS-optimized)
+# ✅ narration (final tuned version)
 def generate_narration(prev_text, next_text, query, position="middle", style_hint=None):
 
     if position == "intro":
@@ -63,10 +72,10 @@ Start mid-thought.
 
 Topic: {query}
 
-Make a grounded observation about how people behave.
-Avoid general life advice.
+Make a specific observation about how people relate to this.
+Make it feel like the middle of a real conversation.
 
-Max 20 words.
+Max 18 words.
 """
 
     elif position == "outro":
@@ -83,7 +92,7 @@ Max 18 words.
 
     else:
         prompt = f"""
-You are noticing something subtle between two ideas.
+You are noticing something subtle happening between two ideas.
 
 Topic: {query}
 
@@ -96,9 +105,9 @@ Next:
 Instructions:
 - Do NOT explain
 - Do NOT summarize
-- Avoid repeating topic words
-- Avoid patterns like "the tension lies"
-- Just describe what is interesting or revealing
+- Avoid repeating phrasing patterns
+- Avoid words like "contrast", "difference", "tension"
+- Just point out something interesting or unexpected
 
 Style: {style_hint}
 
@@ -127,7 +136,7 @@ def build_blend(query, max_segments=16):
         print("❌ No results found.")
         return []
 
-    # ✅ DEBUG — RAW
+    # ✅ DEBUG RAW
     print("\n🔎 RAW SEARCH RESULTS (Top 10):\n")
     for i, r in enumerate(results[:10]):
         print(f"{i+1}. {r['text'][:120]}")
@@ -152,12 +161,12 @@ def build_blend(query, max_segments=16):
         print("❌ No usable segments.")
         return []
 
-    # ✅ sort FAISS (lower score = better)
+    # ✅ FAISS sort (best first)
     selected_pool = sorted(selected_pool, key=lambda x: x["score"])
 
     candidates = selected_pool[:max_segments * 5]
 
-    # ✅ categorize into narrative phases
+    # ✅ categorize
     setup, middle, end = [], [], []
 
     for r in candidates:
@@ -170,7 +179,7 @@ def build_blend(query, max_segments=16):
         else:
             end.append(r)
 
-    # ✅ build structured story
+    # ✅ structured selection
     selected = []
     selected += setup[:4]
     selected += middle[:6]
@@ -178,7 +187,7 @@ def build_blend(query, max_segments=16):
     remaining = max_segments - len(selected)
     selected += end[:remaining]
 
-    # ✅ enforce diversity (important)
+    # ✅ diversity control
     final_selected = []
     source_counts = {}
 
@@ -194,22 +203,24 @@ def build_blend(query, max_segments=16):
 
     selected = final_selected
 
-    # ✅ DEBUG — SELECTED
+    # ✅ best opening clip first
+    selected = sorted(selected, key=lambda x: x["score"])
+
+    # ✅ DEBUG SELECTED
     print("\n✅ SELECTED SEGMENTS:\n")
     for i, s in enumerate(selected):
         print(f"{i+1}. {s['text'][:120]}")
         print(f"   Source: {s['source']}")
         print(f"   Score: {s['score']}\n")
 
-    # ✅ BUILD BLEND (TTS READY)
+    # ✅ BUILD BLEND
     blend = []
 
-    # ✅ intro
+    # intro
     blend.append({
         "type": "narration",
         "text": generate_narration("", "", query, position="intro")
     })
-
     blend.append({"type": "pause", "duration": 0.5})
 
     styles = ["natural", "observational", "subtle", "curious", "reflective"]
@@ -243,7 +254,7 @@ def build_blend(query, max_segments=16):
 
             blend.append({"type": "pause", "duration": 0.5})
 
-    # ✅ outro
+    # outro
     blend.append({
         "type": "narration",
         "text": generate_narration("", "", query, position="outro")
