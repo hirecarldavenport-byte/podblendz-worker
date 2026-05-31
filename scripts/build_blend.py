@@ -28,12 +28,7 @@ def suggest_query(query):
             patterns = json.load(f)
 
         matches = [p for p in patterns if p in query.lower()]
-
-        if not matches:
-            # fallback = closest patterns
-            return patterns[:5]
-
-        return matches[:5]
+        return matches[:5] if matches else patterns[:5]
 
     except Exception:
         return []
@@ -78,46 +73,60 @@ def is_meaningful(text):
     return True
 
 
-def categorize_segment(text):
-    t = text.lower()
-
-    if any(w in t for w in ["fear", "uncertainty", "risk"]):
-        return "setup"
-
-    elif any(w in t for w in ["habit", "decision", "process", "system"]):
-        return "middle"
-
-    return "end"
-
-
 # =========================
-# ✅ NARRATION
+# ✅ DATELINE NARRATION
 # =========================
 
-def generate_narration(prev_text, next_text, query, position="middle"):
+def generate_dateline_line(context, text=None, query="", stage="middle"):
+    """
+    Strong cinematic narration generator
+    """
 
-    if position == "intro":
+    if stage == "intro":
         prompt = f"""
-Start mid-thought about: {query}
+Act like a documentary narrator.
+
+Introduce a mystery or deeper idea about:
+{query}
+
+Keep it intriguing, calm, and deliberate.
+Max 22 words.
+"""
+
+    elif stage == "bridge":
+        prompt = f"""
+As a narrator, reframe what we just heard.
+
+Previous idea:
+"{context}"
+
+Next idea:
+"{text}"
+
+DO NOT summarize.
+Instead, build curiosity or tension.
 Max 18 words.
 """
 
-    elif position == "outro":
+    elif stage == "outro":
         prompt = f"""
-End with a thought that lingers about: {query}
-Max 18 words.
+Close with a reflective insight about:
+{query}
+
+Make it feel unresolved or thought-provoking.
+Max 22 words.
 """
 
     else:
         prompt = f"""
-Notice something subtle between these:
+Guide the audience's thinking about this idea:
 
-"{prev_text}"
-"{next_text}"
+"{text}"
 
-No explanation.
+Do NOT repeat.
+Add meaning, implication, or intrigue.
 
-Max 14 words.
+Max 18 words.
 """
 
     response = client.chat.completions.create(
@@ -157,71 +166,59 @@ def build_blend(query, max_segments=16):
         print("❌ No usable segments.")
         return []
 
+    # ✅ rank relevance
     selected_pool = sorted(selected_pool, key=lambda x: x["score"])
-    candidates = selected_pool[:max_segments * 5]
-
-    setup, middle, end = [], [], []
-
-    for r in candidates:
-        cat = categorize_segment(r["text"])
-        (setup if cat == "setup" else middle if cat == "middle" else end).append(r)
-
-    selected = setup[:4] + middle[:6] + end[:max_segments]
-    selected = sorted(selected, key=lambda x: x["score"])
-
-    LOW = len(selected) < int(max_segments * 0.6)
+    selected = selected_pool[:max_segments]
 
     blend = []
 
-    # ✅ Intro
-    if LOW:
-        suggestions = suggest_query(query)
-
-        suggestion_text = ", ".join(suggestions) if suggestions else "related topics"
-
-        intro = f"""
-There is limited discussion on this topic. You might explore related ideas like {suggestion_text}.
-""".strip()
-
-    else:
-        intro = generate_narration("", "", query, "intro")
-
+    # -------------------------
+    # 🎬 INTRO (hook)
+    # -------------------------
+    intro = generate_dateline_line("", query=query, stage="intro")
     blend.append({"type": "narration", "text": intro})
-    blend.append({"type": "pause", "duration": 0.5})
+    blend.append({"type": "pause", "duration": 0.7})
 
-    # ✅ Build sequence
-    for i, seg in enumerate(selected):
+    # -------------------------
+    # 🎬 FIRST SEGMENT
+    # -------------------------
+    first = selected[0]
 
-        blend.append({"type": "clip", **seg})
-        blend.append({"type": "pause", "duration": 0.4})
+    blend.append({
+        "type": "narration",
+        "text": generate_dateline_line("", first["text"])
+    })
 
-        if LOW and i == 1:
-            suggestions = suggest_query(query)
+    blend.append({"type": "pause", "duration": 0.4})
+    blend.append({"type": "clip", **first})
+    blend.append({"type": "pause", "duration": 0.6})
 
-            blend.append({
-                "type": "narration",
-                "text": f"Related areas like {', '.join(suggestions)} may provide richer context."
-            })
-            blend.append({"type": "pause", "duration": 0.5})
+    # -------------------------
+    # 🎬 MAIN INVESTIGATION
+    # -------------------------
+    for i in range(1, len(selected)):
+        prev = selected[i - 1]
+        curr = selected[i]
 
-        if i < len(selected) - 1:
-            nxt = selected[i + 1]
+        # 🔁 Bridge narration
+        transition = generate_dateline_line(
+            shorten(prev["text"]),
+            shorten(curr["text"]),
+            query,
+            stage="bridge"
+        )
 
-            transition = generate_narration(
-                shorten(seg["text"]),
-                shorten(nxt["text"]),
-                query
-            )
+        blend.append({"type": "narration", "text": transition})
+        blend.append({"type": "pause", "duration": 0.5})
 
-            blend.append({"type": "narration", "text": transition})
-            blend.append({"type": "pause", "duration": 0.5})
+        # 🎧 Clip
+        blend.append({"type": "clip", **curr})
+        blend.append({"type": "pause", "duration": 0.6})
 
-    # ✅ Outro
-    if LOW:
-        outro = "Expanding the query will help uncover deeper connections."
-    else:
-        outro = generate_narration("", "", query, "outro")
-
+    # -------------------------
+    # 🎬 OUTRO
+    # -------------------------
+    outro = generate_dateline_line("", query=query, stage="outro")
     blend.append({"type": "narration", "text": outro})
 
     return blend
