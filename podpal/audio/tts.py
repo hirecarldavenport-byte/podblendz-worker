@@ -1,4 +1,4 @@
-# podpal/audio/tts.py
+from __future__ import annotations
 
 import os
 import uuid
@@ -9,55 +9,88 @@ from dotenv import load_dotenv
 import azure.cognitiveservices.speech as speechsdk
 
 
-# -----------------------------
+# -------------------------------------------------
 # ✅ LOAD ENV
-# -----------------------------
+# -------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-KEY = os.getenv("AZURE_SPEECH_KEY")
-REGION = os.getenv("AZURE_SPEECH_REGION")
+AZURE_KEY = os.getenv("AZURE_SPEECH_KEY")
+AZURE_REGION = os.getenv("AZURE_SPEECH_REGION")
 
 
-# -----------------------------
-# ✅ OUTPUT DIR
-# -----------------------------
+# -------------------------------------------------
+# ✅ OUTPUT DIRECTORY
+# -------------------------------------------------
 TTS_DIR = BASE_DIR / "audio" / "tts"
 TTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-# -----------------------------
+# -------------------------------------------------
+# ✅ TEXT UTILITIES
+# -------------------------------------------------
+def clean_text(text: str) -> str:
+    """Normalize whitespace."""
+    return " ".join(text.split())
+
+
+def add_pauses(text: str) -> str:
+    """
+    Add natural pauses without SSML.
+    Uses ellipses, which Azure handles well.
+    """
+    return text.replace(". ", ". ... ")
+
+
+# -------------------------------------------------
 # ✅ MAIN FUNCTION
-# -----------------------------
+# -------------------------------------------------
 def generate_audio(
     text: str,
     voice: str = "en-US-JennyNeural",
     filename_prefix: str = "blend",
-):
-    print("🔐 KEY loaded:", bool(KEY))
-    print("🌍 REGION:", REGION)
+) -> str:
+    """
+    Generate audio from text using Azure TTS (safe mode).
 
-    if not KEY or not REGION:
-        raise RuntimeError("Missing Azure credentials")
+    Returns:
+        Path to WAV file
+    """
 
-    # file name
+    print("🔐 AZURE KEY LOADED:", bool(AZURE_KEY))
+    print("🌍 AZURE REGION:", AZURE_REGION)
+
+    if not AZURE_KEY or not AZURE_REGION:
+        raise RuntimeError("❌ Missing Azure Speech credentials")
+
+    # -------------------------
+    # ✅ PREP TEXT
+    # -------------------------
+    text = clean_text(text)
+    text = add_pauses(text)
+
+    # -------------------------
+    # ✅ BUILD OUTPUT PATH
+    # -------------------------
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     uid = uuid.uuid4().hex[:6]
 
-    output = TTS_DIR / f"{filename_prefix}_{timestamp}_{uid}.wav"
+    output_path = TTS_DIR / f"{filename_prefix}_{timestamp}_{uid}.wav"
 
-    print(f"🎙 Generating → {output}")
+    print(f"🎙 Generating audio → {output_path}")
 
-    # config
+    # -------------------------
+    # ✅ AZURE CONFIG
+    # -------------------------
     speech_config = speechsdk.SpeechConfig(
-        subscription=KEY,
-        region=REGION
+        subscription=AZURE_KEY,
+        region=AZURE_REGION
     )
 
     speech_config.speech_synthesis_voice_name = voice
 
     audio_config = speechsdk.audio.AudioOutputConfig(
-        filename=str(output)
+        filename=str(output_path)
     )
 
     synthesizer = speechsdk.SpeechSynthesizer(
@@ -65,16 +98,26 @@ def generate_audio(
         audio_config=audio_config
     )
 
-    # ✅ IMPORTANT: plain text (NO SSML)
+    # -------------------------
+    # ✅ SYNTHESIS (NO SSML)
+    # -------------------------
     result = synthesizer.speak_text_async(text).get()
+
     if result is None:
-       raise RuntimeError("No result returned") 
+        raise RuntimeError("No result returned")
 
     if result.reason != speechsdk.ResultReason.SynthesizingAudioCompleted:
-        raise RuntimeError("TTS failed")
+        raise RuntimeError("❌ Azure TTS generation failed")
 
-    print(f"✅ Audio created → {output}")
+    # -------------------------
+    # ✅ VALIDATE OUTPUT
+    # -------------------------
+    if not output_path.exists() or output_path.stat().st_size == 0:
+        raise RuntimeError("❌ Audio file was not created correctly")
 
-    return str(output)
+    print(f"✅ Audio created → {output_path}")
+
+    return str(output_path)
+
 
 
