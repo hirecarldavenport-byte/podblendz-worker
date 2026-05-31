@@ -20,41 +20,32 @@ AZURE_REGION = os.getenv("AZURE_SPEECH_REGION")
 
 
 # -------------------------------------------------
-# ✅ OUTPUT DIRECTORY
+# ✅ OUTPUT DIR
 # -------------------------------------------------
 TTS_DIR = BASE_DIR / "audio" / "tts"
 TTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # -------------------------------------------------
-# ✅ TEXT UTILITIES
+# ✅ CLEAN TEXT
 # -------------------------------------------------
 def clean_text(text: str) -> str:
-    """Normalize whitespace."""
     return " ".join(text.split())
 
 
-def add_pauses(text: str) -> str:
-    """
-    Add natural pauses without SSML.
-    Uses ellipses, which Azure handles well.
-    """
-    return text.replace(". ", ". ... ")
-
-
 # -------------------------------------------------
-# ✅ MAIN FUNCTION
+# ✅ MAIN: DUAL VOICE TTS
 # -------------------------------------------------
-def generate_audio(
-    text: str,
-    voice: str = "en-US-JennyNeural",
-    filename_prefix: str = "blend",
+def generate_dual_voice_audio(
+    blend,
+    narrator_voice="en-US-JennyNeural",
+    speaker_voice="en-US-GuyNeural",
+    filename_prefix="blend"
 ) -> str:
     """
-    Generate audio from text using Azure TTS (safe mode).
-
-    Returns:
-        Path to WAV file
+    Generate audio using:
+    🎙 narrator voice
+    🎧 speaker voice
     """
 
     print("🔐 AZURE KEY LOADED:", bool(AZURE_KEY))
@@ -64,20 +55,14 @@ def generate_audio(
         raise RuntimeError("❌ Missing Azure Speech credentials")
 
     # -------------------------
-    # ✅ PREP TEXT
-    # -------------------------
-    text = clean_text(text)
-    text = add_pauses(text)
-
-    # -------------------------
-    # ✅ BUILD OUTPUT PATH
+    # ✅ FILE PATH
     # -------------------------
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     uid = uuid.uuid4().hex[:6]
 
     output_path = TTS_DIR / f"{filename_prefix}_{timestamp}_{uid}.wav"
 
-    print(f"🎙 Generating audio → {output_path}")
+    print(f"🎙 Generating dual-voice audio → {output_path}")
 
     # -------------------------
     # ✅ AZURE CONFIG
@@ -86,8 +71,6 @@ def generate_audio(
         subscription=AZURE_KEY,
         region=AZURE_REGION
     )
-
-    speech_config.speech_synthesis_voice_name = voice
 
     audio_config = speechsdk.audio.AudioOutputConfig(
         filename=str(output_path)
@@ -99,25 +82,58 @@ def generate_audio(
     )
 
     # -------------------------
-    # ✅ SYNTHESIS (NO SSML)
+    # ✅ BUILD SSML (SAFE + SIMPLE)
     # -------------------------
-    result = synthesizer.speak_text_async(text).get()
+    ssml_parts = [
+        '<speak xmlns="http://www.w3.org/2001/10/synthesis" version="1.0">'
+    ]
 
-    if result is None:
-        raise RuntimeError("No result returned")
+    for step in blend:
+
+        if step["type"] == "narration":
+            text = clean_text(step["text"])
+
+            ssml_parts.append(
+                f'<voice name="{narrator_voice}">{text} ...</voice>'
+            )
+
+        elif step["type"] == "speaker":
+            text = clean_text(step["text"])
+
+            ssml_parts.append(
+                f'<voice name="{speaker_voice}">{text} ...</voice>'
+            )
+
+        elif step["type"] == "pause":
+            duration_ms = int(step.get("duration", 0.4) * 1000)
+
+            # ✅ safe SSML pause
+            ssml_parts.append(
+                f'<break time="{duration_ms}ms"/>'
+            )
+
+    ssml_parts.append("</speak>")
+
+    ssml = "\n".join(ssml_parts)
+
+    # -------------------------
+    # ✅ SYNTHESIS
+    # -------------------------
+    result = synthesizer.speak_ssml_async(ssml).get()
 
     if result.reason != speechsdk.ResultReason.SynthesizingAudioCompleted:
-        raise RuntimeError("❌ Azure TTS generation failed")
+        raise RuntimeError("❌ Dual voice TTS failed")
 
     # -------------------------
-    # ✅ VALIDATE OUTPUT
+    # ✅ VALIDATION
     # -------------------------
     if not output_path.exists() or output_path.stat().st_size == 0:
         raise RuntimeError("❌ Audio file was not created correctly")
 
-    print(f"✅ Audio created → {output_path}")
+    print(f"✅ Dual voice audio created → {output_path}")
 
     return str(output_path)
+
 
 
 
