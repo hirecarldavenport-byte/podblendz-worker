@@ -3,10 +3,6 @@ from collections import Counter
 import json
 
 
-# =========================
-# ✅ SEED QUERIES
-# =========================
-
 SEED_QUERIES = [
     "science", "technology", "health", "mind",
     "learning", "risk", "money", "relationships",
@@ -15,96 +11,80 @@ SEED_QUERIES = [
 
 
 # =========================
+# ✅ BASIC CLEANING
+# =========================
+
+def normalize(text):
+    return (
+        text.lower()
+        .replace(",", "")
+        .replace(".", "")
+        .replace("?", "")
+        .replace("!", "")
+    )
+
+
+# =========================
 # ✅ PHRASE EXTRACTION
 # =========================
 
 def extract_phrases(text):
-    words = text.lower().split()
+    words = normalize(text).split()
     phrases = []
 
-    # 2-word phrases
-    for i in range(len(words) - 1):
-        phrases.append(f"{words[i]} {words[i + 1]}")
-
-    # 3-word phrases (preferred)
+    # 3-word phrases ONLY (key improvement)
     for i in range(len(words) - 2):
-        phrases.append(f"{words[i]} {words[i + 1]} {words[i + 2]}")
+        phrases.append(f"{words[i]} {words[i+1]} {words[i+2]}")
 
     return phrases
 
 
 # =========================
-# ✅ CLEAN + FILTER LOGIC
+# ✅ STRUCTURAL FILTER
 # =========================
 
 def clean_phrase(p):
-    if len(p) < 12:
-        return False
-
     words = p.split()
 
+    if len(words) != 3:
+        return False
+
     # -------------------------
-    # ❌ Weak edge words
+    # ❌ Skip grammar words
     # -------------------------
-    weak_edges = {
-        "the", "and", "of", "to", "in", "on", "for",
-        "with", "about", "from", "into", "onto",
-        "is", "are", "was", "were", "be", "been"
+    stopwords = {
+        "the", "and", "of", "to", "in", "on", "for", "with",
+        "about", "from", "into", "onto", "that", "this",
+        "you", "your", "they", "them", "is", "are", "was",
+        "were", "be", "been", "it", "we", "i"
     }
 
-    if words[0] in weak_edges or words[-1] in weak_edges:
+    # reject if ANY word is weak
+    if any(w in stopwords for w in words):
         return False
 
     # -------------------------
-    # ❌ Conversational garbage
-    # -------------------------
-    weak_phrases = {
-        "it comes", "comes to", "going to",
-        "be able", "in terms", "think about",
-        "whether it", "a lot of", "kind of",
-        "sort of", "you know", "we can", "i think"
-    }
-
-    for weak in weak_phrases:
-        if weak in p:
-            return False
-
-    # -------------------------
-    # ❌ Remove grammar fragments
-    # -------------------------
-    if p.endswith((" is", " are", " was", " were")):
-        return False
-
-    if p.startswith(("is ", "are ", "was ", "were ")):
-        return False
-
-    # -------------------------
-    # ❌ Too short to be meaningful
-    # -------------------------
-    if len(words) <= 2:
-        return False
-
-    # -------------------------
-    # ✅ Must contain meaningful concept
+    # ✅ Must contain content words
     # -------------------------
     strong_keywords = {
-        "science", "health", "brain", "decision", "risk",
-        "money", "behavior", "genetic", "technology",
-        "learning", "habit", "future", "energy",
-        "space", "star", "biology", "innovation",
-        "nuclear", "evolution", "intelligence",
-        "system", "process", "development", "model",
-        "fusion", "rotation", "physics"
+        "science", "health", "brain", "decision",
+        "risk", "money", "behavior", "genetic",
+        "technology", "learning", "habit", "future",
+        "energy", "space", "star", "biology",
+        "innovation", "nuclear", "fusion",
+        "evolution", "intelligence", "physics",
+        "system", "process", "development",
+        "model"
     }
 
-    if not any(sw in words for sw in strong_keywords):
+    if not any(w in strong_keywords for w in words):
         return False
 
     return True
 
 
 # =========================
-# ✅ MAIN BUILDER
+# ✅ MAIN
 # =========================
 
 def build_topic_patterns():
@@ -121,7 +101,7 @@ def build_topic_patterns():
         for r in results:
             text = r.get("text", "")
 
-            if not text or len(text) < 25:
+            if not text or len(text) < 30:
                 continue
 
             phrases = extract_phrases(text)
@@ -135,29 +115,22 @@ def build_topic_patterns():
     print(f"\n✅ Segments processed: {total_segments}")
     print(f"🔢 Unique phrases: {len(counter)}\n")
 
-    # Keep strongest repeated patterns
     patterns = [
-        p for p, count in counter.most_common(200)
-        if count >= 2
+        p for p, c in counter.most_common(150)
+        if c >= 2
     ]
 
     print(f"✅ Patterns selected: {len(patterns)}\n")
 
-    # Save file
     with open("topic_patterns.json", "w") as f:
         json.dump(patterns[:100], f, indent=2)
 
     print("✅ topic_patterns.json saved!\n")
 
-    # Preview sample
     print("🔎 Sample patterns:")
     for p in patterns[:20]:
         print("-", p)
 
-
-# =========================
-# ✅ RUN
-# =========================
 
 if __name__ == "__main__":
     build_topic_patterns()
