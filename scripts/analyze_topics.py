@@ -11,7 +11,7 @@ SEED_QUERIES = [
 
 
 # =========================
-# ✅ CLEAN TEXT
+# ✅ TEXT NORMALIZATION
 # =========================
 
 def normalize(text):
@@ -32,29 +32,60 @@ def normalize(text):
 def extract_phrases(text):
     words = normalize(text).split()
 
-    phrases = []
-    for i in range(len(words) - 2):
-        phrases.append(f"{words[i]} {words[i+1]} {words[i+2]}")
-
-    return phrases
+    return [
+        f"{words[i]} {words[i+1]} {words[i+2]}"
+        for i in range(len(words) - 2)
+    ]
 
 
 # =========================
-# ✅ PHRASE SCORING (KEY FIX)
+# ✅ HARD BLOCK (CRITICAL FIX)
+# =========================
+
+BLOCK_PHRASES = {
+    "when it comes",
+    "it comes to",
+    "a lot of",
+    "in terms of",
+    "going to be",
+    "able to be",
+    "be able to",
+    "you know its",
+    "you know its",
+    "kind of thing",
+    "sort of thing",
+    "a little bit",
+    "do you think",
+    "and so on"
+}
+
+
+BLOCK_WORDS = {
+    "the", "and", "of", "to", "in", "on",
+    "for", "with", "about", "from",
+    "that", "this", "you", "your",
+    "they", "them", "we", "it",
+    "is", "are", "was", "were",
+    "but", "so", "then", "just",
+    "like", "okay", "well"
+}
+
+
+# =========================
+# ✅ SCORING FUNCTION
 # =========================
 
 def score_phrase(p, freq):
+    if p in BLOCK_PHRASES:
+        return -999  # 🔥 kill immediately
+
     words = p.split()
     score = 0
 
-    # -------------------------
-    # ✅ reward frequency
-    # -------------------------
+    # ✅ Frequency still matters
     score += freq * 2
 
-    # -------------------------
-    # ✅ reward meaningful keywords
-    # -------------------------
+    # ✅ Reward strong topic words
     strong = {
         "science", "health", "brain", "decision", "risk",
         "money", "behavior", "genetic", "technology",
@@ -64,26 +95,12 @@ def score_phrase(p, freq):
         "system", "process", "model"
     }
 
-    score += sum(2 for w in words if w in strong)
+    score += sum(3 for w in words if w in strong)
 
-    # -------------------------
-    # ❌ penalize bad words
-    # -------------------------
-    weak = {
-        "the", "and", "of", "to", "in", "on",
-        "for", "with", "about", "from",
-        "that", "this", "you", "your",
-        "they", "them", "we", "it",
-        "is", "are", "was", "were",
-        "but", "so", "then", "just",
-        "like", "okay", "well", "though"
-    }
+    # ❌ Penalize filler words HARD
+    score -= sum(4 for w in words if w in BLOCK_WORDS)
 
-    score -= sum(3 for w in words if w in weak)
-
-    # -------------------------
-    # ❌ penalize conversational junk
-    # -------------------------
+    # ❌ Penalize weak endings
     if any(w.endswith(("ing", "ed")) for w in words):
         score -= 2
 
@@ -91,7 +108,7 @@ def score_phrase(p, freq):
 
 
 # =========================
-# ✅ MAIN BUILDER
+# ✅ MAIN
 # =========================
 
 def build_topic_patterns():
@@ -120,23 +137,20 @@ def build_topic_patterns():
     print(f"\n✅ Segments processed: {total_segments}")
     print(f"🔢 Unique phrases: {len(counter)}\n")
 
-    # =========================
-    # ✅ SCORE + RANK
-    # =========================
+    # ✅ Score + filter
     scored = [
         (p, score_phrase(p, freq))
         for p, freq in counter.items()
         if freq >= 2
     ]
 
-    # sort by score
     scored.sort(key=lambda x: x[1], reverse=True)
 
-    patterns = [p for p, _ in scored[:100]]
+    # ✅ Remove any remaining negative junk
+    patterns = [p for p, s in scored if s > 0][:100]
 
     print(f"✅ Patterns selected: {len(patterns)}\n")
 
-    # save
     with open("topic_patterns.json", "w") as f:
         json.dump(patterns, f, indent=2)
 
