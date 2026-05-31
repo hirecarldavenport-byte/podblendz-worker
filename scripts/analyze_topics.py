@@ -11,7 +11,7 @@ SEED_QUERIES = [
 
 
 # =========================
-# ✅ NORMALIZE TEXT
+# ✅ CLEAN TEXT
 # =========================
 
 def normalize(text):
@@ -26,75 +26,68 @@ def normalize(text):
 
 
 # =========================
-# ✅ EXTRACT 3-WORD PHRASES
+# ✅ EXTRACT PHRASES
 # =========================
 
 def extract_phrases(text):
     words = normalize(text).split()
-    return [
-        f"{words[i]} {words[i+1]} {words[i+2]}"
-        for i in range(len(words) - 2)
-    ]
+
+    phrases = []
+    for i in range(len(words) - 2):
+        phrases.append(f"{words[i]} {words[i+1]} {words[i+2]}")
+
+    return phrases
 
 
 # =========================
-# ✅ HARD FILTER (FINAL)
+# ✅ PHRASE SCORING (KEY FIX)
 # =========================
 
-def clean_phrase(p):
+def score_phrase(p, freq):
     words = p.split()
-
-    if len(words) != 3:
-        return False
+    score = 0
 
     # -------------------------
-    # ❌ Remove weak words entirely
+    # ✅ reward frequency
     # -------------------------
-    blocked_words = {
-        # grammar / connectors
-        "the", "and", "of", "to", "in", "on", "for", "with",
-        "about", "from", "into", "onto", "that", "this",
-
-        # pronouns
-        "you", "your", "they", "them", "their",
-        "we", "i", "it", "its",
-
-        # verbs / helpers / filler
-        "is", "are", "was", "were", "be", "been",
-        "have", "has", "had", "do", "does", "did",
-        "will", "would", "can", "could", "should",
-        "its", "im", "youre", "theyre"
-    }
-
-    if any(w in blocked_words for w in words):
-        return False
+    score += freq * 2
 
     # -------------------------
-    # ❌ Remove verb-like endings
+    # ✅ reward meaningful keywords
     # -------------------------
-    bad_suffixes = ("ing", "ed")
-
-    for w in words:
-        if w.endswith(bad_suffixes):
-            return False
-
-    # -------------------------
-    # ✅ Must contain real topic anchors
-    # -------------------------
-    strong_keywords = {
+    strong = {
         "science", "health", "brain", "decision", "risk",
         "money", "behavior", "genetic", "technology",
         "learning", "habit", "future", "energy",
-        "space", "star", "biology", "innovation",
-        "nuclear", "fusion", "evolution", "intelligence",
-        "physics", "chemistry", "system",
-        "process", "model", "structure"
+        "space", "biology", "innovation",
+        "nuclear", "fusion", "physics",
+        "system", "process", "model"
     }
 
-    if not any(w in strong_keywords for w in words):
-        return False
+    score += sum(2 for w in words if w in strong)
 
-    return True
+    # -------------------------
+    # ❌ penalize bad words
+    # -------------------------
+    weak = {
+        "the", "and", "of", "to", "in", "on",
+        "for", "with", "about", "from",
+        "that", "this", "you", "your",
+        "they", "them", "we", "it",
+        "is", "are", "was", "were",
+        "but", "so", "then", "just",
+        "like", "okay", "well", "though"
+    }
+
+    score -= sum(3 for w in words if w in weak)
+
+    # -------------------------
+    # ❌ penalize conversational junk
+    # -------------------------
+    if any(w.endswith(("ing", "ed")) for w in words):
+        score -= 2
+
+    return score
 
 
 # =========================
@@ -109,7 +102,6 @@ def build_topic_patterns():
 
     for q in SEED_QUERIES:
         print(f"➡️ Query: {q}")
-
         results = search(q, k=80)
 
         for r in results:
@@ -121,23 +113,32 @@ def build_topic_patterns():
             phrases = extract_phrases(text)
 
             for p in phrases:
-                if clean_phrase(p):
-                    counter[p] += 1
+                counter[p] += 1
 
             total_segments += 1
 
     print(f"\n✅ Segments processed: {total_segments}")
     print(f"🔢 Unique phrases: {len(counter)}\n")
 
-    patterns = [
-        p for p, count in counter.most_common(150)
-        if count >= 2
+    # =========================
+    # ✅ SCORE + RANK
+    # =========================
+    scored = [
+        (p, score_phrase(p, freq))
+        for p, freq in counter.items()
+        if freq >= 2
     ]
+
+    # sort by score
+    scored.sort(key=lambda x: x[1], reverse=True)
+
+    patterns = [p for p, _ in scored[:100]]
 
     print(f"✅ Patterns selected: {len(patterns)}\n")
 
+    # save
     with open("topic_patterns.json", "w") as f:
-        json.dump(patterns[:100], f, indent=2)
+        json.dump(patterns, f, indent=2)
 
     print("✅ topic_patterns.json saved!\n")
 
@@ -148,3 +149,4 @@ def build_topic_patterns():
 
 if __name__ == "__main__":
     build_topic_patterns()
+
