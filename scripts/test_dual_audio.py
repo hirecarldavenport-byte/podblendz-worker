@@ -17,7 +17,7 @@ from podpal.audio.tts import generate_dual_voice_audio
 def run_test():
     print("\n🎧 Starting test...\n")
 
-    query = "artificial intelligence"
+    query = "Crispr Gene editing"
 
     # ✅ Build blend
     blend = build_blend(query)
