@@ -74,28 +74,28 @@ def is_meaningful(text):
 
 
 # =========================
-# ✅ DATELINE NARRATION
+# ✅ DATELINE-STYLE NARRATION
 # =========================
 
 def generate_dateline_line(context, text=None, query="", stage="middle"):
     """
-    Strong cinematic narration generator
+    Cinematic narrator generator.
     """
 
     if stage == "intro":
         prompt = f"""
-Act like a documentary narrator.
+Act like a calm documentary narrator.
 
-Introduce a mystery or deeper idea about:
+Introduce a deeper idea or mystery about:
 {query}
 
-Keep it intriguing, calm, and deliberate.
+Make it intriguing and controlled.
 Max 22 words.
 """
 
     elif stage == "bridge":
         prompt = f"""
-As a narrator, reframe what we just heard.
+You are guiding a story.
 
 Previous idea:
 "{context}"
@@ -103,17 +103,18 @@ Previous idea:
 Next idea:
 "{text}"
 
-DO NOT summarize.
+Do NOT summarize.
+
 Instead, build curiosity or tension.
 Max 18 words.
 """
 
     elif stage == "outro":
         prompt = f"""
-Close with a reflective insight about:
+Close with a reflective thought about:
 {query}
 
-Make it feel unresolved or thought-provoking.
+Make it feel unresolved and thought-provoking.
 Max 22 words.
 """
 
@@ -123,9 +124,7 @@ Guide the audience's thinking about this idea:
 
 "{text}"
 
-Do NOT repeat.
-Add meaning, implication, or intrigue.
-
+Add meaning or implication without repeating.
 Max 18 words.
 """
 
@@ -138,7 +137,7 @@ Max 18 words.
 
 
 # =========================
-# ✅ MAIN
+# ✅ MAIN BUILDER
 # =========================
 
 def build_blend(query, max_segments=16):
@@ -146,11 +145,15 @@ def build_blend(query, max_segments=16):
 
     results = search(query, k=120) or []
 
+    # -------------------------
+    # ✅ FILTER SEGMENTS
+    # -------------------------
     selected_pool = []
 
     for r in results:
         text = r.get("text", "").strip()
-        start, end = r.get("start"), r.get("end")
+        start = r.get("start")
+        end = r.get("end")
 
         duration = (end - start) if (start and end) else 0
 
@@ -166,41 +169,54 @@ def build_blend(query, max_segments=16):
         print("❌ No usable segments.")
         return []
 
-    # ✅ rank relevance
+    # -------------------------
+    # ✅ SELECT BEST SEGMENTS
+    # -------------------------
     selected_pool = sorted(selected_pool, key=lambda x: x["score"])
     selected = selected_pool[:max_segments]
 
     blend = []
 
     # -------------------------
-    # 🎬 INTRO (hook)
+    # 🎬 INTRO (narrator)
     # -------------------------
     intro = generate_dateline_line("", query=query, stage="intro")
-    blend.append({"type": "narration", "text": intro})
-    blend.append({"type": "pause", "duration": 0.7})
-
-    # -------------------------
-    # 🎬 FIRST SEGMENT
-    # -------------------------
-    first = selected[0]
 
     blend.append({
         "type": "narration",
-        "text": generate_dateline_line("", first["text"])
+        "text": intro
+    })
+    blend.append({"type": "pause", "duration": 0.7})
+
+    # -------------------------
+    # 🎬 FIRST ENTRY
+    # -------------------------
+    first = selected[0]
+
+    narration = generate_dateline_line("", first["text"])
+
+    blend.append({
+        "type": "narration",
+        "text": narration
     })
 
     blend.append({"type": "pause", "duration": 0.4})
-    blend.append({"type": "clip", **first})
+
+    blend.append({
+        "type": "speaker",
+        "text": first["text"]
+    })
+
     blend.append({"type": "pause", "duration": 0.6})
 
     # -------------------------
-    # 🎬 MAIN INVESTIGATION
+    # 🎬 MAIN SEQUENCE
     # -------------------------
     for i in range(1, len(selected)):
         prev = selected[i - 1]
         curr = selected[i]
 
-        # 🔁 Bridge narration
+        # Transition narration
         transition = generate_dateline_line(
             shorten(prev["text"]),
             shorten(curr["text"]),
@@ -208,27 +224,43 @@ def build_blend(query, max_segments=16):
             stage="bridge"
         )
 
-        blend.append({"type": "narration", "text": transition})
+        blend.append({
+            "type": "narration",
+            "text": transition
+        })
+
         blend.append({"type": "pause", "duration": 0.5})
 
-        # 🎧 Clip
-        blend.append({"type": "clip", **curr})
+        # Speaker segment
+        blend.append({
+            "type": "speaker",
+            "text": curr["text"]
+        })
+
         blend.append({"type": "pause", "duration": 0.6})
 
     # -------------------------
     # 🎬 OUTRO
     # -------------------------
     outro = generate_dateline_line("", query=query, stage="outro")
-    blend.append({"type": "narration", "text": outro})
+
+    blend.append({
+        "type": "narration",
+        "text": outro
+    })
 
     return blend
 
 
+# =========================
+# ✅ TEST
+# =========================
+
 if __name__ == "__main__":
-    blend = build_blend("CRISPR gene editing")
+    result = build_blend("CRISPR gene editing")
 
     print("\n🔥 OUTPUT\n")
-    for step in blend:
+    for step in result:
         print(step)
 
 
