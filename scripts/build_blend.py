@@ -265,7 +265,7 @@ def build_blend(query, max_segments=16):
 
 # ✅ RUN
 if __name__ == "__main__":
-    blend = build_blend("Reading Books")
+    blend = build_blend("Crispr gene editing")
 
     print("\n🔥 BLEND OUTPUT:\n")
 
