@@ -5,12 +5,15 @@ import os
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 
-# ✅ shorten clip for narration clarity
+# =========================
+# ✅ TEXT HELPERS
+# =========================
+
 def shorten(text, max_words=40):
     return " ".join(text.split()[:max_words])
 
 
-# ✅ filter weak / bad audio clips
+# ✅ Strong structure filter
 def is_strong_sentence(text):
     if not text:
         return False
@@ -27,7 +30,7 @@ def is_strong_sentence(text):
     if not text.endswith((".", "?", "!")):
         return False
 
-    # ❌ remove conversational filler
+    # remove filler speech
     bad_starts = [
         "so ", "and ", "but ", "okay", "well",
         "you know", "i mean"
@@ -37,23 +40,49 @@ def is_strong_sentence(text):
         if text.lower().startswith(b):
             return False
 
-    # ❌ avoid bland/flat sentences
-    if any(p in text.lower() for p in [
-        "is just",
-        "is basically",
-        "it's just",
-        "these are"
-    ]):
+    # remove bland phrasing
+    bland = [
+        "is just", "is basically", "it's just", "these are"
+    ]
+
+    for b in bland:
+        if b in text.lower():
+            return False
+
+    return True
+
+
+# ✅ Meaning filter (BIG IMPROVEMENT)
+def is_meaningful(text):
+    text_lower = text.lower()
+
+    # avoid question fragments
+    if text_lower.endswith("?"):
+        return False
+
+    # avoid vague fragments
+    weak_patterns = [
+        "what", "how", "why", "can you", "do you"
+    ]
+
+    if sum(1 for w in weak_patterns if w in text_lower) > 0 and len(text.split()) < 12:
+        return False
+
+    # avoid technical fragments without context
+    if len(text.split()) < 10 and any(w in text_lower for w in ["gene", "dna", "genome"]):
         return False
 
     return True
 
 
-# ✅ narrative grouping
+# =========================
+# ✅ NARRATIVE STRUCTURE
+# =========================
+
 def categorize_segment(text):
     t = text.lower()
 
-    if any(w in t for w in ["fear", "uncertainty", "anxiety", "start"]):
+    if any(w in t for w in ["fear", "uncertainty", "start", "begin"]):
         return "setup"
 
     elif any(w in t for w in ["habit", "decision", "process", "system", "discipline"]):
@@ -63,7 +92,10 @@ def categorize_segment(text):
         return "end"
 
 
-# ✅ narration (final tuned version)
+# =========================
+# ✅ NARRATION ENGINE
+# =========================
+
 def generate_narration(prev_text, next_text, query, position="middle", style_hint=None):
 
     if position == "intro":
@@ -72,8 +104,8 @@ Start mid-thought.
 
 Topic: {query}
 
-Make a specific observation about how people relate to this.
-Make it feel like the middle of a real conversation.
+Make a specific observation about how people engage with this idea.
+Make it feel like a real conversation already in progress.
 
 Max 18 words.
 """
@@ -85,14 +117,14 @@ End with a thought that lingers.
 Topic: {query}
 
 Do not summarize.
-Slightly reframe everything said before.
+Slightly reframe what came before.
 
 Max 18 words.
 """
 
     else:
         prompt = f"""
-You are noticing something subtle happening between two ideas.
+You are noticing something subtle between two ideas.
 
 Topic: {query}
 
@@ -105,9 +137,9 @@ Next:
 Instructions:
 - Do NOT explain
 - Do NOT summarize
-- Avoid repeating phrasing patterns
+- Avoid repeating patterns
 - Avoid words like "contrast", "difference", "tension"
-- Just point out something interesting or unexpected
+- Say something specific and slightly unexpected
 
 Style: {style_hint}
 
@@ -126,7 +158,10 @@ Max 14 words.
     return content.strip() if content else ""
 
 
+# =========================
 # ✅ MAIN BUILDER
+# =========================
+
 def build_blend(query, max_segments=16):
     print(f"\n🎧 Building Blend: {query}\n")
 
@@ -152,7 +187,12 @@ def build_blend(query, max_segments=16):
         end = r.get("end")
         duration = (end - start) if (start is not None and end is not None) else 0
 
-        if not text or duration < 3 or not is_strong_sentence(text):
+        if (
+            not text
+            or duration < 3
+            or not is_strong_sentence(text)
+            or not is_meaningful(text)
+        ):
             continue
 
         selected_pool.append(r)
@@ -161,7 +201,7 @@ def build_blend(query, max_segments=16):
         print("❌ No usable segments.")
         return []
 
-    # ✅ FAISS sort (best first)
+    # ✅ FAISS sort
     selected_pool = sorted(selected_pool, key=lambda x: x["score"])
 
     candidates = selected_pool[:max_segments * 5]
@@ -187,7 +227,7 @@ def build_blend(query, max_segments=16):
     remaining = max_segments - len(selected)
     selected += end[:remaining]
 
-    # ✅ diversity control
+    # ✅ diversity
     final_selected = []
     source_counts = {}
 
@@ -203,7 +243,7 @@ def build_blend(query, max_segments=16):
 
     selected = final_selected
 
-    # ✅ best opening clip first
+    # ✅ prioritize best opening
     selected = sorted(selected, key=lambda x: x["score"])
 
     # ✅ DEBUG SELECTED
@@ -213,7 +253,10 @@ def build_blend(query, max_segments=16):
         print(f"   Source: {s['source']}")
         print(f"   Score: {s['score']}\n")
 
-    # ✅ BUILD BLEND
+    # =========================
+    # ✅ BUILD FINAL BLEND
+    # =========================
+
     blend = []
 
     # intro
@@ -223,7 +266,7 @@ def build_blend(query, max_segments=16):
     })
     blend.append({"type": "pause", "duration": 0.5})
 
-    styles = ["natural", "observational", "subtle", "curious", "reflective"]
+    styles = ["natural", "subtle", "curious", "observational", "reflective"]
 
     for i, seg in enumerate(selected):
 
@@ -263,9 +306,12 @@ def build_blend(query, max_segments=16):
     return blend
 
 
+# =========================
 # ✅ RUN
+# =========================
+
 if __name__ == "__main__":
-    blend = build_blend("Crispr gene editing")
+    blend = build_blend("CRISPR gene editing")
 
     print("\n🔥 BLEND OUTPUT:\n")
 
