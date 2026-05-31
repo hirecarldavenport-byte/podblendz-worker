@@ -11,7 +11,7 @@ sys.path.append(SCRIPT_DIR)
 
 # ✅ Now imports will work reliably
 from build_blend import build_blend
-from podpal.audio.tts import generate_dual_voice_audio
+from podpal.audio.audio_builder import build_audio_from_blend
 
 
 def run_test():
@@ -25,7 +25,7 @@ def run_test():
     print(f"✅ Blend created with {len(blend)} steps")
 
     # ✅ Generate audio
-    audio_path = generate_dual_voice_audio(blend)
+    audio_path = build_audio_from_blend(blend)
 
     print("\n🎧 DONE")
     print("Audio file:", audio_path)
