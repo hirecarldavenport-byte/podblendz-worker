@@ -11,7 +11,7 @@ SEED_QUERIES = [
 
 
 # =========================
-# ✅ BASIC CLEANING
+# ✅ NORMALIZE TEXT
 # =========================
 
 def normalize(text):
@@ -21,26 +21,24 @@ def normalize(text):
         .replace(".", "")
         .replace("?", "")
         .replace("!", "")
+        .replace("'", "")
     )
 
 
 # =========================
-# ✅ PHRASE EXTRACTION
+# ✅ EXTRACT 3-WORD PHRASES
 # =========================
 
 def extract_phrases(text):
     words = normalize(text).split()
-    phrases = []
-
-    # 3-word phrases ONLY (key improvement)
-    for i in range(len(words) - 2):
-        phrases.append(f"{words[i]} {words[i+1]} {words[i+2]}")
-
-    return phrases
+    return [
+        f"{words[i]} {words[i+1]} {words[i+2]}"
+        for i in range(len(words) - 2)
+    ]
 
 
 # =========================
-# ✅ STRUCTURAL FILTER
+# ✅ HARD FILTER (FINAL)
 # =========================
 
 def clean_phrase(p):
@@ -50,31 +48,47 @@ def clean_phrase(p):
         return False
 
     # -------------------------
-    # ❌ Skip grammar words
+    # ❌ Remove weak words entirely
     # -------------------------
-    stopwords = {
+    blocked_words = {
+        # grammar / connectors
         "the", "and", "of", "to", "in", "on", "for", "with",
         "about", "from", "into", "onto", "that", "this",
-        "you", "your", "they", "them", "is", "are", "was",
-        "were", "be", "been", "it", "we", "i"
+
+        # pronouns
+        "you", "your", "they", "them", "their",
+        "we", "i", "it", "its",
+
+        # verbs / helpers / filler
+        "is", "are", "was", "were", "be", "been",
+        "have", "has", "had", "do", "does", "did",
+        "will", "would", "can", "could", "should",
+        "its", "im", "youre", "theyre"
     }
 
-    # reject if ANY word is weak
-    if any(w in stopwords for w in words):
+    if any(w in blocked_words for w in words):
         return False
 
     # -------------------------
-    # ✅ Must contain content words
+    # ❌ Remove verb-like endings
+    # -------------------------
+    bad_suffixes = ("ing", "ed")
+
+    for w in words:
+        if w.endswith(bad_suffixes):
+            return False
+
+    # -------------------------
+    # ✅ Must contain real topic anchors
     # -------------------------
     strong_keywords = {
-        "science", "health", "brain", "decision",
-        "risk", "money", "behavior", "genetic",
-        "technology", "learning", "habit", "future",
-        "energy", "space", "star", "biology",
-        "innovation", "nuclear", "fusion",
-        "evolution", "intelligence", "physics",
-        "system", "process", "development",
-        "model"
+        "science", "health", "brain", "decision", "risk",
+        "money", "behavior", "genetic", "technology",
+        "learning", "habit", "future", "energy",
+        "space", "star", "biology", "innovation",
+        "nuclear", "fusion", "evolution", "intelligence",
+        "physics", "chemistry", "system",
+        "process", "model", "structure"
     }
 
     if not any(w in strong_keywords for w in words):
@@ -84,7 +98,7 @@ def clean_phrase(p):
 
 
 # =========================
-# ✅ MAIN
+# ✅ MAIN BUILDER
 # =========================
 
 def build_topic_patterns():
@@ -116,8 +130,8 @@ def build_topic_patterns():
     print(f"🔢 Unique phrases: {len(counter)}\n")
 
     patterns = [
-        p for p, c in counter.most_common(150)
-        if c >= 2
+        p for p, count in counter.most_common(150)
+        if count >= 2
     ]
 
     print(f"✅ Patterns selected: {len(patterns)}\n")
