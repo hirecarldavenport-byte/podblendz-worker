@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import uuid
-import html
 from pathlib import Path
 from datetime import datetime
 
@@ -21,32 +20,46 @@ AZURE_REGION = os.getenv("AZURE_SPEECH_REGION")
 
 
 # -------------------------------------------------
-# ✅ OUTPUT DIR
+# ✅ OUTPUT DIRECTORY
 # -------------------------------------------------
 TTS_DIR = BASE_DIR / "audio" / "tts"
 TTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # -------------------------------------------------
-# ✅ TEXT HELPERS
+# ✅ TEXT CLEANING
 # -------------------------------------------------
 def clean_text(text: str) -> str:
+    """Normalize spacing for smoother speech"""
     return " ".join(text.split())
 
 
-def safe_ssml(text: str) -> str:
-    return html.escape(text)
+def add_pauses(text: str) -> str:
+    """Light pacing improvement without SSML"""
+    text = text.replace(". ", ". ... ")
+    text = text.replace("? ", "? ... ")
+    text = text.replace("! ", "! ... ")
+    return text
 
 
 # -------------------------------------------------
-# ✅ MAIN FUNCTION
+# ✅ NARRATOR TTS (CORE FUNCTION)
 # -------------------------------------------------
-def generate_dual_voice_audio(
-    blend,
-    narrator_voice="en-US-JennyNeural",
-    speaker_voice="en-US-GuyNeural",
-    filename_prefix="blend"
+def generate_audio(
+    text: str,
+    voice: str = "en-US-JennyNeural",
+    filename_prefix: str = "narrator"
 ) -> str:
+    """
+    Generate narrator-only audio.
+
+    Used by:
+    ✅ audio_builder (hybrid system)
+    ✅ narration layers
+
+    Returns:
+        Path to WAV file
+    """
 
     print("🔐 AZURE KEY LOADED:", bool(AZURE_KEY))
     print("🌍 AZURE REGION:", AZURE_REGION)
@@ -54,20 +67,31 @@ def generate_dual_voice_audio(
     if not AZURE_KEY or not AZURE_REGION:
         raise RuntimeError("❌ Missing Azure Speech credentials")
 
-    if not blend:
-        raise RuntimeError("❌ Blend is empty — cannot generate audio")
+    # -------------------------
+    # ✅ PREP TEXT
+    # -------------------------
+    text = clean_text(text)
+    text = add_pauses(text)
 
+    # -------------------------
+    # ✅ OUTPUT FILE
+    # -------------------------
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     uid = uuid.uuid4().hex[:6]
 
     output_path = TTS_DIR / f"{filename_prefix}_{timestamp}_{uid}.wav"
 
-    print(f"🎙 Generating dual-voice audio → {output_path}")
+    print(f"🎙 Generating narrator audio → {output_path}")
 
+    # -------------------------
+    # ✅ AZURE CONFIG
+    # -------------------------
     speech_config = speechsdk.SpeechConfig(
         subscription=AZURE_KEY,
         region=AZURE_REGION
     )
+
+    speech_config.speech_synthesis_voice_name = voice
 
     audio_config = speechsdk.audio.AudioOutputConfig(
         filename=str(output_path)
@@ -78,65 +102,14 @@ def generate_dual_voice_audio(
         audio_config=audio_config
     )
 
-    # -------------------------------------------------
-    # ✅ BUILD FIXED SSML
-    # -------------------------------------------------
-    ssml_parts = [
-        '<speak xmlns="http://www.w3.org/2001/10/synthesis" '
-        'version="1.0" xml:lang="en-US">'
-    ]
+    # -------------------------
+    # ✅ SYNTHESIZE (NO SSML = STABLE)
+    # -------------------------
+    result = synthesizer.speak_text_async(text).get()
 
-    current_voice = None
-    buffer = []
-
-    def flush():
-        """Write buffered text inside a voice tag"""
-        if not buffer or not current_voice:
-            return
-
-        combined = " ".join(buffer)
-        ssml_parts.append(
-            f'<voice name="{current_voice}">{combined}</voice>'
-        )
-
-        buffer.clear()
-
-    for step in blend:
-
-        if step["type"] == "narration":
-            if current_voice != narrator_voice:
-                flush()
-                current_voice = narrator_voice
-
-            buffer.append(safe_ssml(clean_text(step["text"])))
-
-        elif step["type"] == "speaker":
-            if current_voice != speaker_voice:
-                flush()
-                current_voice = speaker_voice
-
-            buffer.append(safe_ssml(clean_text(step["text"])))
-
-        elif step["type"] == "pause":
-            # ✅ pause INSIDE voice (append to buffer)
-            duration_ms = int(step.get("duration", 0.4) * 1000)
-            buffer.append(f'<break time="{duration_ms}ms"/>')
-
-    # ✅ final flush
-    flush()
-
-    ssml_parts.append("</speak>")
-
-    ssml = "\n".join(ssml_parts)
-
-    # Uncomment if you want to debug XML
-    # print(ssml)
-
-    # -------------------------------------------------
-    # ✅ SYNTHESIS
-    # -------------------------------------------------
-    result = synthesizer.speak_ssml_async(ssml).get()
-
+    # -------------------------
+    # ✅ ERROR HANDLING
+    # -------------------------
     if result is None:
         raise RuntimeError("❌ Azure returned no result")
 
@@ -151,19 +124,27 @@ def generate_dual_voice_audio(
                 print("🔹 Reason:", cancellation.reason)
                 print("🔹 Error details:", cancellation.error_details)
             else:
-                print("⚠️ No cancellation details")
+                print("⚠️ No cancellation details available")
 
         else:
             print("❌ Unexpected result:", result.reason)
 
-        raise RuntimeError("❌ Dual voice TTS failed")
+        raise RuntimeError("❌ Narrator TTS failed")
 
-    if not output_path.exists() or output_path.stat().st_size == 0:
-        raise RuntimeError("❌ Audio file invalid")
+    # -------------------------
+    # ✅ VALIDATE FILE
+    # -------------------------
+    if not output_path.exists():
+        raise RuntimeError("❌ Audio file was not created")
 
-    print(f"✅ Dual voice audio created → {output_path}")
+    if output_path.stat().st_size == 0:
+        output_path.unlink(missing_ok=True)
+        raise RuntimeError("❌ Audio file is empty")
+
+    print(f"✅ Narrator audio created → {output_path}")
 
     return str(output_path)
+
 
 
 
