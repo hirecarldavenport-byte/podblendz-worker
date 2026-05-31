@@ -31,12 +31,10 @@ TTS_DIR.mkdir(parents=True, exist_ok=True)
 # ✅ TEXT HELPERS
 # -------------------------------------------------
 def clean_text(text: str) -> str:
-    """Normalize spacing"""
     return " ".join(text.split())
 
 
 def safe_ssml(text: str) -> str:
-    """Escape characters that break XML"""
     return html.escape(text)
 
 
@@ -49,12 +47,6 @@ def generate_dual_voice_audio(
     speaker_voice="en-US-GuyNeural",
     filename_prefix="blend"
 ) -> str:
-    """
-    Generate dual-voice audio:
-
-    🎙 Narrator = guided storytelling
-    🎧 Speaker = segment voice
-    """
 
     print("🔐 AZURE KEY LOADED:", bool(AZURE_KEY))
     print("🌍 AZURE REGION:", AZURE_REGION)
@@ -62,9 +54,9 @@ def generate_dual_voice_audio(
     if not AZURE_KEY or not AZURE_REGION:
         raise RuntimeError("❌ Missing Azure Speech credentials")
 
-    # -------------------------
-    # ✅ FILE NAME
-    # -------------------------
+    if not blend:
+        raise RuntimeError("❌ Blend is empty — cannot generate audio")
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     uid = uuid.uuid4().hex[:6]
 
@@ -72,9 +64,6 @@ def generate_dual_voice_audio(
 
     print(f"🎙 Generating dual-voice audio → {output_path}")
 
-    # -------------------------
-    # ✅ AZURE CONFIG
-    # -------------------------
     speech_config = speechsdk.SpeechConfig(
         subscription=AZURE_KEY,
         region=AZURE_REGION
@@ -89,54 +78,65 @@ def generate_dual_voice_audio(
         audio_config=audio_config
     )
 
-    # -------------------------
-    # ✅ BUILD SAFE SSML
-    # -------------------------
+    # -------------------------------------------------
+    # ✅ BUILD FIXED SSML
+    # -------------------------------------------------
     ssml_parts = [
         '<speak xmlns="http://www.w3.org/2001/10/synthesis" '
         'version="1.0" xml:lang="en-US">'
     ]
 
+    current_voice = None
+    buffer = []
+
+    def flush():
+        """Write buffered text inside a voice tag"""
+        if not buffer or not current_voice:
+            return
+
+        combined = " ".join(buffer)
+        ssml_parts.append(
+            f'<voice name="{current_voice}">{combined}</voice>'
+        )
+
+        buffer.clear()
+
     for step in blend:
 
         if step["type"] == "narration":
-            text = safe_ssml(clean_text(step["text"]))
+            if current_voice != narrator_voice:
+                flush()
+                current_voice = narrator_voice
 
-            ssml_parts.append(
-                f'<voice name="{narrator_voice}">{text}</voice>'
-            )
+            buffer.append(safe_ssml(clean_text(step["text"])))
 
         elif step["type"] == "speaker":
-            text = safe_ssml(clean_text(step["text"]))
+            if current_voice != speaker_voice:
+                flush()
+                current_voice = speaker_voice
 
-            ssml_parts.append(
-                f'<voice name="{speaker_voice}">{text}</voice>'
-            )
+            buffer.append(safe_ssml(clean_text(step["text"])))
 
         elif step["type"] == "pause":
+            # ✅ pause INSIDE voice (append to buffer)
             duration_ms = int(step.get("duration", 0.4) * 1000)
+            buffer.append(f'<break time="{duration_ms}ms"/>')
 
-            ssml_parts.append(
-                f'<break time="{duration_ms}ms"/>'
-            )
+    # ✅ final flush
+    flush()
 
     ssml_parts.append("</speak>")
 
     ssml = "\n".join(ssml_parts)
 
-    # OPTIONAL DEBUG
-    # print("----- SSML START -----")
+    # Uncomment if you want to debug XML
     # print(ssml)
-    # print("----- SSML END -----")
 
-    # -------------------------
-    # ✅ SYNTHESIZE
-    # -------------------------
+    # -------------------------------------------------
+    # ✅ SYNTHESIS
+    # -------------------------------------------------
     result = synthesizer.speak_ssml_async(ssml).get()
 
-    # -------------------------
-    # ✅ ERROR HANDLING (CLEAN)
-    # -------------------------
     if result is None:
         raise RuntimeError("❌ Azure returned no result")
 
@@ -151,18 +151,15 @@ def generate_dual_voice_audio(
                 print("🔹 Reason:", cancellation.reason)
                 print("🔹 Error details:", cancellation.error_details)
             else:
-                print("⚠️ No cancellation details available")
+                print("⚠️ No cancellation details")
 
         else:
             print("❌ Unexpected result:", result.reason)
 
         raise RuntimeError("❌ Dual voice TTS failed")
 
-    # -------------------------
-    # ✅ VALIDATION
-    # -------------------------
     if not output_path.exists() or output_path.stat().st_size == 0:
-        raise RuntimeError("❌ Audio file was not created correctly")
+        raise RuntimeError("❌ Audio file invalid")
 
     print(f"✅ Dual voice audio created → {output_path}")
 
