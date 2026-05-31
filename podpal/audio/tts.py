@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import uuid
+import html
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List
@@ -32,34 +33,42 @@ TTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # -------------------------------------------------
-# ✅ TEXT PROCESSING
+# ✅ TEXT HELPERS
 # -------------------------------------------------
-MAX_CHARS = 2500  # safe Azure chunk size
+MAX_CHARS = 2500
+
+
+def clean_text(text: str) -> str:
+    """Remove weird spacing/newlines."""
+    return " ".join(text.split())
+
+
+def add_pauses(text: str) -> str:
+    """Add natural pauses between sentences."""
+    parts = text.split(". ")
+    return ". <break time='500ms'/> ".join(parts)
+
+
+def sanitize_for_ssml(text: str) -> str:
+    """Escape characters that break XML/SSML."""
+    return html.escape(text)
 
 
 def chunk_text(text: str) -> List[str]:
-    """Split long text into safe chunks for Azure."""
+    """Split long text into Azure-safe chunks."""
     return [
         text[i:i + MAX_CHARS]
         for i in range(0, len(text), MAX_CHARS)
     ]
 
 
-def add_pauses(text: str) -> str:
-    """Improve pacing with natural pauses."""
-    sentences = text.split(". ")
-    return ". <break time='500ms'/> ".join(sentences)
-
-
 def build_ssml(text: str, voice: str) -> str:
-    """Generate SSML for better voice delivery."""
+    """Build safe SSML."""
     return f"""
 <speak version="1.0" xml:lang="en-US">
   <voice name="{voice}">
     <prosody rate="0.92" pitch="+2%">
-      <emphasis level="moderate">
-        {text}
-      </emphasis>
+      {text}
     </prosody>
   </voice>
 </speak>
@@ -67,7 +76,7 @@ def build_ssml(text: str, voice: str) -> str:
 
 
 # -------------------------------------------------
-# ✅ CORE SYNTH FUNCTION (PER CHUNK)
+# ✅ SYNTHESIZE SINGLE CHUNK
 # -------------------------------------------------
 def _synthesize_chunk(text: str, output_path: Path, voice: str):
     speech_config = speechsdk.SpeechConfig(
@@ -91,7 +100,11 @@ def _synthesize_chunk(text: str, output_path: Path, voice: str):
         audio_config=audio_config
     )
 
-    ssml = build_ssml(add_pauses(text), voice)
+    # ✅ FULL SAFE PIPELINE
+    cleaned = clean_text(text)
+    paused = add_pauses(cleaned)
+    safe_text = sanitize_for_ssml(paused)
+    ssml = build_ssml(safe_text, voice)
 
     result: Optional[speechsdk.SpeechSynthesisResult] = (
         synthesizer.speak_ssml_async(ssml).get()
@@ -105,7 +118,6 @@ def _synthesize_chunk(text: str, output_path: Path, voice: str):
             cancellation = result.cancellation_details
             print(f"❌ Cancellation reason: {cancellation.reason}")
             print(f"❌ Error details: {cancellation.error_details}")
-
         raise RuntimeError("Azure TTS synthesis failed")
 
     if not output_path.exists() or output_path.stat().st_size == 0:
@@ -113,7 +125,7 @@ def _synthesize_chunk(text: str, output_path: Path, voice: str):
 
 
 # -------------------------------------------------
-# ✅ MAIN PUBLIC FUNCTION
+# ✅ MAIN FUNCTION
 # -------------------------------------------------
 def generate_audio(
     text: str,
@@ -121,10 +133,10 @@ def generate_audio(
     filename_prefix: str = "blend",
 ) -> str:
     """
-    Generate podcast-style TTS using Azure.
+    Generate Azure TTS audio.
 
     Returns:
-        Path to output WAV file.
+        Path to final WAV file.
     """
 
     print(f"🔐 AZURE KEY LOADED: {bool(AZURE_SPEECH_KEY)}")
@@ -138,22 +150,21 @@ def generate_audio(
 
     chunks = chunk_text(text)
 
-    print(f"🎙 Generating {len(chunks)} audio chunk(s)...")
+    print(f"🎙 Generating {len(chunks)} chunk(s)...")
 
     chunk_files = []
 
-    # ✅ generate each chunk
+    # ✅ Generate chunks
     for i, chunk in enumerate(chunks):
         part_file = TTS_DIR / f"{filename_prefix}_{timestamp}_{unique_id}_part{i}.wav"
 
         print(f"🔊 Chunk {i+1}/{len(chunks)} → {part_file}")
 
         _synthesize_chunk(chunk, part_file, voice)
-
         chunk_files.append(part_file)
 
     # -------------------------------------------------
-    # ✅ MERGE AUDIO (simple concatenation)
+    # ✅ MERGE FILES
     # -------------------------------------------------
     final_file = TTS_DIR / f"{filename_prefix}_{timestamp}_{unique_id}.wav"
 
@@ -162,7 +173,7 @@ def generate_audio(
             with open(f, "rb") as infile:
                 outfile.write(infile.read())
 
-    # cleanup temp chunk files
+    # cleanup temp files
     for f in chunk_files:
         try:
             f.unlink()
