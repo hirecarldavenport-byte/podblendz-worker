@@ -31,6 +31,40 @@ def generate_tts(text, path):
 
 
 # =========================
+# ✅ NEW: ANCHOR NARRATION
+# =========================
+
+def generate_anchor_narration(prev_text, curr_text, query):
+    try:
+        prompt = f"""
+You are guiding a listener through a curated podcast experience.
+
+Topic: {query}
+
+Previous idea:
+"{prev_text}"
+
+Next clip:
+"{curr_text}"
+
+Explain what the listener is about to hear and why it matters.
+Be clear, natural, and engaging.
+Max 18 words.
+"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        content = response.choices[0].message.content or ""
+        return content.strip()
+
+    except Exception:
+        return "Here's an important perspective on this topic."
+
+
+# =========================
 # ✅ MAIN PIPELINE
 # =========================
 
@@ -53,20 +87,23 @@ def run_test(query="CRISPR gene editing"):
 
     final_clips = []
 
-    # ✅ Critical for restoring natural audio flow
+    # ✅ Restore natural audio flow
     PADDING_MS = 12000
 
-    # ✅ Track grouping
+    # ✅ Group tracking
     last_audio = None
     current_group = None
 
+    # ✅ Track context for narration
+    previous_text = None
+
     # -------------------------
-    # ✅ Step 2: Execute blend (DO NOT override it)
+    # ✅ Step 2: Execute blend
     # -------------------------
     for step in blend:
 
         # =========================
-        # 🎙️ NARRATION (from build_blend)
+        # 🎙️ EXISTING NARRATION
         # =========================
         if step["type"] == "narration":
 
@@ -82,31 +119,52 @@ def run_test(query="CRISPR gene editing"):
                     ClipRange(
                         clip_id=tts_file,
                         start_ms=0,
-                        end_ms=60000  # safe upper bound
+                        end_ms=60000
                     )
                 )
 
-            # reset grouping so narration separates segments cleanly
+            # reset grouping after narration
             last_audio = None
             current_group = None
 
         # =========================
-        # 🎧 SPEAKER (REAL AUDIO)
+        # 🎧 SPEAKER (ENHANCED)
         # =========================
         elif step["type"] == "speaker":
 
             audio_file = step.get("audio_file")
             start = step.get("start")
             end = step.get("end")
+            text = step.get("text")
 
             if not audio_file or start is None or end is None:
                 continue
 
-            # ✅ Expand clip range (restores context)
+            # ✅ ADD ANCHOR NARRATION (THE BIG FIX)
+            if previous_text:
+                anchor_text = generate_anchor_narration(previous_text, text, query)
+
+                anchor_path = f"media/{uuid.uuid4()}_anchor.mp3"
+                anchor_file = generate_tts(anchor_text, anchor_path)
+
+                if anchor_file:
+                    final_clips.append(
+                        ClipRange(
+                            clip_id=anchor_file,
+                            start_ms=0,
+                            end_ms=60000
+                        )
+                    )
+
+                # reset grouping to prevent merging across narration
+                last_audio = None
+                current_group = None
+
+            # ✅ Expand clip (restore context)
             start_ms = max(0, int(start * 1000) - PADDING_MS)
             end_ms = int(end * 1000) + PADDING_MS
 
-            # ✅ Merge consecutive same-audio segments
+            # ✅ Merge same-audio segments
             if last_audio == audio_file and current_group:
                 current_group["end_ms"] = end_ms
             else:
@@ -118,12 +176,12 @@ def run_test(query="CRISPR gene editing"):
                 final_clips.append(ClipRange(**current_group))
 
             last_audio = audio_file
+            previous_text = text
 
         # =========================
-        # ⏸️ PAUSE (optional for now)
+        # ⏸️ PAUSE (skip for now)
         # =========================
         elif step["type"] == "pause":
-            # You can implement silence later if needed
             continue
 
     print(f"✅ Final timeline segments: {len(final_clips)}")
