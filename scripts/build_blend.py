@@ -78,9 +78,6 @@ def is_meaningful(text):
 # =========================
 
 def generate_dateline_line(context, text=None, query="", stage="middle"):
-    """
-    Cinematic narrator generator.
-    """
 
     if stage == "intro":
         prompt = f"""
@@ -155,7 +152,11 @@ def build_blend(query, max_segments=16):
         start = r.get("start")
         end = r.get("end")
 
-        duration = (end - start) if (start and end) else 0
+        # ✅ FIXED TIMESTAMP CHECK
+        if start is None or end is None:
+            continue
+
+        duration = end - start
 
         if not text or duration < 3:
             continue
@@ -178,7 +179,7 @@ def build_blend(query, max_segments=16):
     blend = []
 
     # -------------------------
-    # 🎬 INTRO (narrator)
+    # 🎬 INTRO
     # -------------------------
     intro = generate_dateline_line("", query=query, stage="intro")
 
@@ -186,6 +187,7 @@ def build_blend(query, max_segments=16):
         "type": "narration",
         "text": intro
     })
+
     blend.append({"type": "pause", "duration": 0.7})
 
     # -------------------------
@@ -202,9 +204,13 @@ def build_blend(query, max_segments=16):
 
     blend.append({"type": "pause", "duration": 0.4})
 
+    # ✅ CRITICAL: INCLUDE AUDIO METADATA
     blend.append({
         "type": "speaker",
-        "text": first["text"]
+        "text": first["text"],
+        "audio_file": first.get("audio_file"),
+        "start": first.get("start"),
+        "end": first.get("end"),
     })
 
     blend.append({"type": "pause", "duration": 0.6})
@@ -216,7 +222,6 @@ def build_blend(query, max_segments=16):
         prev = selected[i - 1]
         curr = selected[i]
 
-        # Transition narration
         transition = generate_dateline_line(
             shorten(prev["text"]),
             shorten(curr["text"]),
@@ -231,10 +236,13 @@ def build_blend(query, max_segments=16):
 
         blend.append({"type": "pause", "duration": 0.5})
 
-        # Speaker segment
+        # ✅ CRITICAL: INCLUDE AUDIO METADATA
         blend.append({
             "type": "speaker",
-            "text": curr["text"]
+            "text": curr["text"],
+            "audio_file": curr.get("audio_file"),
+            "start": curr.get("start"),
+            "end": curr.get("end"),
         })
 
         blend.append({"type": "pause", "duration": 0.6})
