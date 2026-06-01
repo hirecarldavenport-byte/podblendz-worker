@@ -31,42 +31,14 @@ def generate_tts(text, path):
 
 
 # =========================
-# ✅ NARRATION
-# =========================
-
-def generate_intro(query):
-    try:
-        prompt = f"""
-        Create a short, engaging podcast introduction about: {query}.
-        Keep it under 2 sentences and conversational.
-        """
-
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        content = response.choices[0].message.content or ""
-        return content.strip()
-
-    except Exception:
-        # ✅ fallback if API fails
-        return f"Here's what you need to know about {query}."
-
-
-def generate_transition():
-    return "Let's take a deeper look at this."
-
-
-# =========================
-# ✅ MAIN TEST
+# ✅ MAIN PIPELINE
 # =========================
 
 def run_test(query="CRISPR gene editing"):
     print("🚀 Running PodBlendz test...\n")
 
     # -------------------------
-    # ✅ Step 1: Build logical blend
+    # ✅ Step 1: Build narrative plan
     # -------------------------
     blend = build_blend(query)
 
@@ -76,74 +48,92 @@ def run_test(query="CRISPR gene editing"):
 
     print(f"✅ Blend steps: {len(blend)}")
 
-    # -------------------------
-    # ✅ Step 2: Extract clips
-    # -------------------------
-    base_clips = []
-
-    for step in blend:
-        if step["type"] != "speaker":
-            continue
-
-        audio_file = step.get("audio_file")
-        start = step.get("start")
-        end = step.get("end")
-
-        if not audio_file:
-            continue
-
-        base_clips.append(
-            ClipRange(
-                clip_id=audio_file,
-                start_ms=int(start * 1000),
-                end_ms=int(end * 1000),
-            )
-        )
-
-    if not base_clips:
-        print("❌ No valid audio clips found.")
-        return
-
-    print(f"✅ Audio clips: {len(base_clips)}")
-
-    # -------------------------
-    # ✅ Step 3: Generate narration
-    # -------------------------
     blend_id = str(uuid.uuid4())
     os.makedirs("media", exist_ok=True)
 
     final_clips = []
 
-    # ✅ INTRO
-    intro_text = generate_intro(query)
-    intro_path = f"media/{blend_id}_intro.mp3"
+    # ✅ Critical for restoring natural audio flow
+    PADDING_MS = 12000
 
-    intro_file = generate_tts(intro_text, intro_path)
-    if intro_file:
-        final_clips.append(
-            ClipRange(clip_id=intro_file, start_ms=0, end_ms=10000)
-        )
+    # ✅ Track grouping
+    last_audio = None
+    current_group = None
 
-    # ✅ CLIPS + TRANSITIONS
-    for i, clip in enumerate(base_clips):
+    # -------------------------
+    # ✅ Step 2: Execute blend (DO NOT override it)
+    # -------------------------
+    for step in blend:
 
-        if i > 0:
-            trans_text = generate_transition()
-            trans_path = f"media/{blend_id}_trans_{i}.mp3"
+        # =========================
+        # 🎙️ NARRATION (from build_blend)
+        # =========================
+        if step["type"] == "narration":
 
-            trans_file = generate_tts(trans_text, trans_path)
+            text = step.get("text")
+            if not text:
+                continue
 
-            if trans_file:
+            tts_path = f"media/{uuid.uuid4()}_narration.mp3"
+            tts_file = generate_tts(text, tts_path)
+
+            if tts_file:
                 final_clips.append(
-                    ClipRange(clip_id=trans_file, start_ms=0, end_ms=10000)
+                    ClipRange(
+                        clip_id=tts_file,
+                        start_ms=0,
+                        end_ms=60000  # safe upper bound
+                    )
                 )
 
-        final_clips.append(clip)
+            # reset grouping so narration separates segments cleanly
+            last_audio = None
+            current_group = None
+
+        # =========================
+        # 🎧 SPEAKER (REAL AUDIO)
+        # =========================
+        elif step["type"] == "speaker":
+
+            audio_file = step.get("audio_file")
+            start = step.get("start")
+            end = step.get("end")
+
+            if not audio_file or start is None or end is None:
+                continue
+
+            # ✅ Expand clip range (restores context)
+            start_ms = max(0, int(start * 1000) - PADDING_MS)
+            end_ms = int(end * 1000) + PADDING_MS
+
+            # ✅ Merge consecutive same-audio segments
+            if last_audio == audio_file and current_group:
+                current_group["end_ms"] = end_ms
+            else:
+                current_group = {
+                    "clip_id": audio_file,
+                    "start_ms": start_ms,
+                    "end_ms": end_ms
+                }
+                final_clips.append(ClipRange(**current_group))
+
+            last_audio = audio_file
+
+        # =========================
+        # ⏸️ PAUSE (optional for now)
+        # =========================
+        elif step["type"] == "pause":
+            # You can implement silence later if needed
+            continue
 
     print(f"✅ Final timeline segments: {len(final_clips)}")
 
+    if not final_clips:
+        print("❌ No clips to build.")
+        return
+
     # -------------------------
-    # ✅ Step 4: Build audio
+    # ✅ Step 3: Build audio
     # -------------------------
     builder = AudioBuilder()
 
@@ -158,5 +148,9 @@ def run_test(query="CRISPR gene editing"):
     print(f"⏱️ Duration: {duration / 1000:.2f} seconds")
 
 
+# =========================
+# ✅ RUN
+# =========================
 if __name__ == "__main__":
     run_test()
+
