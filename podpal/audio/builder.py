@@ -1,60 +1,55 @@
-# podpal/audio/builder.py
 from __future__ import annotations
 
 import os
+import requests
 from dataclasses import dataclass
-from typing import Callable, Iterable, Optional, Tuple, List
-from uuid import uuid4
+from typing import Iterable, Optional, Tuple, List
 from pydub import AudioSegment
-from pydub.effects import normalize
-from pydub.effects import speedup
 
 
+# =========================
+# ✅ MODELS
+# =========================
 
-# ---- Types you already have in schemas.py (import them in BlendEngine);
-# We keep this module decoupled by defining lean equivalents here.
 @dataclass
 class ClipRange:
-    clip_id: str
+    clip_id: str   # URL or local path
     start_ms: int
     end_ms: int
+    is_narration: bool = False   # ✅ NEW
+
 
 @dataclass
 class AudioOptions:
-    output_format: str = "mp3"  # "mp3" | "wav"
+    output_format: str = "mp3"
     bitrate_kbps: int = 160
     crossfade_ms: int = 300
     fade_in_ms: int = 50
     fade_out_ms: int = 50
-    target_lufs: float = -16.0  # placeholder (not enforced yet)
+
     music_bed: Optional[str] = None
-    music_bed_gain_db: float = -18.0
-    guided_voice: Optional[str] = "none"  # "none" | "tts" | "uploaded"
-    guided_voice_ducking_db: float = -12.0
+    music_bed_gain_db: float = -20.0
 
-ResolveClipPath = Callable[[str], str]
-# Given a clip_id, return a local filesystem path to an audio file that ffmpeg/pydub can read.
+    narration_duck_db: float = -12.0   # ✅ NEW
+    normalize_audio: bool = True       # ✅ NEW
 
+
+# =========================
+# ✅ BUILDER
+# =========================
 
 class AudioBuilder:
-    """
-    Minimal audio stitcher for Pod Blend.
-    - Loads, trims, fades, optionally crossfades, optionally overlays music bed.
-    - Exports MP3/WAV and returns (output_path, duration_ms).
-    NOTE: Requires ffmpeg installed and discoverable by pydub.
-    """
 
-    def __init__(
-        self,
-        media_root: str = "media",
-        resolve_clip_path: Optional[ResolveClipPath] = None,
-    ) -> None:
+    def __init__(self, media_root: str = "media"):
         self.media_root = media_root
-        os.makedirs(self.media_root, exist_ok=True)
-        # Default resolver: expects files at media/clips/{clip_id}.(mp3|wav|m4a)
-        self.resolve_clip_path = resolve_clip_path or self._default_resolver
+        self.cache_dir = os.path.join(media_root, "cache")
 
-    # ---------- Public API ----------
+        os.makedirs(self.media_root, exist_ok=True)
+        os.makedirs(self.cache_dir, exist_ok=True)
+
+    # =========================
+    # ✅ MAIN BUILD
+    # =========================
 
     def build(
         self,
@@ -62,58 +57,95 @@ class AudioBuilder:
         clips: Iterable[ClipRange],
         options: AudioOptions,
     ) -> Tuple[str, int]:
-        """
-        Returns: (output_path, duration_ms)
-        """
+
         out_dir = os.path.join(self.media_root, "blends", blend_id)
         os.makedirs(out_dir, exist_ok=True)
 
-        # 1) Build timeline from segments
         segments: List[AudioSegment] = []
-        for c in clips:
-            path = self.resolve_clip_path(c.clip_id)
-            seg = self._load_and_trim(path, c.start_ms, c.end_ms)
 
-            # Fades on each segment to avoid clicks
+        # -------------------------
+        # ✅ LOAD + PROCESS SEGMENTS
+        # -------------------------
+        for c in clips:
+            path = self._resolve_audio(c.clip_id)
+
+            seg = self._load_and_trim(
+                path,
+                int(c.start_ms),
+                int(c.end_ms)
+            )
+
+            # ✅ Normalize individual clips
+            if options.normalize_audio:
+                seg = self._normalize(seg)
+
+            # ✅ Narration ducking prep
+            if c.is_narration:
+                seg = seg.apply_gain(+2)  # slight boost
+
+            # ✅ Fades
             if options.fade_in_ms > 0:
                 seg = seg.fade_in(options.fade_in_ms)
+
             if options.fade_out_ms > 0:
                 seg = seg.fade_out(options.fade_out_ms)
 
             segments.append(seg)
 
-        if not segments:
+        if len(segments) == 0:
             raise ValueError("No audio segments to stitch")
 
-        # 2) Concatenate (with optional crossfade)
+        # -------------------------
+        # ✅ CONCATENATION
+        # -------------------------
         timeline = segments[0]
-        for i in range(1, len(segments)):
-            cf = max(0, options.crossfade_ms)
-            # Guard crossfade if segment too short
-            cf = min(cf, len(segments[i - 1]) // 2, len(segments[i]) // 2)
-            if cf > 0:
-                timeline = timeline.append(segments[i], crossfade=cf)
-            else:
-                timeline += segments[i]
 
-        # 3) Optional music bed
+        for i in range(1, len(segments)):
+            prev = segments[i - 1]
+            curr = segments[i]
+
+            cf = min(
+                options.crossfade_ms,
+                len(prev) // 2,
+                len(curr) // 2
+            )
+
+            if cf > 0:
+                timeline = timeline.append(curr, crossfade=cf)
+            else:
+                timeline = timeline + curr
+
+        # -------------------------
+        # ✅ MUSIC BED + DUCKING
+        # -------------------------
         if options.music_bed:
-            bed = self._load_full(options.music_bed)
-            # Normalize bed length to match timeline (loop if shorter)
+            bed = AudioSegment.from_file(options.music_bed)
+
             bed_full = self._loop_to_length(bed, len(timeline))
+
+            # ✅ Force clean type (NO Pylance issues)
+            assert isinstance(bed_full, AudioSegment)
+
+            # ✅ Apply base gain
             bed_full = bed_full.apply_gain(options.music_bed_gain_db)
-            # Overlay
+
+            # ✅ Duck music slightly overall
+            bed_full = bed_full - 3
+
             timeline = timeline.overlay(bed_full)
 
-        # (Future) 4) Loudness normalize to target LUFS: use ffmpeg loudnorm or pyloudnorm
-        # For v1 we skip exact LUFS and rely on source consistency/fades.
+        # -------------------------
+        # ✅ FINAL NORMALIZATION
+        # -------------------------
+        if options.normalize_audio:
+            timeline = self._normalize(timeline)
 
-        # 5) Export
+        # -------------------------
+        # ✅ EXPORT
+        # -------------------------
         ext = options.output_format.lower()
-        if ext not in ("mp3", "wav"):
-            raise ValueError("Unsupported output_format. Use 'mp3' or 'wav'.")
-
         out_file = os.path.join(out_dir, f"final.{ext}")
+
         if ext == "mp3":
             timeline.export(out_file, format="mp3", bitrate=f"{options.bitrate_kbps}k")
         else:
@@ -121,73 +153,79 @@ class AudioBuilder:
 
         return out_file, len(timeline)
 
-    # ---------- Helpers ----------
+    # =========================
+    # ✅ AUDIO RESOLUTION
+    # =========================
 
-    def _load_full(self, path: str) -> AudioSegment:
-        self._ensure_exists(path)
-        return AudioSegment.from_file(path)
+    def _resolve_audio(self, source: str) -> str:
+        if source.startswith("http"):
+            return self._download_and_cache(source)
 
-    def _load_and_trim(self, path: str, start_ms: int, end_ms: int) -> AudioSegment:
+        if os.path.exists(source):
+            return source
+
+        raise FileNotFoundError(f"Invalid source: {source}")
+
+    def _download_and_cache(self, url: str) -> str:
+        filename = url.split("?")[0].split("/")[-1]
+        local_path = os.path.join(self.cache_dir, filename)
+
+        if os.path.exists(local_path):
+            return local_path
+
+        try:
+            print(f"⬇️ Downloading {filename}")
+
+            response = requests.get(url, stream=True)
+            response.raise_for_status()
+
+            with open(local_path, "wb") as f:
+                for chunk in response.iter_content(8192):
+                    if chunk:
+                        f.write(chunk)
+
+            return local_path
+
+        except Exception as e:
+            raise RuntimeError(f"Download failed: {e}")
+
+    # =========================
+    # ✅ HELPERS
+    # =========================
+
+    def _load_and_trim(self, path, start_ms, end_ms):
+
         if end_ms <= start_ms:
-            raise ValueError(f"Invalid range: end_ms({end_ms}) <= start_ms({start_ms}) for {path}")
-        seg = self._load_full(path)
-        # Trim. pydub slices in ms.
-        start_ms = max(0, start_ms)
-        end_ms = min(len(seg), end_ms)
-        return seg[start_ms:end_ms]
+            raise ValueError(f"Invalid range {start_ms} → {end_ms}")
 
-    def _loop_to_length(self, seg: AudioSegment, target_ms: int) -> AudioSegment:
-        if len(seg) == 0:
-            raise ValueError("Music bed has zero length")
-        out = AudioSegment.silent(duration=0, frame_rate=seg.frame_rate)
-        while len(out) < target_ms:
-            out += seg
-        if len(out) > target_ms:
-            out = out[:target_ms]
-        return out
+        audio = AudioSegment.from_file(path)
 
-    def _ensure_exists(self, path: str) -> None:
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"Audio file not found: {path}")
+        s = max(0, int(start_ms))
+        e = min(len(audio), int(end_ms))
 
-    def _default_resolver(self, clip_id: str) -> str:
-        """
-        Default resolution strategy:
-        - Looks for media/clips/{clip_id}.mp3 | .wav | .m4a
-        Customize by passing a different resolve_clip_path in __init__.
-        """
-        base = os.path.join(self.media_root, "clips")
-        for ext in (".mp3", ".wav", ".m4a"):
-            candidate = os.path.join(base, f"{clip_id}{ext}")
-            if os.path.exists(candidate):
-                return candidate
-        raise FileNotFoundError(
-            f"Could not resolve clip_id '{clip_id}'. "
-            f"Expected one of: {base}/{clip_id}.mp3|.wav|.m4a"
+        segment = audio[s:e]  # ✅ NO typing here
+        return segment
+
+    def _loop_to_length(self, seg, target_ms):
+
+        current = AudioSegment.silent(
+            duration=0,
+            frame_rate=seg.frame_rate
         )
-    # audio/builder.py
 
-import asyncio
-import edge_tts
-import os
-from datetime import datetime
+        while len(current) < target_ms:
+            current = current + seg
 
-async def _generate_audio_async(text: str, output_path: str, voice: str):
-    communicator = edge_tts.Communicate(text, voice=voice)
-    await communicator.save(output_path)
+        if len(current) <= target_ms:
+            return current
 
-def generate_audio(text: str, voice: str = "en-US-JennyNeural") -> str:
-    """
-    Converts blended text into an MP3 file and returns the file path.
-    """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"podblendz_{timestamp}.mp3"
+        trimmed = current[:target_ms]
+        return trimmed
 
-    # Save into your existing media/clips folder
-    media_dir = os.path.join(os.getcwd(), "media", "clips")
-    os.makedirs(media_dir, exist_ok=True)
+    def _normalize(self, seg: AudioSegment) -> AudioSegment:
+        """
+        Simple normalization (not LUFS, but good for v1)
+        """
+        change = -20.0 - seg.dBFS if seg.dBFS != float('-inf') else 0
+        return seg.apply_gain(change)
 
-    output_path = os.path.join(media_dir, filename)
-
-    asyncio.run(_generate_audio_async(text, output_path, voice))
-    return output_path
