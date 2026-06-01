@@ -83,7 +83,8 @@ def fetch_segment(segment_id):
             return None
 
         # ✅ CRITICAL FIX: STOP GUESSING AUDIO PATH
-        audio_key = data.get("audio_file")
+        audio_key = data.get("audio_file") or data.get("audio_s3_key")
+
 
         if not audio_key:
             # ✅ No audio mapping available → skip
