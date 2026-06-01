@@ -14,13 +14,13 @@ BUCKET = "podblendz-episode-audio"
 MODEL = "text-embedding-3-small"
 
 # =========================
-# ✅ SETUP CLIENTS
+# ✅ CLIENTS
 # =========================
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 s3 = boto3.client("s3")
 
 # =========================
-# ✅ LOAD FAISS + MAP
+# ✅ LOAD INDEX
 # =========================
 print("📦 Loading FAISS index...")
 index = faiss.read_index(INDEX_FILE)
@@ -37,9 +37,6 @@ print(f"✅ Loaded {len(id_map)} IDs")
 # =========================
 
 def generate_presigned_url(key, expiry=3600):
-    """
-    Generate temporary secure URL for audio playback
-    """
     try:
         return s3.generate_presigned_url(
             "get_object",
@@ -47,18 +44,8 @@ def generate_presigned_url(key, expiry=3600):
             ExpiresIn=expiry
         )
     except Exception as e:
-        print(f"⚠️ Failed to sign URL for {key}: {e}")
+        print(f"⚠️ Failed to sign URL: {key}")
         return None
-
-
-def derive_audio_key(file_key):
-    """
-    Convert transcript path -> audio path
-
-    Example:
-    segments/episode123.json -> audio/episode123.mp3
-    """
-    return file_key.replace("segments/", "audio/").replace(".json", ".mp3")
 
 
 # =========================
@@ -76,40 +63,44 @@ def fetch_segment(segment_id):
         file_key = "_".join(parts[:-1])
         idx = int(parts[-1])
 
+        # ✅ Load segment file from S3
         response = s3.get_object(Bucket=BUCKET, Key=file_key)
         data = json.loads(response["Body"].read())
 
         segments = data.get("segments", [])
+
         if idx >= len(segments):
             return None
 
         seg = segments[idx]
 
-        # ✅ Get timestamps safely
+        text = seg.get("text", "").strip()
         start = seg.get("start")
         end = seg.get("end")
 
+        # ✅ MUST have timestamps
         if start is None or end is None:
             return None
 
-        # ✅ Resolve audio path
-        audio_key = data.get("audio_file")  # preferred (if stored in JSON)
+        # ✅ CRITICAL FIX: STOP GUESSING AUDIO PATH
+        audio_key = data.get("audio_file")
 
         if not audio_key:
-            # fallback: derive from filename
-            audio_key = derive_audio_key(file_key)
+            # ✅ No audio mapping available → skip
+            print(f"⚠️ Missing audio_file in {file_key}")
+            return None
 
-        # ✅ Generate playable URL
+        # ✅ Generate signed URL
         audio_url = generate_presigned_url(audio_key)
 
+        if not audio_url:
+            return None
+
         return {
-            "text": seg.get("text"),
+            "text": text,
             "start": start,
             "end": end,
-
-            # ✅ CRITICAL ADDITION
-            "audio_file": audio_url,
-
+            "audio_file": audio_url,   # ✅ REAL usable audio link
             "source": file_key
         }
 
@@ -119,14 +110,14 @@ def fetch_segment(segment_id):
 
 
 # =========================
-# ✅ MAIN SEARCH
+# ✅ SEARCH
 # =========================
 
 def search(query, k=40):
     print(f"\n🔍 Searching FAISS for: {query}")
 
     # -------------------------
-    # ✅ Step 1 — Embed query
+    # ✅ Embed Query
     # -------------------------
     response = client.embeddings.create(
         model=MODEL,
@@ -138,16 +129,17 @@ def search(query, k=40):
     ).astype("float32")
 
     # -------------------------
-    # ✅ Step 2 — FAISS search
+    # ✅ FAISS Search
     # -------------------------
     distances, indices = index.search(query_vector, k)
 
     results = []
 
     # -------------------------
-    # ✅ Step 3 — Map results
+    # ✅ Map Results
     # -------------------------
     for i, idx in enumerate(indices[0]):
+
         if idx < 0 or idx >= len(id_map):
             continue
 
@@ -163,7 +155,8 @@ def search(query, k=40):
             "score": float(distances[0][i])
         })
 
-    print(f"✅ Retrieved {len(results)} segments")
+    print(f"✅ Retrieved {len(results)} usable segments")
 
     return results
+
 
