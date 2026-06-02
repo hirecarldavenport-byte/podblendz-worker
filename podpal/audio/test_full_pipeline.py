@@ -90,7 +90,7 @@ Max 16 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="CRISPR gene editing"):
+def run_test(query="Financial Literacy"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
