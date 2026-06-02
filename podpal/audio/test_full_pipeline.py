@@ -31,13 +31,13 @@ def generate_tts(text, path):
 
 
 # =========================
-# ✅ NEW: ANCHOR NARRATION
+# ✅ DATELINE-STYLE ANCHOR
 # =========================
 
 def generate_anchor_narration(prev_text, curr_text, query):
     try:
         prompt = f"""
-You are guiding a listener through a curated podcast experience.
+You are guiding a listener through a curated story.
 
 Topic: {query}
 
@@ -47,9 +47,9 @@ Previous idea:
 Next clip:
 "{curr_text}"
 
-Explain what the listener is about to hear and why it matters.
-Be clear, natural, and engaging.
-Max 18 words.
+Set up what the listener is about to hear AND why it matters.
+Be clear, grounded, and intentional — not vague.
+Max 16 words.
 """
 
         response = client.chat.completions.create(
@@ -61,7 +61,7 @@ Max 18 words.
         return content.strip()
 
     except Exception:
-        return "Here's an important perspective on this topic."
+        return "This next perspective adds an important layer to the story."
 
 
 # =========================
@@ -71,9 +71,6 @@ Max 18 words.
 def run_test(query="CRISPR gene editing"):
     print("🚀 Running PodBlendz test...\n")
 
-    # -------------------------
-    # ✅ Step 1: Build narrative plan
-    # -------------------------
     blend = build_blend(query)
 
     if not blend:
@@ -87,23 +84,21 @@ def run_test(query="CRISPR gene editing"):
 
     final_clips = []
 
-    # ✅ Restore natural audio flow
-    PADDING_MS = 12000
+    # ✅ CRITICAL: asymmetric padding
+    LEAD_PADDING_MS = 8000
+    TRAIL_PADDING_MS = 28000   # longer tail for thought completion
 
-    # ✅ Group tracking
     last_audio = None
     current_group = None
-
-    # ✅ Track context for narration
     previous_text = None
 
-    # -------------------------
-    # ✅ Step 2: Execute blend
-    # -------------------------
+    # ✅ control narration frequency
+    anchor_counter = 0
+
     for step in blend:
 
         # =========================
-        # 🎙️ EXISTING NARRATION
+        # 🎙️ ORIGINAL NARRATION
         # =========================
         if step["type"] == "narration":
 
@@ -123,12 +118,11 @@ def run_test(query="CRISPR gene editing"):
                     )
                 )
 
-            # reset grouping after narration
             last_audio = None
             current_group = None
 
         # =========================
-        # 🎧 SPEAKER (ENHANCED)
+        # 🎧 SPEAKER
         # =========================
         elif step["type"] == "speaker":
 
@@ -140,8 +134,11 @@ def run_test(query="CRISPR gene editing"):
             if not audio_file or start is None or end is None:
                 continue
 
-            # ✅ ADD ANCHOR NARRATION (THE BIG FIX)
-            if previous_text:
+            # ✅ Reduce narration frequency (IMPORTANT)
+            anchor_counter += 1
+
+            if previous_text and anchor_counter % 2 == 0:
+
                 anchor_text = generate_anchor_narration(previous_text, text, query)
 
                 anchor_path = f"media/{uuid.uuid4()}_anchor.mp3"
@@ -156,17 +153,16 @@ def run_test(query="CRISPR gene editing"):
                         )
                     )
 
-                # reset grouping to prevent merging across narration
                 last_audio = None
                 current_group = None
 
-            # ✅ Expand clip (restore context)
-            start_ms = max(0, int(start * 1000) - PADDING_MS)
-            end_ms = int(end * 1000) + PADDING_MS
+            # ✅ Expanded clip window (KEY FIX)
+            start_ms = max(0, int(start * 1000) - LEAD_PADDING_MS)
+            end_ms = int(end * 1000) + TRAIL_PADDING_MS
 
-            # ✅ Merge same-audio segments
+            # ✅ Merge segments safely
             if last_audio == audio_file and current_group:
-                current_group["end_ms"] = end_ms
+                current_group["end_ms"] = max(current_group["end_ms"], end_ms)
             else:
                 current_group = {
                     "clip_id": audio_file,
@@ -179,7 +175,7 @@ def run_test(query="CRISPR gene editing"):
             previous_text = text
 
         # =========================
-        # ⏸️ PAUSE (skip for now)
+        # ⏸️ PAUSE
         # =========================
         elif step["type"] == "pause":
             continue
@@ -190,9 +186,6 @@ def run_test(query="CRISPR gene editing"):
         print("❌ No clips to build.")
         return
 
-    # -------------------------
-    # ✅ Step 3: Build audio
-    # -------------------------
     builder = AudioBuilder()
 
     output_path, duration = builder.build(
@@ -206,9 +199,6 @@ def run_test(query="CRISPR gene editing"):
     print(f"⏱️ Duration: {duration / 1000:.2f} seconds")
 
 
-# =========================
-# ✅ RUN
-# =========================
 if __name__ == "__main__":
     run_test()
 
