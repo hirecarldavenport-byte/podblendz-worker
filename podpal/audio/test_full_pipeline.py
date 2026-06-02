@@ -131,7 +131,7 @@ Max 16 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="Financial Literacy"):
+def run_test(query="Mental Health"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
