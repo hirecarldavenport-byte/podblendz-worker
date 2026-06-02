@@ -1,4 +1,4 @@
-from search_faiss import search
+from scripts.search_faiss import search
 from openai import OpenAI
 import os
 import json
