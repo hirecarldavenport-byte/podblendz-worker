@@ -5,6 +5,7 @@ import os
 import asyncio
 import edge_tts
 from openai import OpenAI
+from pydub import AudioSegment
 
 client = OpenAI()
 
@@ -31,6 +32,49 @@ def generate_tts(text, path):
 
 
 # =========================
+# ✅ SILENCE (FOR SMOOTH FLOW)
+# =========================
+
+def create_silence(duration_ms, path):
+    silence = AudioSegment.silent(duration=duration_ms)
+    silence.export(path, format="mp3")
+    return path
+
+
+# =========================
+# ✅ PODBLENDZ INTRO
+# =========================
+
+def generate_podblendz_intro(query):
+    try:
+        prompt = f"""
+You are the host of PodBlendz.
+
+Introduce this episode.
+
+Topic:
+{query}
+
+Say:
+- From PodBlendz...
+- what the topic is
+- what the listener will learn
+
+Max 18 words.
+"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        return (response.choices[0].message.content or "").strip()
+
+    except Exception:
+        return f"From PodBlendz. This blend explores {query}. Enjoy."
+
+
+# =========================
 # ✅ DUPLICATE FILTER
 # =========================
 
@@ -45,31 +89,29 @@ def is_duplicate(text):
 
 
 # =========================
-# ✅ SOURCE-AWARE NARRATION
+# ✅ SOURCE NARRATION (UPGRADED)
 # =========================
 
 def generate_source_narration(source_path, text, query):
-    # ✅ SAFE DEFAULT FIRST (fixes your error)
     show_name = "this podcast"
 
     try:
         parts = source_path.split("/")
         if len(parts) > 2:
-            show_name = parts[-2].replace("_", " ").title()  # ✅ optional upgrade here
+            show_name = parts[-2].replace("_", " ").title()
 
         prompt = f"""
-You are narrating a curated podcast experience.
+You are a professional podcast narrator.
 
 Topic: {query}
 
 Source: {show_name}
 
-Content:
+Clip:
 "{text}"
 
-Introduce this clip and explain what the listener will hear.
-Be confident, clear, and natural.
-Do NOT repeat the content.
+Introduce this clip clearly and confidently.
+Explain what insight it provides.
 
 Max 16 words.
 """
@@ -79,11 +121,10 @@ Max 16 words.
             messages=[{"role": "user", "content": prompt}]
         )
 
-        content = response.choices[0].message.content or ""
-        return content.strip()
+        return (response.choices[0].message.content or "").strip()
 
     except Exception:
-        return f"This next clip comes from {show_name}."
+        return f"From {show_name}, this perspective adds important insight."
 
 
 # =========================
@@ -106,7 +147,6 @@ def run_test(query="Financial Literacy"):
 
     final_clips = []
 
-    # ✅ CRITICAL: Better natural speech boundaries
     LEAD_PADDING_MS = 8000
     TRAIL_PADDING_MS = 30000
 
@@ -114,11 +154,31 @@ def run_test(query="Financial Literacy"):
     current_group = None
     narration_counter = 0
 
+    # =========================
+    # ✅ GLOBAL INTRO
+    # =========================
+
+    intro_text = generate_podblendz_intro(query)
+    intro_path = f"media/{uuid.uuid4()}_global_intro.mp3"
+
+    intro_audio = generate_tts(intro_text, intro_path)
+
+    if intro_audio:
+        final_clips.append(ClipRange(intro_audio, 0, 60000))
+
+    # small intro pause
+    silence_path = create_silence(700, f"media/{uuid.uuid4()}_silence.mp3")
+    final_clips.append(ClipRange(silence_path, 0, 700))
+
+    # =========================
+    # ✅ EXECUTE BLEND
+    # =========================
+
     for step in blend:
 
-        # =========================
+        # -------------------------
         # 🎙️ EXISTING NARRATION
-        # =========================
+        # -------------------------
         if step["type"] == "narration":
 
             text = step.get("text")
@@ -129,22 +189,22 @@ def run_test(query="Financial Literacy"):
             tts_file = generate_tts(text, tts_path)
 
             if tts_file:
-                final_clips.append(
-                    ClipRange(tts_file, 0, 60000)
-                )
+                final_clips.append(ClipRange(tts_file, 0, 60000))
 
-            # reset grouping (important for clean transitions)
+                # small pause after narration
+                silence = create_silence(500, f"media/{uuid.uuid4()}_silence.mp3")
+                final_clips.append(ClipRange(silence, 0, 500))
+
             last_audio = None
             current_group = None
 
-        # =========================
+        # -------------------------
         # 🎧 SPEAKER
-        # =========================
+        # -------------------------
         elif step["type"] == "speaker":
 
             text = step.get("text")
 
-            # ✅ REMOVE DUPLICATES EARLY
             if not text or is_duplicate(text):
                 continue
 
@@ -157,7 +217,7 @@ def run_test(query="Financial Literacy"):
 
             narration_counter += 1
 
-            # ✅ SOURCE-BASED NARRATION (LESS FREQUENT)
+            # ✅ STRONG SOURCE INTRO (less frequent)
             if narration_counter % 2 == 0:
 
                 source_text = generate_source_narration(audio_file, text, query)
@@ -166,19 +226,20 @@ def run_test(query="Financial Literacy"):
                 tts_file = generate_tts(source_text, tts_path)
 
                 if tts_file:
-                    final_clips.append(
-                        ClipRange(tts_file, 0, 60000)
-                    )
+                    final_clips.append(ClipRange(tts_file, 0, 60000))
 
-                # break continuity cleanly before new segment
+                    # pause before audio clip
+                    silence = create_silence(400, f"media/{uuid.uuid4()}_silence.mp3")
+                    final_clips.append(ClipRange(silence, 0, 400))
+
                 last_audio = None
                 current_group = None
 
-            # ✅ EXPANDED CLIP RANGE (KEY FIX)
+            # ✅ EXPAND CLIP
             start_ms = max(0, int(start * 1000) - LEAD_PADDING_MS)
             end_ms = int(end * 1000) + TRAIL_PADDING_MS
 
-            # ✅ SMART MERGING
+            # ✅ MERGE CONTINUOUS AUDIO
             if last_audio == audio_file and current_group:
                 current_group["end_ms"] = max(current_group["end_ms"], end_ms)
             else:
@@ -191,17 +252,26 @@ def run_test(query="Financial Literacy"):
 
             last_audio = audio_file
 
-        # =========================
-        # ⏸️ PAUSE
-        # =========================
+        # -------------------------
+        # ⏸️ PAUSE (convert to silence)
+        # -------------------------
         elif step["type"] == "pause":
-            continue
+            duration = step.get("duration", 0.5)
+
+            silence = create_silence(int(duration * 1000),
+                                     f"media/{uuid.uuid4()}_silence.mp3")
+
+            final_clips.append(ClipRange(silence, 0, int(duration * 1000)))
 
     print(f"✅ Final timeline segments: {len(final_clips)}")
 
     if not final_clips:
         print("❌ No clips to build.")
         return
+
+    # =========================
+    # ✅ BUILD AUDIO
+    # =========================
 
     builder = AudioBuilder()
 
