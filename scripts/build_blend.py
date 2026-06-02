@@ -10,240 +10,159 @@ client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 # ✅ HELPERS
 # =========================
 
-def shorten(text, max_words=40):
-    return " ".join(text.split()[:max_words])
+def normalize(text):
+    return " ".join(text.lower().split())
 
 
-def safe_content(response):
+def dedup_key(text):
+    return hashlib.md5(normalize(text).encode()).hexdigest()
+
+
+def safe_llm(prompt):
     try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}]
+        )
         content = response.choices[0].message.content
-        return content.strip() if content else ""
+        return content.strip() if content else None
     except Exception:
-        return ""
+        return None
 
 
 # =========================
-# ✅ FILTERING
+# ✅ AGGRESSIVE AD FILTER
 # =========================
-
-def is_valid_segment(text, duration):
-    if not text or len(text.split()) < 6:
-        return False
-    if duration < 2:
-        return False
-    return True
-
 
 def is_ad(text):
     t = text.lower()
 
-    ad_phrases = [
+    blockers = [
         "sponsor",
-        "brought to you by",
-        "this episode is sponsored",
-        "thanks to our sponsor",
-        "advertisement",
-        "promo code",
-        "visit our website",
-        "support for this podcast",
+        "brought to you",
+        "visit",
         "dot com",
         ".com",
-        "www.",
-        "sign up",
+        "www",
+        "http",
         "subscribe",
-        "link in bio"
+        "sign up",
+        "promo",
+        "support for"
     ]
 
-    return any(p in t for p in ad_phrases)
-
-
-# =========================
-# ✅ STRONG DEDUP
-# =========================
-
-def dedup_key(text):
-    cleaned = " ".join(text.lower().split())
-    return hashlib.md5(cleaned.encode()).hexdigest()
-
-
-# =========================
-# ✅ DIVERSITY SELECTION
-# =========================
-
-def select_segments(results, max_segments=12):
-    selected = []
-    seen_keys = set()
-    seen_sources = {}
-
-    MAX_PER_SOURCE = 3
-
-    for r in results:
-        text = r.get("text", "")
-        audio_file = r.get("audio_file")
-
-        if not text or not audio_file:
-            continue
-
-        key = dedup_key(text)
-        if key in seen_keys:
-            continue
-
-        count = seen_sources.get(audio_file, 0)
-        if count >= MAX_PER_SOURCE:
-            continue
-
-        seen_sources[audio_file] = count + 1
-
-        selected.append(r)
-        seen_keys.add(key)
-
-        if len(selected) >= max_segments:
-            break
-
-    return selected
-
-
-# =========================
-# ✅ NARRATION (FIXED + STRONGER)
-# =========================
-
-def generate_dateline_line(context, text=None, query="", stage="middle"):
-
-    if stage == "intro":
-        prompt = f"""
-You are the host of PodBlendz.
-
-Start with:
-"From PodBlendz..."
-
-Then clearly say:
-"This episode explores {query}."
-
-Then briefly explain what the listener will learn.
-
-Speak naturally and clearly.
-Max 22 words.
-"""
-
-    elif stage == "segment_intro":
-        prompt = f"""
-Introduce this segment.
-
-Topic: {query}
-
-Clip:
-"{text}"
-
-Explain what the listener is about to hear and why it matters.
-
-Max 18 words.
-"""
-
-    elif stage == "bridge":
-        prompt = f"""
-Guide the listener.
-
-Topic: {query}
-
-Previous idea:
-"{context}"
-
-Next idea:
-"{text}"
-
-Explain how this connects.
-
-Max 18 words.
-"""
-
-    elif stage == "outro":
-        prompt = f"""
-Close this episode about {query}.
-
-Give a clear takeaway.
-
-Max 20 words.
-"""
-
-    else:
-        return ""
-
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    return safe_content(response)
+    return any(b in t for b in blockers)
 
 
 # =========================
 # ✅ MAIN BUILDER
 # =========================
 
-def build_blend(query, max_segments=12):
+def build_blend(query, max_segments=10):
     print(f"\n🎧 Building Blend: {query}\n")
 
     results = search(query, k=120) or []
 
-    # ✅ STEP 1: CLEAN FILTER
+    # -------------------------
+    # ✅ FILTER
+    # -------------------------
     filtered = []
+    seen = set()
+    source_count = {}
 
     for r in results:
+
         text = r.get("text", "").strip()
+        audio_file = r.get("audio_file")
         start = r.get("start")
         end = r.get("end")
-        audio_file = r.get("audio_file")
 
-        if not audio_file:
+        if not text or not audio_file:
+            continue
+
+        if is_ad(text):
             continue
 
         if start is None or end is None:
             continue
 
-        duration = end - start
-
-        if not is_valid_segment(text, duration):
+        if len(text.split()) < 6:
             continue
 
-        if is_ad(text):  # ✅ strong ad filter
+        key = dedup_key(text)
+        if key in seen:
             continue
 
+        count = source_count.get(audio_file, 0)
+        if count >= 3:
+            continue
+
+        source_count[audio_file] = count + 1
+        seen.add(key)
         filtered.append(r)
+
+        if len(filtered) >= 30:
+            break
 
     if not filtered:
         print("❌ No usable segments.")
         return []
 
-    # ✅ STEP 2: SORT
-    filtered = sorted(filtered, key=lambda x: x["score"])
-
-    # ✅ STEP 3: SELECT
-    selected = select_segments(filtered, max_segments)
+    # -------------------------
+    # ✅ SELECT TOP SEGMENTS
+    # -------------------------
+    selected = filtered[:max_segments]
 
     blend = []
 
     # -------------------------
-    # 🎬 INTRO
+    # ✅ INTRO (FORCED)
     # -------------------------
-    intro = generate_dateline_line("", query=query, stage="intro")
+    intro_prompt = f"""
+You are the host of PodBlendz.
 
-    if intro:
-        blend.append({"type": "narration", "text": intro})
-        blend.append({"type": "pause", "duration": 0.7})
+Say:
+"From PodBlendz, this episode explores {query}."
+
+Then briefly explain what the listener will learn.
+
+Max 20 words.
+"""
+
+    intro = safe_llm(intro_prompt)
+
+    if not intro:
+        intro = f"From PodBlendz, this episode explores {query} and what it means."
+
+    blend.append({"type": "narration", "text": intro})
+    blend.append({"type": "pause", "duration": 0.6})
 
     # -------------------------
-    # 🎬 MAIN FLOW
+    # ✅ MAIN FLOW (FORCED NARRATION)
     # -------------------------
-    for i, seg in enumerate(selected):
+    for seg in selected:
 
         text = seg["text"]
 
-        # ✅ ALWAYS INTRODUCE CLIP (FIXED)
-        narration = generate_dateline_line("", text, query, stage="segment_intro")
+        prompt = f"""
+Introduce this segment.
 
-        if narration:
-            blend.append({"type": "narration", "text": narration})
-            blend.append({"type": "pause", "duration": 0.4})
+Topic: {query}
+
+"{text}"
+
+Explain what the listener is about to hear.
+
+Max 16 words.
+"""
+
+        narration = safe_llm(prompt)
+
+        if not narration:
+            narration = "In this segment, hear an important perspective on this topic."
+
+        blend.append({"type": "narration", "text": narration})
+        blend.append({"type": "pause", "duration": 0.4})
 
         # ✅ CLIP
         blend.append({
@@ -252,47 +171,28 @@ def build_blend(query, max_segments=12):
             "audio_file": seg.get("audio_file"),
             "start": seg.get("start"),
             "end": seg.get("end"),
-            "source": seg.get("audio_file"),
         })
 
         blend.append({"type": "pause", "duration": 0.6})
 
-        # ✅ OCCASIONAL BRIDGE
-        if i % 2 == 1 and i < len(selected) - 1:
-            next_seg = selected[i + 1]
-
-            bridge = generate_dateline_line(
-                shorten(text),
-                shorten(next_seg["text"]),
-                query,
-                stage="bridge"
-            )
-
-            if bridge:
-                blend.append({"type": "narration", "text": bridge})
-                blend.append({"type": "pause", "duration": 0.4})
-
     # -------------------------
-    # 🎬 OUTRO
+    # ✅ OUTRO
     # -------------------------
-    outro = generate_dateline_line("", query=query, stage="outro")
+    outro_prompt = f"""
+Close this podcast about {query} with a clear takeaway.
 
-    if outro:
-        blend.append({"type": "narration", "text": outro})
+Max 18 words.
+"""
+
+    outro = safe_llm(outro_prompt)
+
+    if not outro:
+        outro = "This topic continues to evolve, and there’s much more to explore."
+
+    blend.append({"type": "narration", "text": outro})
 
     return blend
 
-
-# =========================
-# ✅ TEST
-# =========================
-
-if __name__ == "__main__":
-    result = build_blend("AI taking jobs")
-
-    print("\n🔥 OUTPUT\n")
-    for step in result:
-        print(step)
 
 
 
