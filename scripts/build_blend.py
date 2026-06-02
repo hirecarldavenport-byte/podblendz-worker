@@ -256,7 +256,7 @@ def build_blend(query, max_segments=20):
 # =========================
 
 if __name__ == "__main__":
-    result = build_blend("CRISPR gene editing")
+    result = build_blend("financial literacy")
 
     print("\n🔥 OUTPUT\n")
     for step in result:
