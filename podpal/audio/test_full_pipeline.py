@@ -6,6 +6,7 @@ import asyncio
 import edge_tts
 from openai import OpenAI
 from pydub import AudioSegment
+import hashlib
 
 client = OpenAI()
 
@@ -15,10 +16,7 @@ client = OpenAI()
 # =========================
 
 async def tts_to_file(text, output_path):
-    communicate = edge_tts.Communicate(
-        text=text,
-        voice="en-US-JennyNeural"
-    )
+    communicate = edge_tts.Communicate(text=text, voice="en-US-JennyNeural")
     await communicate.save(output_path)
 
 
@@ -26,13 +24,12 @@ def generate_tts(text, path):
     try:
         asyncio.run(tts_to_file(text, path))
         return path
-    except Exception as e:
-        print(f"⚠️ TTS failed: {e}")
+    except Exception:
         return None
 
 
 # =========================
-# ✅ SILENCE (FOR SMOOTH FLOW)
+# ✅ SILENCE
 # =========================
 
 def create_silence(duration_ms, path):
@@ -42,7 +39,7 @@ def create_silence(duration_ms, path):
 
 
 # =========================
-# ✅ PODBLENDZ INTRO
+# ✅ GLOBAL INTRO
 # =========================
 
 def generate_podblendz_intro(query):
@@ -50,46 +47,46 @@ def generate_podblendz_intro(query):
         prompt = f"""
 You are the host of PodBlendz.
 
-Introduce this episode.
+Create a natural podcast intro.
 
-Topic:
-{query}
+Topic: {query}
 
 Say:
 - From PodBlendz...
-- what the topic is
-- what the listener will learn
+- what this episode covers
+- why it matters
 
 Max 18 words.
 """
-
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}]
         )
-
         return (response.choices[0].message.content or "").strip()
 
     except Exception:
-        return f"From PodBlendz. This blend explores {query}. Enjoy."
+        return f"From PodBlendz, this episode explores {query}. Enjoy."
 
 
 # =========================
-# ✅ DUPLICATE FILTER
+# ✅ STRONG DUPLICATE FILTER
 # =========================
 
 seen_texts = set()
 
 def is_duplicate(text):
-    key = text[:80].lower()
+    cleaned = " ".join(text.lower().split())
+    key = hashlib.md5(cleaned.encode()).hexdigest()
+
     if key in seen_texts:
         return True
+
     seen_texts.add(key)
     return False
 
 
 # =========================
-# ✅ SOURCE NARRATION (UPGRADED)
+# ✅ SOURCE NARRATION (FORCED)
 # =========================
 
 def generate_source_narration(source_path, text, query):
@@ -104,14 +101,13 @@ def generate_source_narration(source_path, text, query):
 You are a professional podcast narrator.
 
 Topic: {query}
-
 Source: {show_name}
 
 Clip:
 "{text}"
 
-Introduce this clip clearly and confidently.
-Explain what insight it provides.
+Introduce this segment clearly.
+Explain what insight it offers.
 
 Max 16 words.
 """
@@ -124,7 +120,7 @@ Max 16 words.
         return (response.choices[0].message.content or "").strip()
 
     except Exception:
-        return f"From {show_name}, this perspective adds important insight."
+        return f"From {show_name}, this next perspective adds insight."
 
 
 # =========================
@@ -152,23 +148,17 @@ def run_test(query="Mental Health"):
 
     last_audio = None
     current_group = None
-    narration_counter = 0
 
-    # =========================
-    # ✅ GLOBAL INTRO
-    # =========================
-
+    # ✅ GLOBAL INTRO (ALWAYS FIRST)
     intro_text = generate_podblendz_intro(query)
-    intro_path = f"media/{uuid.uuid4()}_global_intro.mp3"
-
-    intro_audio = generate_tts(intro_text, intro_path)
+    intro_audio = generate_tts(intro_text, f"media/{uuid.uuid4()}_intro.mp3")
 
     if intro_audio:
         final_clips.append(ClipRange(intro_audio, 0, 60000))
 
-    # small intro pause
-    silence_path = create_silence(700, f"media/{uuid.uuid4()}_silence.mp3")
-    final_clips.append(ClipRange(silence_path, 0, 700))
+    # intro breath
+    silence = create_silence(700, f"media/{uuid.uuid4()}_silence.mp3")
+    final_clips.append(ClipRange(silence, 0, 700))
 
     # =========================
     # ✅ EXECUTE BLEND
@@ -176,35 +166,31 @@ def run_test(query="Mental Health"):
 
     for step in blend:
 
-        # -------------------------
-        # 🎙️ EXISTING NARRATION
-        # -------------------------
+        if len(final_clips) > 65:  # ✅ STOP DRIFTING
+            break
+
+        # 🎙️ narration
         if step["type"] == "narration":
 
             text = step.get("text")
             if not text:
                 continue
 
-            tts_path = f"media/{uuid.uuid4()}_narration.mp3"
-            tts_file = generate_tts(text, tts_path)
+            tts = generate_tts(text, f"media/{uuid.uuid4()}_narration.mp3")
 
-            if tts_file:
-                final_clips.append(ClipRange(tts_file, 0, 60000))
+            if tts:
+                final_clips.append(ClipRange(tts, 0, 60000))
 
-                # small pause after narration
-                silence = create_silence(500, f"media/{uuid.uuid4()}_silence.mp3")
-                final_clips.append(ClipRange(silence, 0, 500))
+                pause = create_silence(500, f"media/{uuid.uuid4()}_silence.mp3")
+                final_clips.append(ClipRange(pause, 0, 500))
 
             last_audio = None
             current_group = None
 
-        # -------------------------
-        # 🎧 SPEAKER
-        # -------------------------
+        # 🎧 speaker
         elif step["type"] == "speaker":
 
             text = step.get("text")
-
             if not text or is_duplicate(text):
                 continue
 
@@ -215,31 +201,26 @@ def run_test(query="Mental Health"):
             if not audio_file or start is None or end is None:
                 continue
 
-            narration_counter += 1
+            # ✅ FORCE SOURCE INTRO when source changes
+            is_new_source = last_audio != audio_file
 
-            # ✅ STRONG SOURCE INTRO (less frequent)
-            if narration_counter % 2 == 0:
+            if is_new_source:
+                source_intro = generate_source_narration(audio_file, text, query)
 
-                source_text = generate_source_narration(audio_file, text, query)
+                tts = generate_tts(source_intro, f"media/{uuid.uuid4()}_source.mp3")
 
-                tts_path = f"media/{uuid.uuid4()}_source.mp3"
-                tts_file = generate_tts(source_text, tts_path)
+                if tts:
+                    final_clips.append(ClipRange(tts, 0, 60000))
 
-                if tts_file:
-                    final_clips.append(ClipRange(tts_file, 0, 60000))
+                    pause = create_silence(400, f"media/{uuid.uuid4()}_silence.mp3")
+                    final_clips.append(ClipRange(pause, 0, 400))
 
-                    # pause before audio clip
-                    silence = create_silence(400, f"media/{uuid.uuid4()}_silence.mp3")
-                    final_clips.append(ClipRange(silence, 0, 400))
-
-                last_audio = None
                 current_group = None
 
-            # ✅ EXPAND CLIP
+            # ✅ extend clip
             start_ms = max(0, int(start * 1000) - LEAD_PADDING_MS)
             end_ms = int(end * 1000) + TRAIL_PADDING_MS
 
-            # ✅ MERGE CONTINUOUS AUDIO
             if last_audio == audio_file and current_group:
                 current_group["end_ms"] = max(current_group["end_ms"], end_ms)
             else:
@@ -252,26 +233,14 @@ def run_test(query="Mental Health"):
 
             last_audio = audio_file
 
-        # -------------------------
-        # ⏸️ PAUSE (convert to silence)
-        # -------------------------
+        # ⏸️ pause
         elif step["type"] == "pause":
-            duration = step.get("duration", 0.5)
+            duration = int(step.get("duration", 0.5) * 1000)
 
-            silence = create_silence(int(duration * 1000),
-                                     f"media/{uuid.uuid4()}_silence.mp3")
-
-            final_clips.append(ClipRange(silence, 0, int(duration * 1000)))
+            silence = create_silence(duration, f"media/{uuid.uuid4()}_silence.mp3")
+            final_clips.append(ClipRange(silence, 0, duration))
 
     print(f"✅ Final timeline segments: {len(final_clips)}")
-
-    if not final_clips:
-        print("❌ No clips to build.")
-        return
-
-    # =========================
-    # ✅ BUILD AUDIO
-    # =========================
 
     builder = AudioBuilder()
 
@@ -285,10 +254,6 @@ def run_test(query="Mental Health"):
     print(f"📂 Output: {output_path}")
     print(f"⏱️ Duration: {duration / 1000:.2f} seconds")
 
-
-# =========================
-# ✅ RUN
-# =========================
 
 if __name__ == "__main__":
     run_test()
