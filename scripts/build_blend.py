@@ -27,15 +27,10 @@ def safe_content(response):
 # =========================
 
 def is_valid_segment(text, duration):
-    if not text:
+    if not text or len(text.split()) < 6:
         return False
-
-    if len(text.split()) < 6:
-        return False
-
     if duration < 2:
         return False
-
     return True
 
 
@@ -50,7 +45,12 @@ def is_ad(text):
         "advertisement",
         "promo code",
         "visit our website",
-        "support for this podcast"
+        "support for this podcast",
+        "dot com",
+        ".com",
+        "www.",
+        "sign up",
+        "subscribe now"
     ]
 
     return any(p in t for p in ad_phrases)
@@ -66,7 +66,7 @@ def dedup_key(text):
 
 
 # =========================
-# ✅ DIVERSITY SELECTION
+# ✅ DIVERSITY
 # =========================
 
 def select_diverse_segments(results, max_segments=12):
@@ -83,12 +83,11 @@ def select_diverse_segments(results, max_segments=12):
         if not text or not audio_file:
             continue
 
-        # ✅ dedup
         key = dedup_key(text)
         if key in seen_keys:
             continue
 
-        # ✅ source balancing
+        # limit same podcast domination
         count = seen_sources.get(audio_file, 0)
         if count >= MAX_PER_SOURCE:
             continue
@@ -105,26 +104,28 @@ def select_diverse_segments(results, max_segments=12):
 
 
 # =========================
-# ✅ DATELINE NARRATION
+# ✅ NARRATION (STRONGER GUIDE)
 # =========================
 
 def generate_dateline_line(context, text=None, query="", stage="middle"):
 
     if stage == "intro":
         prompt = f"""
-Speak like a polished podcast host.
+Speak as a polished podcast host.
 
 Introduce the topic:
 {query}
 
-Explain what the listener will gain.
+Explain what the listener will learn.
+
+Be clear and engaging.
 
 Max 20 words.
 """
 
     elif stage == "bridge":
         prompt = f"""
-Guide the listener.
+Guide the listener clearly.
 
 Previous idea:
 "{context}"
@@ -132,28 +133,28 @@ Previous idea:
 Next idea:
 "{text}"
 
-Explain the transition clearly.
+Explain what’s coming next and why it matters.
 
-Max 16 words.
+Max 18 words.
 """
 
     elif stage == "outro":
         prompt = f"""
-Close this segment about:
+Wrap up this episode about:
 {query}
 
-Leave the listener thinking.
+Leave the listener with a strong takeaway.
 
 Max 20 words.
 """
 
     else:
         prompt = f"""
-Provide context for this idea:
+Introduce this segment clearly:
 
 "{text}"
 
-Help the listener understand why it matters.
+Explain what the listener is about to hear.
 
 Max 16 words.
 """
@@ -176,7 +177,7 @@ def build_blend(query, max_segments=12):
     results = search(query, k=120) or []
 
     # -------------------------
-    # ✅ STEP 1: CLEAN FILTERING
+    # ✅ FILTER CLEANLY
     # -------------------------
     filtered = []
 
@@ -186,7 +187,6 @@ def build_blend(query, max_segments=12):
         end = r.get("end")
         audio_file = r.get("audio_file")
 
-        # ✅ must have audio
         if not audio_file:
             continue
 
@@ -198,7 +198,7 @@ def build_blend(query, max_segments=12):
         if not is_valid_segment(text, duration):
             continue
 
-        if is_ad(text):  # ✅ remove ads
+        if is_ad(text):
             continue
 
         filtered.append(r)
@@ -208,58 +208,40 @@ def build_blend(query, max_segments=12):
         return []
 
     # -------------------------
-    # ✅ STEP 2: SORT BY RELEVANCE
+    # ✅ SORT
     # -------------------------
     filtered = sorted(filtered, key=lambda x: x["score"])
 
     # -------------------------
-    # ✅ STEP 3: DEDUP + DIVERSIFY
+    # ✅ SELECT
     # -------------------------
     selected = select_diverse_segments(filtered, max_segments)
 
     blend = []
 
     # -------------------------
-    # 🎬 INTRO
+    # 🎬 INTRO (STRONG)
     # -------------------------
     intro = generate_dateline_line("", query=query, stage="intro")
 
-    blend.append({
-        "type": "narration",
-        "text": intro
-    })
-
-    blend.append({"type": "pause", "duration": 0.6})
+    blend.append({"type": "narration", "text": intro})
+    blend.append({"type": "pause", "duration": 0.7})
 
     # -------------------------
-    # 🎬 MAIN FLOW
+    # 🎬 MAIN FLOW (MORE GUIDED)
     # -------------------------
     for i, seg in enumerate(selected):
 
         text = seg["text"]
         audio_file = seg["audio_file"]
 
-        # ✅ controlled narration
-        if i == 0:
-            narration = generate_dateline_line("", text, query)
+        # ✅ ALWAYS INTRODUCE SEGMENT (KEY FIX)
+        narration = generate_dateline_line("", text, query)
 
-            blend.append({"type": "narration", "text": narration})
-            blend.append({"type": "pause", "duration": 0.4})
+        blend.append({"type": "narration", "text": narration})
+        blend.append({"type": "pause", "duration": 0.4})
 
-        elif i % 2 == 0:
-            prev = selected[i - 1]
-
-            narration = generate_dateline_line(
-                shorten(prev["text"]),
-                shorten(text),
-                query,
-                stage="bridge"
-            )
-
-            blend.append({"type": "narration", "text": narration})
-            blend.append({"type": "pause", "duration": 0.4})
-
-        # ✅ speaker
+        # ✅ CLIP
         blend.append({
             "type": "speaker",
             "text": text,
@@ -271,29 +253,27 @@ def build_blend(query, max_segments=12):
 
         blend.append({"type": "pause", "duration": 0.6})
 
+        # ✅ OCCASIONAL TRANSITION
+        if i % 2 == 1:
+            bridge = generate_dateline_line(
+                shorten(text),
+                shorten(selected[i]["text"]),
+                query,
+                stage="bridge"
+            )
+
+            blend.append({"type": "narration", "text": bridge})
+            blend.append({"type": "pause", "duration": 0.4})
+
     # -------------------------
     # 🎬 OUTRO
     # -------------------------
     outro = generate_dateline_line("", query=query, stage="outro")
 
-    blend.append({
-        "type": "narration",
-        "text": outro
-    })
+    blend.append({"type": "narration", "text": outro})
 
     return blend
 
-
-# =========================
-# ✅ TEST
-# =========================
-
-if __name__ == "__main__":
-    result = build_blend("AI taking jobs")
-
-    print("\n🔥 OUTPUT\n")
-    for step in result:
-        print(step)
 
 
 
