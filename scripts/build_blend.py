@@ -1,7 +1,7 @@
-from scripts.search_faiss import search
+from search_faiss import search
 from openai import OpenAI
 import os
-import hashlib
+import json
 
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
@@ -10,188 +10,267 @@ client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 # ✅ HELPERS
 # =========================
 
-def normalize(text):
-    return " ".join(text.lower().split())
+def shorten(text, max_words=40):
+    return " ".join(text.split()[:max_words])
 
 
-def dedup_key(text):
-    return hashlib.md5(normalize(text).encode()).hexdigest()
-
-
-def safe_llm(prompt):
+def safe_content(response):
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}]
-        )
         content = response.choices[0].message.content
-        return content.strip() if content else None
+        return content.strip() if content else ""
     except Exception:
-        return None
+        return ""
+
+
+def suggest_query(query):
+    try:
+        with open("topic_patterns.json") as f:
+            patterns = json.load(f)
+
+        matches = [p for p in patterns if p in query.lower()]
+        return matches[:5] if matches else patterns[:5]
+
+    except Exception:
+        return []
 
 
 # =========================
-# ✅ AGGRESSIVE AD FILTER
+# ✅ FILTERING
 # =========================
 
-def is_ad(text):
+def is_strong_sentence(text):
+    if not text:
+        return False
+
+    text = text.strip()
+
+    if len(text.split()) < 8:
+        return False
+
+    if not text[0].isupper():
+        return False
+
+    if not text.endswith((".", "?", "!")):
+        return False
+
+    bad = ["so ", "and ", "but ", "okay", "well", "you know", "i mean"]
+
+    if any(text.lower().startswith(b) for b in bad):
+        return False
+
+    return True
+
+
+def is_meaningful(text):
     t = text.lower()
 
-    blockers = [
-        "sponsor",
-        "brought to you",
-        "visit",
-        "dot com",
-        ".com",
-        "www",
-        "http",
-        "subscribe",
-        "sign up",
-        "promo",
-        "support for"
-    ]
+    if t.endswith("?"):
+        return False
 
-    return any(b in t for b in blockers)
+    if len(text.split()) < 10 and any(w in t for w in ["dna", "gene", "genome"]):
+        return False
+
+    return True
+
+
+# =========================
+# ✅ DATELINE-STYLE NARRATION
+# =========================
+
+def generate_dateline_line(context, text=None, query="", stage="middle"):
+
+    if stage == "intro":
+        prompt = f"""
+Act like a calm documentary narrator.
+
+Introduce a deeper idea or mystery about:
+{query}
+
+Make it intriguing and controlled.
+Max 22 words.
+"""
+
+    elif stage == "bridge":
+        prompt = f"""
+You are guiding a story.
+
+Previous idea:
+"{context}"
+
+Next idea:
+"{text}"
+
+Do NOT summarize.
+
+Instead, build curiosity or tension.
+Max 18 words.
+"""
+
+    elif stage == "outro":
+        prompt = f"""
+Close with a reflective thought about:
+{query}
+
+Make it feel unresolved and thought-provoking.
+Max 22 words.
+"""
+
+    else:
+        prompt = f"""
+Guide the audience's thinking about this idea:
+
+"{text}"
+
+Add meaning or implication without repeating.
+Max 18 words.
+"""
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    return safe_content(response)
 
 
 # =========================
 # ✅ MAIN BUILDER
 # =========================
 
-def build_blend(query, max_segments=10):
+def build_blend(query, max_segments=16):
     print(f"\n🎧 Building Blend: {query}\n")
 
     results = search(query, k=120) or []
 
     # -------------------------
-    # ✅ FILTER
+    # ✅ FILTER SEGMENTS
     # -------------------------
-    filtered = []
-    seen = set()
-    source_count = {}
+    selected_pool = []
 
     for r in results:
-
         text = r.get("text", "").strip()
-        audio_file = r.get("audio_file")
         start = r.get("start")
         end = r.get("end")
 
-        if not text or not audio_file:
-            continue
-
-        if is_ad(text):
-            continue
-
+        # ✅ FIXED TIMESTAMP CHECK
         if start is None or end is None:
             continue
 
-        if len(text.split()) < 6:
+        duration = end - start
+
+        if not text or duration < 3:
             continue
 
-        key = dedup_key(text)
-        if key in seen:
+        if not is_strong_sentence(text) or not is_meaningful(text):
             continue
 
-        count = source_count.get(audio_file, 0)
-        if count >= 3:
-            continue
+        selected_pool.append(r)
 
-        source_count[audio_file] = count + 1
-        seen.add(key)
-        filtered.append(r)
-
-        if len(filtered) >= 30:
-            break
-
-    if not filtered:
+    if not selected_pool:
         print("❌ No usable segments.")
         return []
 
     # -------------------------
-    # ✅ SELECT TOP SEGMENTS
+    # ✅ SELECT BEST SEGMENTS
     # -------------------------
-    selected = filtered[:max_segments]
+    selected_pool = sorted(selected_pool, key=lambda x: x["score"])
+    selected = selected_pool[:max_segments]
 
     blend = []
 
     # -------------------------
-    # ✅ INTRO (FORCED)
+    # 🎬 INTRO
     # -------------------------
-    intro_prompt = f"""
-You are the host of PodBlendz.
+    intro = generate_dateline_line("", query=query, stage="intro")
 
-Say:
-"From PodBlendz, this episode explores {query}."
+    blend.append({
+        "type": "narration",
+        "text": intro
+    })
 
-Then briefly explain what the listener will learn.
+    blend.append({"type": "pause", "duration": 0.7})
 
-Max 20 words.
-"""
+    # -------------------------
+    # 🎬 FIRST ENTRY
+    # -------------------------
+    first = selected[0]
 
-    intro = safe_llm(intro_prompt)
+    narration = generate_dateline_line("", first["text"])
 
-    if not intro:
-        intro = f"From PodBlendz, this episode explores {query} and what it means."
+    blend.append({
+        "type": "narration",
+        "text": narration
+    })
 
-    blend.append({"type": "narration", "text": intro})
+    blend.append({"type": "pause", "duration": 0.4})
+
+    # ✅ CRITICAL: INCLUDE AUDIO METADATA
+    blend.append({
+        "type": "speaker",
+        "text": first["text"],
+        "audio_file": first.get("audio_file"),
+        "start": first.get("start"),
+        "end": first.get("end"),
+    })
+
     blend.append({"type": "pause", "duration": 0.6})
 
     # -------------------------
-    # ✅ MAIN FLOW (FORCED NARRATION)
+    # 🎬 MAIN SEQUENCE
     # -------------------------
-    for seg in selected:
+    for i in range(1, len(selected)):
+        prev = selected[i - 1]
+        curr = selected[i]
 
-        text = seg["text"]
+        transition = generate_dateline_line(
+            shorten(prev["text"]),
+            shorten(curr["text"]),
+            query,
+            stage="bridge"
+        )
 
-        prompt = f"""
-Introduce this segment.
+        blend.append({
+            "type": "narration",
+            "text": transition
+        })
 
-Topic: {query}
+        blend.append({"type": "pause", "duration": 0.5})
 
-"{text}"
-
-Explain what the listener is about to hear.
-
-Max 16 words.
-"""
-
-        narration = safe_llm(prompt)
-
-        if not narration:
-            narration = "In this segment, hear an important perspective on this topic."
-
-        blend.append({"type": "narration", "text": narration})
-        blend.append({"type": "pause", "duration": 0.4})
-
-        # ✅ CLIP
+        # ✅ CRITICAL: INCLUDE AUDIO METADATA
         blend.append({
             "type": "speaker",
-            "text": text,
-            "audio_file": seg.get("audio_file"),
-            "start": seg.get("start"),
-            "end": seg.get("end"),
+            "text": curr["text"],
+            "audio_file": curr.get("audio_file"),
+            "start": curr.get("start"),
+            "end": curr.get("end"),
         })
 
         blend.append({"type": "pause", "duration": 0.6})
 
     # -------------------------
-    # ✅ OUTRO
+    # 🎬 OUTRO
     # -------------------------
-    outro_prompt = f"""
-Close this podcast about {query} with a clear takeaway.
+    outro = generate_dateline_line("", query=query, stage="outro")
 
-Max 18 words.
-"""
-
-    outro = safe_llm(outro_prompt)
-
-    if not outro:
-        outro = "This topic continues to evolve, and there’s much more to explore."
-
-    blend.append({"type": "narration", "text": outro})
+    blend.append({
+        "type": "narration",
+        "text": outro
+    })
 
     return blend
+
+
+# =========================
+# ✅ TEST
+# =========================
+
+if __name__ == "__main__":
+    result = build_blend("CRISPR gene editing")
+
+    print("\n🔥 OUTPUT\n")
+    for step in result:
+        print(step)
+
 
 
 
