@@ -22,55 +22,55 @@ def safe_content(response):
         return ""
 
 
-def suggest_query(query):
-    try:
-        with open("topic_patterns.json") as f:
-            patterns = json.load(f)
-
-        matches = [p for p in patterns if p in query.lower()]
-        return matches[:5] if matches else patterns[:5]
-
-    except Exception:
-        return []
-
-
 # =========================
-# ✅ FILTERING
+# ✅ LIGHT FILTERING (RELAXED)
 # =========================
 
-def is_strong_sentence(text):
+def is_valid_segment(text, duration):
     if not text:
         return False
 
-    text = text.strip()
-
-    if len(text.split()) < 8:
+    if len(text.split()) < 6:
         return False
 
-    if not text[0].isupper():
-        return False
-
-    if not text.endswith((".", "?", "!")):
-        return False
-
-    bad = ["so ", "and ", "but ", "okay", "well", "you know", "i mean"]
-
-    if any(text.lower().startswith(b) for b in bad):
+    if duration < 2:
         return False
 
     return True
 
 
-def is_meaningful(text):
-    t = text.lower()
+# =========================
+# ✅ DEDUP + DIVERSITY
+# =========================
 
-    if t.endswith("?"):
-        return False
+def select_diverse_segments(results, max_segments=16):
+    selected = []
+    seen_texts = set()
+    seen_sources = {}
 
-    if len(text.split()) < 10 and any(w in t for w in ["dna", "gene", "genome"]):
-        return False
+    for r in results:
+        text = r.get("text", "").strip()
+        audio_file = r.get("audio_file", "")
 
-    return True
+        key = text[:80].lower()
+
+        if key in seen_texts:
+            continue
+
+        # ✅ limit dominance from same source
+        if audio_file:
+            count = seen_sources.get(audio_file, 0)
+            if count >= 3:
+                continue
+            seen_sources[audio_file] = count + 1
+
+        selected.append(r)
+        seen_texts.add(key)
+
+        if len(selected) >= max_segments:
+            break
+
+    return selected
 
 
 # =========================
@@ -81,12 +81,12 @@ def generate_dateline_line(context, text=None, query="", stage="middle"):
 
     if stage == "intro":
         prompt = f"""
-Act like a calm documentary narrator.
+Act like a documentary host.
 
-Introduce a deeper idea or mystery about:
+Introduce a compelling idea about:
 {query}
 
-Make it intriguing and controlled.
+Set up what the listener will learn.
 Max 22 words.
 """
 
@@ -100,29 +100,29 @@ Previous idea:
 Next idea:
 "{text}"
 
-Do NOT summarize.
+Help the listener understand the transition.
+Do NOT be vague.
 
-Instead, build curiosity or tension.
-Max 18 words.
+Max 16 words.
 """
 
     elif stage == "outro":
         prompt = f"""
-Close with a reflective thought about:
+Close this segment about:
 {query}
 
-Make it feel unresolved and thought-provoking.
-Max 22 words.
+Leave the listener thinking.
+Max 20 words.
 """
 
     else:
         prompt = f"""
-Guide the audience's thinking about this idea:
+Guide the listener’s understanding of this idea:
 
 "{text}"
 
-Add meaning or implication without repeating.
-Max 18 words.
+Add context without repeating it.
+Max 16 words.
 """
 
     response = client.chat.completions.create(
@@ -137,44 +137,44 @@ Max 18 words.
 # ✅ MAIN BUILDER
 # =========================
 
-def build_blend(query, max_segments=16):
+def build_blend(query, max_segments=20):
     print(f"\n🎧 Building Blend: {query}\n")
 
     results = search(query, k=120) or []
 
     # -------------------------
-    # ✅ FILTER SEGMENTS
+    # ✅ STEP 1: FILTER LIGHTLY
     # -------------------------
-    selected_pool = []
+    filtered = []
 
     for r in results:
         text = r.get("text", "").strip()
         start = r.get("start")
         end = r.get("end")
 
-        # ✅ FIXED TIMESTAMP CHECK
         if start is None or end is None:
             continue
 
         duration = end - start
 
-        if not text or duration < 3:
+        if not is_valid_segment(text, duration):
             continue
 
-        if not is_strong_sentence(text) or not is_meaningful(text):
-            continue
+        filtered.append(r)
 
-        selected_pool.append(r)
-
-    if not selected_pool:
+    if not filtered:
         print("❌ No usable segments.")
         return []
 
     # -------------------------
-    # ✅ SELECT BEST SEGMENTS
+    # ✅ STEP 2: SORT BY RELEVANCE
     # -------------------------
-    selected_pool = sorted(selected_pool, key=lambda x: x["score"])
-    selected = selected_pool[:max_segments]
+    filtered = sorted(filtered, key=lambda x: x["score"])
+
+    # -------------------------
+    # ✅ STEP 3: DEDUP + DIVERSIFY
+    # -------------------------
+    selected = select_diverse_segments(filtered, max_segments)
 
     blend = []
 
@@ -188,61 +188,52 @@ def build_blend(query, max_segments=16):
         "text": intro
     })
 
-    blend.append({"type": "pause", "duration": 0.7})
-
-    # -------------------------
-    # 🎬 FIRST ENTRY
-    # -------------------------
-    first = selected[0]
-
-    narration = generate_dateline_line("", first["text"])
-
-    blend.append({
-        "type": "narration",
-        "text": narration
-    })
-
-    blend.append({"type": "pause", "duration": 0.4})
-
-    # ✅ CRITICAL: INCLUDE AUDIO METADATA
-    blend.append({
-        "type": "speaker",
-        "text": first["text"],
-        "audio_file": first.get("audio_file"),
-        "start": first.get("start"),
-        "end": first.get("end"),
-    })
-
     blend.append({"type": "pause", "duration": 0.6})
 
     # -------------------------
-    # 🎬 MAIN SEQUENCE
+    # 🎬 MAIN FLOW
     # -------------------------
-    for i in range(1, len(selected)):
-        prev = selected[i - 1]
-        curr = selected[i]
+    for i, seg in enumerate(selected):
 
-        transition = generate_dateline_line(
-            shorten(prev["text"]),
-            shorten(curr["text"]),
-            query,
-            stage="bridge"
-        )
+        text = seg["text"]
+        audio_file = seg.get("audio_file")
 
-        blend.append({
-            "type": "narration",
-            "text": transition
-        })
+        # ✅ STRUCTURED NARRATION (NOT EVERY TIME)
+        if i == 0:
+            narration = generate_dateline_line("", text, query)
 
-        blend.append({"type": "pause", "duration": 0.5})
+            blend.append({
+                "type": "narration",
+                "text": narration
+            })
 
-        # ✅ CRITICAL: INCLUDE AUDIO METADATA
+            blend.append({"type": "pause", "duration": 0.4})
+
+        elif i % 2 == 0:
+            prev = selected[i - 1]
+
+            narration = generate_dateline_line(
+                shorten(prev["text"]),
+                shorten(text),
+                query,
+                stage="bridge"
+            )
+
+            blend.append({
+                "type": "narration",
+                "text": narration
+            })
+
+            blend.append({"type": "pause", "duration": 0.4})
+
+        # ✅ SPEAKER SEGMENT
         blend.append({
             "type": "speaker",
-            "text": curr["text"],
-            "audio_file": curr.get("audio_file"),
-            "start": curr.get("start"),
-            "end": curr.get("end"),
+            "text": text,
+            "audio_file": audio_file,
+            "start": seg.get("start"),
+            "end": seg.get("end"),
+            "source": audio_file  # ✅ NEW: enable source narration downstream
         })
 
         blend.append({"type": "pause", "duration": 0.6})

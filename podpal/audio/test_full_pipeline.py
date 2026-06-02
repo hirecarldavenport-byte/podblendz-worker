@@ -10,7 +10,7 @@ client = OpenAI()
 
 
 # =========================
-# ✅ TTS HELPERS
+# ✅ TTS
 # =========================
 
 async def tts_to_file(text, output_path):
@@ -31,24 +31,46 @@ def generate_tts(text, path):
 
 
 # =========================
-# ✅ DATELINE-STYLE ANCHOR
+# ✅ DUPLICATE FILTER
 # =========================
 
-def generate_anchor_narration(prev_text, curr_text, query):
+seen_texts = set()
+
+def is_duplicate(text):
+    key = text[:80].lower()
+    if key in seen_texts:
+        return True
+    seen_texts.add(key)
+    return False
+
+
+# =========================
+# ✅ SOURCE-AWARE NARRATION
+# =========================
+
+def generate_source_narration(source_path, text, query):
+    # ✅ SAFE DEFAULT FIRST (fixes your error)
+    show_name = "this podcast"
+
     try:
+        parts = source_path.split("/")
+        if len(parts) > 2:
+            show_name = parts[-2].replace("_", " ").title()  # ✅ optional upgrade here
+
         prompt = f"""
-You are guiding a listener through a curated story.
+You are narrating a curated podcast experience.
 
 Topic: {query}
 
-Previous idea:
-"{prev_text}"
+Source: {show_name}
 
-Next clip:
-"{curr_text}"
+Content:
+"{text}"
 
-Set up what the listener is about to hear AND why it matters.
-Be clear, grounded, and intentional — not vague.
+Introduce this clip and explain what the listener will hear.
+Be confident, clear, and natural.
+Do NOT repeat the content.
+
 Max 16 words.
 """
 
@@ -61,7 +83,7 @@ Max 16 words.
         return content.strip()
 
     except Exception:
-        return "This next perspective adds an important layer to the story."
+        return f"This next clip comes from {show_name}."
 
 
 # =========================
@@ -84,21 +106,18 @@ def run_test(query="CRISPR gene editing"):
 
     final_clips = []
 
-    # ✅ CRITICAL: asymmetric padding
+    # ✅ CRITICAL: Better natural speech boundaries
     LEAD_PADDING_MS = 8000
-    TRAIL_PADDING_MS = 28000   # longer tail for thought completion
+    TRAIL_PADDING_MS = 30000
 
     last_audio = None
     current_group = None
-    previous_text = None
-
-    # ✅ control narration frequency
-    anchor_counter = 0
+    narration_counter = 0
 
     for step in blend:
 
         # =========================
-        # 🎙️ ORIGINAL NARRATION
+        # 🎙️ EXISTING NARRATION
         # =========================
         if step["type"] == "narration":
 
@@ -111,13 +130,10 @@ def run_test(query="CRISPR gene editing"):
 
             if tts_file:
                 final_clips.append(
-                    ClipRange(
-                        clip_id=tts_file,
-                        start_ms=0,
-                        end_ms=60000
-                    )
+                    ClipRange(tts_file, 0, 60000)
                 )
 
+            # reset grouping (important for clean transitions)
             last_audio = None
             current_group = None
 
@@ -126,41 +142,43 @@ def run_test(query="CRISPR gene editing"):
         # =========================
         elif step["type"] == "speaker":
 
+            text = step.get("text")
+
+            # ✅ REMOVE DUPLICATES EARLY
+            if not text or is_duplicate(text):
+                continue
+
             audio_file = step.get("audio_file")
             start = step.get("start")
             end = step.get("end")
-            text = step.get("text")
 
             if not audio_file or start is None or end is None:
                 continue
 
-            # ✅ Reduce narration frequency (IMPORTANT)
-            anchor_counter += 1
+            narration_counter += 1
 
-            if previous_text and anchor_counter % 2 == 0:
+            # ✅ SOURCE-BASED NARRATION (LESS FREQUENT)
+            if narration_counter % 2 == 0:
 
-                anchor_text = generate_anchor_narration(previous_text, text, query)
+                source_text = generate_source_narration(audio_file, text, query)
 
-                anchor_path = f"media/{uuid.uuid4()}_anchor.mp3"
-                anchor_file = generate_tts(anchor_text, anchor_path)
+                tts_path = f"media/{uuid.uuid4()}_source.mp3"
+                tts_file = generate_tts(source_text, tts_path)
 
-                if anchor_file:
+                if tts_file:
                     final_clips.append(
-                        ClipRange(
-                            clip_id=anchor_file,
-                            start_ms=0,
-                            end_ms=60000
-                        )
+                        ClipRange(tts_file, 0, 60000)
                     )
 
+                # break continuity cleanly before new segment
                 last_audio = None
                 current_group = None
 
-            # ✅ Expanded clip window (KEY FIX)
+            # ✅ EXPANDED CLIP RANGE (KEY FIX)
             start_ms = max(0, int(start * 1000) - LEAD_PADDING_MS)
             end_ms = int(end * 1000) + TRAIL_PADDING_MS
 
-            # ✅ Merge segments safely
+            # ✅ SMART MERGING
             if last_audio == audio_file and current_group:
                 current_group["end_ms"] = max(current_group["end_ms"], end_ms)
             else:
@@ -172,7 +190,6 @@ def run_test(query="CRISPR gene editing"):
                 final_clips.append(ClipRange(**current_group))
 
             last_audio = audio_file
-            previous_text = text
 
         # =========================
         # ⏸️ PAUSE
@@ -198,6 +215,10 @@ def run_test(query="CRISPR gene editing"):
     print(f"📂 Output: {output_path}")
     print(f"⏱️ Duration: {duration / 1000:.2f} seconds")
 
+
+# =========================
+# ✅ RUN
+# =========================
 
 if __name__ == "__main__":
     run_test()
