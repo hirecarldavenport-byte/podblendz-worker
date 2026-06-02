@@ -1,7 +1,7 @@
 from scripts.search_faiss import search
 from openai import OpenAI
 import os
-import json
+import hashlib
 
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
@@ -23,7 +23,7 @@ def safe_content(response):
 
 
 # =========================
-# ✅ LIGHT FILTERING (RELAXED)
+# ✅ FILTERING
 # =========================
 
 def is_valid_segment(text, duration):
@@ -39,33 +39,64 @@ def is_valid_segment(text, duration):
     return True
 
 
+def is_ad(text):
+    t = text.lower()
+
+    ad_phrases = [
+        "sponsor",
+        "brought to you by",
+        "this episode is sponsored",
+        "thanks to our sponsor",
+        "advertisement",
+        "promo code",
+        "visit our website",
+        "support for this podcast"
+    ]
+
+    return any(p in t for p in ad_phrases)
+
+
 # =========================
-# ✅ DEDUP + DIVERSITY
+# ✅ STRONG DEDUP
 # =========================
 
-def select_diverse_segments(results, max_segments=16):
+def dedup_key(text):
+    cleaned = " ".join(text.lower().split())
+    return hashlib.md5(cleaned.encode()).hexdigest()
+
+
+# =========================
+# ✅ DIVERSITY SELECTION
+# =========================
+
+def select_diverse_segments(results, max_segments=12):
     selected = []
-    seen_texts = set()
+    seen_keys = set()
     seen_sources = {}
+
+    MAX_PER_SOURCE = 3
 
     for r in results:
         text = r.get("text", "").strip()
-        audio_file = r.get("audio_file", "")
+        audio_file = r.get("audio_file")
 
-        key = text[:80].lower()
-
-        if key in seen_texts:
+        if not text or not audio_file:
             continue
 
-        # ✅ limit dominance from same source
-        if audio_file:
-            count = seen_sources.get(audio_file, 0)
-            if count >= 3:
-                continue
-            seen_sources[audio_file] = count + 1
+        # ✅ dedup
+        key = dedup_key(text)
+        if key in seen_keys:
+            continue
+
+        # ✅ source balancing
+        count = seen_sources.get(audio_file, 0)
+        if count >= MAX_PER_SOURCE:
+            continue
+
+        seen_sources[audio_file] = count + 1
 
         selected.append(r)
-        seen_texts.add(key)
+        seen_keys.add(key)
 
         if len(selected) >= max_segments:
             break
@@ -74,25 +105,26 @@ def select_diverse_segments(results, max_segments=16):
 
 
 # =========================
-# ✅ DATELINE-STYLE NARRATION
+# ✅ DATELINE NARRATION
 # =========================
 
 def generate_dateline_line(context, text=None, query="", stage="middle"):
 
     if stage == "intro":
         prompt = f"""
-Act like a documentary host.
+Speak like a polished podcast host.
 
-Introduce a compelling idea about:
+Introduce the topic:
 {query}
 
-Set up what the listener will learn.
-Max 22 words.
+Explain what the listener will gain.
+
+Max 20 words.
 """
 
     elif stage == "bridge":
         prompt = f"""
-You are guiding a story.
+Guide the listener.
 
 Previous idea:
 "{context}"
@@ -100,8 +132,7 @@ Previous idea:
 Next idea:
 "{text}"
 
-Help the listener understand the transition.
-Do NOT be vague.
+Explain the transition clearly.
 
 Max 16 words.
 """
@@ -112,16 +143,18 @@ Close this segment about:
 {query}
 
 Leave the listener thinking.
+
 Max 20 words.
 """
 
     else:
         prompt = f"""
-Guide the listener’s understanding of this idea:
+Provide context for this idea:
 
 "{text}"
 
-Add context without repeating it.
+Help the listener understand why it matters.
+
 Max 16 words.
 """
 
@@ -137,13 +170,13 @@ Max 16 words.
 # ✅ MAIN BUILDER
 # =========================
 
-def build_blend(query, max_segments=20):
+def build_blend(query, max_segments=12):
     print(f"\n🎧 Building Blend: {query}\n")
 
     results = search(query, k=120) or []
 
     # -------------------------
-    # ✅ STEP 1: FILTER LIGHTLY
+    # ✅ STEP 1: CLEAN FILTERING
     # -------------------------
     filtered = []
 
@@ -151,6 +184,11 @@ def build_blend(query, max_segments=20):
         text = r.get("text", "").strip()
         start = r.get("start")
         end = r.get("end")
+        audio_file = r.get("audio_file")
+
+        # ✅ must have audio
+        if not audio_file:
+            continue
 
         if start is None or end is None:
             continue
@@ -158,6 +196,9 @@ def build_blend(query, max_segments=20):
         duration = end - start
 
         if not is_valid_segment(text, duration):
+            continue
+
+        if is_ad(text):  # ✅ remove ads
             continue
 
         filtered.append(r)
@@ -196,17 +237,13 @@ def build_blend(query, max_segments=20):
     for i, seg in enumerate(selected):
 
         text = seg["text"]
-        audio_file = seg.get("audio_file")
+        audio_file = seg["audio_file"]
 
-        # ✅ STRUCTURED NARRATION (NOT EVERY TIME)
+        # ✅ controlled narration
         if i == 0:
             narration = generate_dateline_line("", text, query)
 
-            blend.append({
-                "type": "narration",
-                "text": narration
-            })
-
+            blend.append({"type": "narration", "text": narration})
             blend.append({"type": "pause", "duration": 0.4})
 
         elif i % 2 == 0:
@@ -219,21 +256,17 @@ def build_blend(query, max_segments=20):
                 stage="bridge"
             )
 
-            blend.append({
-                "type": "narration",
-                "text": narration
-            })
-
+            blend.append({"type": "narration", "text": narration})
             blend.append({"type": "pause", "duration": 0.4})
 
-        # ✅ SPEAKER SEGMENT
+        # ✅ speaker
         blend.append({
             "type": "speaker",
             "text": text,
             "audio_file": audio_file,
             "start": seg.get("start"),
             "end": seg.get("end"),
-            "source": audio_file  # ✅ NEW: enable source narration downstream
+            "source": audio_file
         })
 
         blend.append({"type": "pause", "duration": 0.6})
@@ -256,11 +289,12 @@ def build_blend(query, max_segments=20):
 # =========================
 
 if __name__ == "__main__":
-    result = build_blend("financial literacy")
+    result = build_blend("AI taking jobs")
 
     print("\n🔥 OUTPUT\n")
     for step in result:
         print(step)
+
 
 
 
