@@ -137,7 +137,7 @@ Max 18 words.
 # ✅ MAIN BUILDER
 # =========================
 
-def build_blend(query, max_segments=16):
+def build_blend(query, max_segments=20):  # ✅ increased from 16
     print(f"\n🎧 Building Blend: {query}\n")
 
     results = search(query, k=120) or []
@@ -152,7 +152,6 @@ def build_blend(query, max_segments=16):
         start = r.get("start")
         end = r.get("end")
 
-        # ✅ FIXED TIMESTAMP CHECK
         if start is None or end is None:
             continue
 
@@ -161,7 +160,8 @@ def build_blend(query, max_segments=16):
         if not text or duration < 3:
             continue
 
-        if not is_strong_sentence(text) or not is_meaningful(text):
+        # ✅ RELAXED FILTER (KEY FIX)
+        if len(text.split()) < 6:
             continue
 
         selected_pool.append(r)
@@ -175,6 +175,10 @@ def build_blend(query, max_segments=16):
     # -------------------------
     selected_pool = sorted(selected_pool, key=lambda x: x["score"])
     selected = selected_pool[:max_segments]
+
+    # ✅ ENSURE MINIMUM CONTENT (KEY FIX)
+    if len(selected) < 8:
+        selected = selected_pool[:8]
 
     blend = []
 
@@ -204,7 +208,6 @@ def build_blend(query, max_segments=16):
 
     blend.append({"type": "pause", "duration": 0.4})
 
-    # ✅ CRITICAL: INCLUDE AUDIO METADATA
     blend.append({
         "type": "speaker",
         "text": first["text"],
@@ -236,7 +239,6 @@ def build_blend(query, max_segments=16):
 
         blend.append({"type": "pause", "duration": 0.5})
 
-        # ✅ CRITICAL: INCLUDE AUDIO METADATA
         blend.append({
             "type": "speaker",
             "text": curr["text"],
