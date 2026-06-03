@@ -69,7 +69,7 @@ Max 18 words.
 
 
 # =========================
-# ✅ DUPLICATE FILTER
+# ✅ DUPLICATE FILTER (SAFE MODE)
 # =========================
 
 seen_texts = set()
@@ -149,9 +149,7 @@ def run_test(query="AI taking jobs"):
     last_audio = None
     current_group = None
 
-    # =========================
     # ✅ GLOBAL INTRO
-    # =========================
     intro_text = generate_podblendz_intro(query)
     intro_audio = generate_tts(intro_text, f"media/{uuid.uuid4()}_intro.mp3")
 
@@ -170,9 +168,7 @@ def run_test(query="AI taking jobs"):
         if len(final_clips) > 65:
             break
 
-        # -------------------------
         # 🎙️ NARRATION
-        # -------------------------
         if step["type"] == "narration":
 
             text = step.get("text")
@@ -190,17 +186,14 @@ def run_test(query="AI taking jobs"):
             last_audio = None
             current_group = None
 
-        # -------------------------
         # 🎧 SPEAKER
-        # -------------------------
         elif step["type"] == "speaker":
 
             text = step.get("text")
-
             if not text:
                 continue
 
-            # 🔥 TEMP: disable duplicate filtering for stability
+            # ✅ TEMP: disable dedup for stability
             # if is_duplicate(text):
             #     continue
 
@@ -211,7 +204,7 @@ def run_test(query="AI taking jobs"):
             if not audio_file or start is None or end is None:
                 continue
 
-            # ✅ SOURCE INTRO
+            # ✅ SOURCE CHANGE
             is_new_source = last_audio != audio_file
 
             if is_new_source:
@@ -225,20 +218,20 @@ def run_test(query="AI taking jobs"):
                     pause = create_silence(400, f"media/{uuid.uuid4()}_silence.mp3")
                     final_clips.append(ClipRange(pause, 0, 400))
 
-                # ✅ flush previous clip BEFORE switching source
+                # ✅ flush previous group BEFORE switching source
                 if current_group:
                     final_clips.append(ClipRange(**current_group))
                     current_group = None
 
-            # ✅ EXPAND CLIP WINDOW
+            # ✅ EXPAND CLIP
             start_ms = max(0, int(start * 1000) - LEAD_PADDING_MS)
             end_ms = int(end * 1000) + TRAIL_PADDING_MS
 
-            # ✅ ensure minimum 15s
+            # ✅ minimum clip duration
             if end_ms - start_ms < 15000:
                 end_ms += 15000
 
-            # ✅ GROUPING FIX
+            # ✅ FIXED GROUPING (NO EARLY APPEND)
             if last_audio == audio_file and current_group:
                 current_group["end_ms"] = max(current_group["end_ms"], end_ms)
             else:
@@ -253,9 +246,7 @@ def run_test(query="AI taking jobs"):
 
             last_audio = audio_file
 
-        # -------------------------
         # ⏸️ PAUSE
-        # -------------------------
         elif step["type"] == "pause":
             duration = int(step.get("duration", 0.5) * 1000)
 
@@ -267,10 +258,6 @@ def run_test(query="AI taking jobs"):
         final_clips.append(ClipRange(**current_group))
 
     print(f"✅ Final timeline segments: {len(final_clips)}")
-
-    # =========================
-    # ✅ BUILD AUDIO
-    # =========================
 
     builder = AudioBuilder()
 
