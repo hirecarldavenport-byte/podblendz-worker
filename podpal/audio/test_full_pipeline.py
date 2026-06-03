@@ -202,7 +202,7 @@ def run_test(query="AI and Education"):
     final_clips = []
 
     LEAD_PADDING_MS = 8000
-    TRAIL_PADDING_MS = 30000
+    TRAIL_PADDING_MS = 45000
 
     last_audio = None
     current_group = None
@@ -288,7 +288,12 @@ def run_test(query="AI and Education"):
             start_ms = max(0, int(start * 1000) - LEAD_PADDING_MS)
             end_ms = int(end * 1000) + TRAIL_PADDING_MS
 
-            if end_ms - start_ms < 15000:
+            MIN_CLIP_MS = 30000
+
+            if end_ms - start_ms < MIN_CLIP_MS:
+                end_ms = start_ms + MIN_CLIP_MS
+
+
                 end_ms += 15000
 
             if last_audio == audio_file and current_group:
@@ -304,6 +309,7 @@ def run_test(query="AI and Education"):
                 }
 
             last_audio = audio_file
+            end_ms += 5000
 
         # ⏸️ PAUSE
         elif step["type"] == "pause":
