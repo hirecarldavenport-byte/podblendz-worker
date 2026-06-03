@@ -223,7 +223,14 @@ def run_test(query="Meditation for a better life"):
 
     for step in blend:
 
-        if len(final_clips) > 65:
+        MAX_CLIPS = 85  # increase from ~65 to allow longer runs
+        if len(final_clips) > MAX_CLIPS:
+            print("⚠️ Reached max clip limit, ending gracefully")
+
+            outro_text = f"This has been a PodBlendz compilation on {query}. Thanks for listenting."
+            outro_audio = generate_tts(outro_text, f"media/{uuid.uuid4()}_outro.mp3")
+            if outro_audio:
+             final_clips.append(ClipRange(outro_audio, 0, 60000))
             break
 
         # 🎙️ NARRATION
