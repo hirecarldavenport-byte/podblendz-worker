@@ -2,6 +2,7 @@ from scripts.search_faiss import search
 from openai import OpenAI
 import os
 import json
+import hashlib  # ✅ NEW
 
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
@@ -73,6 +74,33 @@ def is_meaningful(text):
     return True
 
 
+# ✅ NEW — AD FILTER
+def is_ad(text):
+    t = text.lower()
+
+    signals = [
+        "sponsor",
+        "sponsored by",
+        "brought to you by",
+        "visit",
+        ".com",
+        "www",
+        "sign up",
+        "subscribe",
+        "promo",
+        "use code",
+        "support for this podcast"
+    ]
+
+    return any(s in t for s in signals)
+
+
+# ✅ NEW — DEDUP HELPERS
+def dedup_key(text):
+    cleaned = " ".join(text.lower().split())
+    return hashlib.md5(cleaned.encode()).hexdigest()
+
+
 # =========================
 # ✅ DATELINE-STYLE NARRATION
 # =========================
@@ -137,20 +165,22 @@ Max 18 words.
 # ✅ MAIN BUILDER
 # =========================
 
-def build_blend(query, max_segments=20):  # ✅ increased from 16
+def build_blend(query, max_segments=20):
     print(f"\n🎧 Building Blend: {query}\n")
 
     results = search(query, k=120) or []
 
-    # -------------------------
-    # ✅ FILTER SEGMENTS
-    # -------------------------
     selected_pool = []
+
+    seen = set()  # ✅ NEW
+    source_counts = {}  # ✅ NEW
+    MAX_PER_SOURCE = 3  # ✅ NEW
 
     for r in results:
         text = r.get("text", "").strip()
         start = r.get("start")
         end = r.get("end")
+        source = r.get("audio_file")
 
         if start is None or end is None:
             continue
@@ -160,9 +190,25 @@ def build_blend(query, max_segments=20):  # ✅ increased from 16
         if not text or duration < 3:
             continue
 
-        # ✅ RELAXED FILTER (KEY FIX)
+        # ✅ REMOVE ADS
+        if is_ad(text):
+            continue
+
+        # ✅ RELAXED FILTER (keep this from your version)
         if len(text.split()) < 6:
             continue
+
+        # ✅ DEDUP (light)
+        key = dedup_key(text)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        # ✅ LIMIT PER SOURCE
+        count = source_counts.get(source, 0)
+        if count >= MAX_PER_SOURCE:
+            continue
+        source_counts[source] = count + 1
 
         selected_pool.append(r)
 
@@ -170,13 +216,9 @@ def build_blend(query, max_segments=20):  # ✅ increased from 16
         print("❌ No usable segments.")
         return []
 
-    # -------------------------
-    # ✅ SELECT BEST SEGMENTS
-    # -------------------------
     selected_pool = sorted(selected_pool, key=lambda x: x["score"])
     selected = selected_pool[:max_segments]
 
-    # ✅ ENSURE MINIMUM CONTENT (KEY FIX)
     if len(selected) < 8:
         selected = selected_pool[:8]
 
@@ -191,7 +233,6 @@ def build_blend(query, max_segments=20):  # ✅ increased from 16
         "type": "narration",
         "text": intro
     })
-
     blend.append({"type": "pause", "duration": 0.7})
 
     # -------------------------
@@ -201,11 +242,7 @@ def build_blend(query, max_segments=20):  # ✅ increased from 16
 
     narration = generate_dateline_line("", first["text"])
 
-    blend.append({
-        "type": "narration",
-        "text": narration
-    })
-
+    blend.append({"type": "narration", "text": narration})
     blend.append({"type": "pause", "duration": 0.4})
 
     blend.append({
@@ -232,11 +269,7 @@ def build_blend(query, max_segments=20):  # ✅ increased from 16
             stage="bridge"
         )
 
-        blend.append({
-            "type": "narration",
-            "text": transition
-        })
-
+        blend.append({"type": "narration", "text": transition})
         blend.append({"type": "pause", "duration": 0.5})
 
         blend.append({
