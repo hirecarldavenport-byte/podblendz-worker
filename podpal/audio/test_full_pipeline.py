@@ -7,7 +7,7 @@ import edge_tts
 from openai import OpenAI
 from pydub import AudioSegment
 import hashlib
-import azure.cognitiveservices.speech as speechsdk  # ✅ NEW
+import azure.cognitiveservices.speech as speechsdk
 
 client = OpenAI()
 
@@ -26,21 +26,32 @@ def fallback_tts(text, path):
         asyncio.run(tts_to_file(text, path))
         return path
     except Exception:
+        print("⚠️ Fallback TTS failed")
         return None
 
 
 # =========================
-# ✅ AZURE TTS (PRIMARY)
+# ✅ AZURE TTS (PRIMARY + DEBUG)
 # =========================
 
 def generate_tts(text, path):
     try:
+        key = os.getenv("AZURE_SPEECH_KEY")
+        region = os.getenv("AZURE_SPEECH_REGION")
+
+        # ✅ DEBUG VISIBILITY
+        print("🔍 Azure Key Loaded:", bool(key))
+        print("🔍 Azure Region:", region)
+
+        if not key or not region:
+            print("⚠️ Missing Azure credentials → using fallback")
+            return fallback_tts(text, path)
+
         speech_config = speechsdk.SpeechConfig(
-            subscription=os.getenv("AZURE_SPEECH_KEY"),
-            region=os.getenv("AZURE_SPEECH_REGION")
+            subscription=key,
+            region=region
         )
 
-        # ✅ Premium natural voice
         speech_config.speech_synthesis_voice_name = "en-US-AriaNeural"
 
         audio_config = speechsdk.audio.AudioOutputConfig(filename=path)
@@ -52,15 +63,26 @@ def generate_tts(text, path):
 
         result = synthesizer.speak_text_async(text).get()
 
-        if result and result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+        # ✅ SUCCESS
+        if result is not None and result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
             return path
 
-        else:
-            print("⚠️ Azure TTS fallback → Edge")
-            return fallback_tts(text, path)
+        # ❌ FAILURE — FULL DEBUG
+        print(f"⚠️ Azure TTS failed: {result.reason if result else 'No result'}")
+
+        if result and result.reason == speechsdk.ResultReason.Canceled:
+            cancellation = result.cancellation_details
+
+            print(f"⚠️ Cancellation reason: {cancellation.reason}")
+
+            if cancellation.error_details:
+                print(f"⚠️ Azure error details: {cancellation.error_details}")
+
+        print("⚠️ Falling back to Edge TTS")
+        return fallback_tts(text, path)
 
     except Exception as e:
-        print(f"⚠️ Azure error: {e} → using fallback")
+        print(f"⚠️ Azure exception: {e} → using fallback")
         return fallback_tts(text, path)
 
 
@@ -105,7 +127,7 @@ Max 18 words.
 
 
 # =========================
-# ✅ DUPLICATE FILTER (UNCHANGED)
+# ✅ DUPLICATE FILTER
 # =========================
 
 seen_texts = set()
@@ -122,7 +144,7 @@ def is_duplicate(text):
 
 
 # =========================
-# ✅ SOURCE NARRATION (UNCHANGED)
+# ✅ SOURCE NARRATION
 # =========================
 
 def generate_source_narration(source_path, text, query):
@@ -160,7 +182,7 @@ Max 16 words.
 
 
 # =========================
-# ✅ MAIN PIPELINE (UNCHANGED LOGIC)
+# ✅ MAIN PIPELINE
 # =========================
 
 def run_test(query="AI taking jobs"):
@@ -303,4 +325,5 @@ def run_test(query="AI taking jobs"):
 
 if __name__ == "__main__":
     run_test()
+
 
