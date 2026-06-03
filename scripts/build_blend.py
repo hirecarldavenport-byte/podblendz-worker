@@ -2,7 +2,7 @@ from scripts.search_faiss import search
 from openai import OpenAI
 import os
 import json
-import hashlib  # ✅ NEW
+import hashlib
 
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
@@ -74,31 +74,50 @@ def is_meaningful(text):
     return True
 
 
-# ✅ NEW — AD FILTER
+# ✅ IMPROVED AD FILTER
 def is_ad(text):
     t = text.lower()
 
     signals = [
         "sponsor",
-        "sponsored by",
-        "brought to you by",
+        "sponsored",
+        "brought to you",
+        "this episode is brought",
+        "support for",
+        "advertising",
+        "promo",
+        "promotion",
+        "partner",
         "visit",
         ".com",
         "www",
         "sign up",
         "subscribe",
-        "promo",
         "use code",
-        "support for this podcast"
+        "dot com",
+        "offer",
+        "free trial"
     ]
 
     return any(s in t for s in signals)
 
 
-# ✅ NEW — DEDUP HELPERS
+# ✅ IMPROVED DEDUP (NEAR MATCH)
 def dedup_key(text):
-    cleaned = " ".join(text.lower().split())
-    return hashlib.md5(cleaned.encode()).hexdigest()
+    words = text.lower().split()
+    core = " ".join(words[:12])  # stronger semantic grouping
+    return hashlib.md5(core.encode()).hexdigest()
+
+
+# ✅ EXTRACT SHOW NAME
+def extract_show_name(source_path):
+    try:
+        parts = source_path.split("/")
+        if len(parts) > 2:
+            return parts[-2].replace("_", " ").title()
+    except:
+        pass
+    return "this podcast"
 
 
 # =========================
@@ -172,9 +191,9 @@ def build_blend(query, max_segments=20):
 
     selected_pool = []
 
-    seen = set()  # ✅ NEW
-    source_counts = {}  # ✅ NEW
-    MAX_PER_SOURCE = 3  # ✅ NEW
+    seen = set()
+    source_counts = {}
+    MAX_PER_SOURCE = 2  # ✅ reduced for diversity
 
     for r in results:
         text = r.get("text", "").strip()
@@ -190,21 +209,17 @@ def build_blend(query, max_segments=20):
         if not text or duration < 3:
             continue
 
-        # ✅ REMOVE ADS
         if is_ad(text):
             continue
 
-        # ✅ RELAXED FILTER (keep this from your version)
         if len(text.split()) < 6:
             continue
 
-        # ✅ DEDUP (light)
         key = dedup_key(text)
         if key in seen:
             continue
         seen.add(key)
 
-        # ✅ LIMIT PER SOURCE
         count = source_counts.get(source, 0)
         if count >= MAX_PER_SOURCE:
             continue
@@ -224,23 +239,17 @@ def build_blend(query, max_segments=20):
 
     blend = []
 
-    # -------------------------
     # 🎬 INTRO
-    # -------------------------
     intro = generate_dateline_line("", query=query, stage="intro")
 
-    blend.append({
-        "type": "narration",
-        "text": intro
-    })
+    blend.append({"type": "narration", "text": intro})
     blend.append({"type": "pause", "duration": 0.7})
 
-    # -------------------------
     # 🎬 FIRST ENTRY
-    # -------------------------
     first = selected[0]
+    show_name = extract_show_name(first.get("audio_file", ""))
 
-    narration = generate_dateline_line("", first["text"])
+    narration = f"From {show_name}, {generate_dateline_line('', first['text'])}"
 
     blend.append({"type": "narration", "text": narration})
     blend.append({"type": "pause", "duration": 0.4})
@@ -255,12 +264,12 @@ def build_blend(query, max_segments=20):
 
     blend.append({"type": "pause", "duration": 0.6})
 
-    # -------------------------
     # 🎬 MAIN SEQUENCE
-    # -------------------------
     for i in range(1, len(selected)):
         prev = selected[i - 1]
         curr = selected[i]
+
+        show_name = extract_show_name(curr.get("audio_file", ""))
 
         transition = generate_dateline_line(
             shorten(prev["text"]),
@@ -270,7 +279,11 @@ def build_blend(query, max_segments=20):
         )
 
         blend.append({"type": "narration", "text": transition})
-        blend.append({"type": "pause", "duration": 0.5})
+        blend.append({"type": "pause", "duration": 0.3})
+
+        # ✅ ADD PODCAST ATTRIBUTION
+        blend.append({"type": "narration", "text": f"From {show_name}."})
+        blend.append({"type": "pause", "duration": 0.3})
 
         blend.append({
             "type": "speaker",
@@ -282,15 +295,10 @@ def build_blend(query, max_segments=20):
 
         blend.append({"type": "pause", "duration": 0.6})
 
-    # -------------------------
     # 🎬 OUTRO
-    # -------------------------
     outro = generate_dateline_line("", query=query, stage="outro")
 
-    blend.append({
-        "type": "narration",
-        "text": outro
-    })
+    blend.append({"type": "narration", "text": outro})
 
     return blend
 
@@ -305,6 +313,7 @@ if __name__ == "__main__":
     print("\n🔥 OUTPUT\n")
     for step in result:
         print(step)
+
 
 
 
