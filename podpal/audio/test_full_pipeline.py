@@ -185,7 +185,7 @@ Max 16 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="Civil War"):
+def run_test(query="Methylation"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
