@@ -185,7 +185,7 @@ Max 16 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="Fragile X syndrome"):
+def run_test(query="Rare sources"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
