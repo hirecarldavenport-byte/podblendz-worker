@@ -15,6 +15,9 @@ ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID")
 DELAY_BETWEEN_JOBS = 2
 MAX_EPISODES = 212
 
+# ✅ NEW — optional diversity control
+MAX_PER_PODCAST = 20
+
 S3_BUCKET = "podblendz-episode-audio"
 S3_PREFIX = "raw_audio/"
 
@@ -40,6 +43,7 @@ def transcript_exists(category, podcast, episode_id):
         if e.response["Error"]["Code"] == "404":
             return False
         raise
+
 
 # --------------------------------------
 # ✅ FETCH ALL AUDIO FILES
@@ -76,11 +80,15 @@ def get_all_episodes():
     print(f"✅ Found {len(episodes)} total audio files")
     return episodes
 
+
 # --------------------------------------
 # ✅ SMART DIVERSIFICATION
 # --------------------------------------
 def diversify_episodes(episodes, limit):
     print("\n🎯 Diversifying episode selection...")
+
+    # ✅ NEW — randomize first
+    random.shuffle(episodes)
 
     # Group by podcast
     grouped = defaultdict(list)
@@ -94,7 +102,7 @@ def diversify_episodes(episodes, limit):
     # Round-robin selection
     diversified = []
     podcast_keys = list(grouped.keys())
-    
+
     while len(diversified) < limit and podcast_keys:
         for podcast in list(podcast_keys):
             if grouped[podcast]:
@@ -107,8 +115,9 @@ def diversify_episodes(episodes, limit):
     print(f"✅ Diversified selection created ({len(diversified)} episodes)")
     return diversified
 
+
 # --------------------------------------
-# ✅ SEND JOB
+# ✅ SEND JOB (WITH RETRY)
 # --------------------------------------
 def send_job(ep):
     payload = {"input": ep}
@@ -116,19 +125,24 @@ def send_job(ep):
     print("\n🚀 PAYLOAD BEING SENT:")
     print(payload)
 
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
+    for attempt in range(3):  # ✅ NEW retry logic
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
 
-        if response.status_code == 200:
-            print(f"✅ Sent: {ep['episode_id']} | {ep['category']} | {ep['podcast']}")
-            return True
-        else:
-            print(f"❌ Failed: {ep['episode_id']} | {response.text}")
-            return False
+            if response.status_code == 200:
+                print(f"✅ Sent: {ep['episode_id']} | {ep['category']} | {ep['podcast']}")
+                return True
+            else:
+                print(f"⚠️ Attempt {attempt+1} failed: {response.text}")
 
-    except Exception as e:
-        print(f"🔥 Error: {ep['episode_id']} | {str(e)}")
-        return False
+        except Exception as e:
+            print(f"🔥 Attempt {attempt+1} error: {str(e)}")
+
+        time.sleep(2)
+
+    print(f"❌ Final failure: {ep['episode_id']}")
+    return False
+
 
 # --------------------------------------
 # ✅ MAIN
@@ -151,7 +165,18 @@ def main():
     for p, c in counts.most_common(5):
         print(f" - {p}: {c}")
 
-    # ✅ DIVERSIFY HERE
+    # ✅ OPTIONAL — enforce per-podcast limit
+    podcast_counter = Counter()
+    filtered = []
+
+    for ep in new_episodes:
+        if podcast_counter[ep["podcast"]] < MAX_PER_PODCAST:
+            filtered.append(ep)
+            podcast_counter[ep["podcast"]] += 1
+
+    new_episodes = filtered
+
+    # ✅ DIVERSIFY AFTER FILTER
     new_episodes = diversify_episodes(new_episodes, MAX_EPISODES)
 
     # 📊 AFTER distribution
@@ -166,12 +191,19 @@ def main():
         print(f"\n👉 [{i}] {ep['episode_id']} ({ep['podcast']})")
 
         send_job(ep)
+
+        # ✅ NEW progress tracking
+        if i % 50 == 0:
+            print(f"\n📊 Progress: {i}/{len(new_episodes)} processed\n")
+
         time.sleep(DELAY_BETWEEN_JOBS)
 
     print("\n✅ DONE")
 
+
 if __name__ == "__main__":
     main()
+
 
 
 
