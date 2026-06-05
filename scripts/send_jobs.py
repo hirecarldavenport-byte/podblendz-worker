@@ -21,7 +21,7 @@ MAX_PER_PODCAST = 20
 S3_BUCKET = "podblendz-episode-audio"
 S3_PREFIX = "raw_audio/"
 
-url = f"https://api.runpod.ai/v2/{ENDPOINT_ID}/run"
+url = f"https://api.runpod.ai/v2/{ENDPOINT_ID}/run-sync"
 
 headers = {
     "Authorization": f"Bearer {RUNPOD_API_KEY}",
