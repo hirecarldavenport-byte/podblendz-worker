@@ -10,7 +10,7 @@ from collections import Counter, defaultdict
 # ✅ CONFIG
 # --------------------------------------
 RUNPOD_API_KEY = os.environ.get("RUNPOD_API_KEY")
-ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID")
+ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", "").strip()
 
 DELAY_BETWEEN_JOBS = 2
 MAX_EPISODES = 1
