@@ -13,10 +13,10 @@ RUNPOD_API_KEY = os.environ.get("RUNPOD_API_KEY")
 ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", "").strip()
 
 DELAY_BETWEEN_JOBS = 2
-MAX_EPISODES = 20
+MAX_EPISODES = 150
 
 # ✅ NEW — optional diversity control
-MAX_PER_PODCAST = 50
+MAX_PER_PODCAST = 3
 
 S3_BUCKET = "podblendz-episode-audio"
 S3_PREFIX = "raw_audio/"
