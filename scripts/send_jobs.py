@@ -21,7 +21,7 @@ MAX_PER_PODCAST = 20
 S3_BUCKET = "podblendz-episode-audio"
 S3_PREFIX = "raw_audio/"
 
-url = f"https://api.runpod.ai/v2/{ENDPOINT_ID}/run-sync"
+url = f"https://api.runpod.ai/v2/{ENDPOINT_ID}/run"
 
 print("🚀 USING ENDPOINT:", ENDPOINT_ID)
 print("🌐 FINAL URL:", url)
