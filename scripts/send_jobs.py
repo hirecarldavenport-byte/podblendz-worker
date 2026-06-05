@@ -23,6 +23,10 @@ S3_PREFIX = "raw_audio/"
 
 url = f"https://api.runpod.ai/v2/{ENDPOINT_ID}/run-sync"
 
+print("🚀 USING ENDPOINT:", ENDPOINT_ID)
+print("🌐 FINAL URL:", url)
+
+
 headers = {
     "Authorization": f"Bearer {RUNPOD_API_KEY}",
     "Content-Type": "application/json"
