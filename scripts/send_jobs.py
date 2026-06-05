@@ -16,7 +16,7 @@ DELAY_BETWEEN_JOBS = 2
 MAX_EPISODES = 20
 
 # ✅ NEW — optional diversity control
-MAX_PER_PODCAST = 20
+MAX_PER_PODCAST = 50
 
 S3_BUCKET = "podblendz-episode-audio"
 S3_PREFIX = "raw_audio/"
