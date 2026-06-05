@@ -1,161 +1,217 @@
-import os
-import tempfile
-import traceback
-import requests
+print("🚀 HANDLER FILE STARTED")
+
 import json
+import tempfile
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import List, Dict, Any
+import traceback  # ✅ NEW
+
 import boto3
 import runpod
-from faster_whisper import WhisperModel
+import whisper
 
-# -------------------------
-# Model initialization
-# -------------------------
-MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "base")
-DEVICE = "cuda"
-COMPUTE_TYPE = "float16"
+# ============================================================
+# CONFIG
+# ============================================================
 
-try:
-    print("✅ Loading Whisper model...")
-    model = WhisperModel(
-        MODEL_SIZE,
-        device=DEVICE,
-        compute_type=COMPUTE_TYPE
-    )
-    print("✅ Whisper model loaded")
+BUCKET = "podblendz-episode-audio"
+SEGMENT_PREFIX = "segments"
+MODEL_NAME = "base"
 
-except Exception as e:
-    print("🔥 MODEL LOAD FAILED")
-    traceback.print_exc()
-    raise e
+# ============================================================
+# GLOBALS (SAFE INIT)
+# ============================================================
+
+model = None
+s3 = None
+
+print("✅ Globals initialized")
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+def get_s3():
+    global s3
+    if s3 is None:
+        print("🔌 Connecting to S3...")
+        s3 = boto3.client("s3")
+    return s3
 
 
-# -------------------------
-# Core handler
-# -------------------------
-def handler(job):
+def get_model():
+    global model
+    if model is None:
+        print("⚠️ Loading Whisper model...")
+        model = whisper.load_model(MODEL_NAME)
+        print("✅ Whisper model loaded")
+    return model
+
+
+def already_processed(category: str, podcast: str, episode_id: str) -> bool:
+    key = f"{SEGMENT_PREFIX}/{category}/{podcast}/{episode_id}.json"
+
     try:
-        input_data = job.get("input", {})
+        s3_client = get_s3()
+        s3_client.head_object(Bucket=BUCKET, Key=key)
+        return True
+    except Exception as e:
+        print(f"⚠️ S3 check failed (treated as not processed): {e}")
+        return False
 
-        episode_id = input_data.get("episode_id", "unknown")
-        language = input_data.get("language", "en")
 
-        # -------------------------
-        # ✅ FLEXIBLE INPUT HANDLING
-        # -------------------------
-        audio_url = input_data.get("audio_url")
+def download_audio(s3_key: str, local_path: Path):
+    print("⬇️ Downloading from S3:", s3_key)
+    s3_client = get_s3()
+    s3_client.download_file(BUCKET, s3_key, str(local_path))
 
-        if not audio_url:
-            audio_s3_key = input_data.get("audio_s3_key")
 
-            if not audio_s3_key:
-                raise ValueError("Missing audio_url OR audio_s3_key")
+# ============================================================
+# SEGMENT CLEANER
+# ============================================================
 
-            bucket = "podblendz-episode-audio"
-            audio_url = f"https://{bucket}.s3.amazonaws.com/{audio_s3_key}"
+def clean_segments(raw_segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    cleaned = []
 
-            print("🔁 Converted S3 key → URL")
+    for seg in raw_segments:
+        if not isinstance(seg, dict):
+            continue
 
-        print(f"🎧 Starting transcription: {episode_id}")
-        print(f"🌐 Audio source: {audio_url}")
+        text = str(seg.get("text", "")).strip()
+        if len(text) < 15:
+            continue
 
-        # -------------------------
-        # Download audio
-        # -------------------------
-        with tempfile.NamedTemporaryFile(suffix=".audio", delete=False) as tmp:
-            audio_path = tmp.name
+        start = float(seg.get("start", 0))
+        end = float(seg.get("end", 0))
+
+        if end - start < 2:
+            continue
+
+        cleaned.append({
+            "segment_id": str(uuid.uuid4()),
+            "text": text,
+            "start": start,
+            "end": end,
+            "duration": round(end - start, 2)
+        })
+
+    return cleaned
+
+
+# ============================================================
+# TRANSCRIPTION
+# ============================================================
+
+def transcribe_audio(audio_path: Path, language: str):
+    model_instance = get_model()
+
+    result: Dict[str, Any] = model_instance.transcribe(
+        str(audio_path),
+        language=language,
+        word_timestamps=True,
+        fp16=False  # ✅ CHANGE: safer (prevents GPU crash)
+    )
+
+    return clean_segments(result.get("segments", []))
+
+
+# ============================================================
+# RUNPOD HANDLER
+# ============================================================
+
+def handler(job):
+    print("🟢 HANDLER INVOKED")  # ✅ NEW
+
+    try:
+        print("📦 RAW JOB:", job)  # ✅ NEW
+
+        payload = job.get("input", {})  # ✅ SAFER ACCESS
+
+        print("🔥 PAYLOAD RECEIVED:", payload)
+
+        # ✅ Validation
+        for field in ["episode_id", "category", "podcast", "audio_s3_key"]:
+            if field not in payload:
+                raise Exception(f"Missing {field}")
+
+        episode_id = payload["episode_id"]
+        category = payload["category"]
+        podcast = payload["podcast"]
+        audio_s3_key = payload["audio_s3_key"]
+        language = payload.get("language", "en")
+
+        print(f"🎧 Processing: {category}/{podcast}/{episode_id}")
+
+        # ✅ Skip duplicates
+        if already_processed(category, podcast, episode_id):
+            print("⏭️ Skipping (already processed)")
+            return {
+                "status": "COMPLETED",
+                "output": {"status": "skipped"}
+            }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audio_path = Path(tmpdir) / f"{episode_id}.mp3"
 
             print("⬇️ Downloading audio...")
+            download_audio(audio_s3_key, audio_path)
 
-            response = requests.get(audio_url, stream=True, timeout=60)
-            response.raise_for_status()
+            print("🧠 Running Whisper...")
+            segments = transcribe_audio(audio_path, language)
 
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    tmp.write(chunk)
+            print(f"✅ Segments created: {len(segments)}")
 
-        # -------------------------
-        # Transcribe
-        # -------------------------
-        print("🧠 Running Whisper...")
+            output = {
+                "episode_id": episode_id,
+                "podcast": podcast,
+                "category": category,
+                "audio_s3_key": audio_s3_key,
+                "model": MODEL_NAME,
+                "language": language,
+                "segment_count": len(segments),
+                "segments": segments,
+                "created_at": datetime.utcnow().isoformat() + "Z"
+            }
 
-        segments, info = model.transcribe(
-            audio_path,
-            language=language,
-            beam_size=5,
-            vad_filter=True,
-        )
+            output_key = f"{SEGMENT_PREFIX}/{category}/{podcast}/{episode_id}.json"
 
-        transcript_segments = []
-        full_text = []
+            print("🚨 FINAL OUTPUT KEY:", output_key)
 
-        for seg in segments:
-            transcript_segments.append({
-                "start": seg.start,
-                "end": seg.end,
-                "text": seg.text.strip()
-            })
-            full_text.append(seg.text.strip())
-
-        result = {
-            "episode_id": episode_id,
-            "language": info.language,
-            "duration": info.duration,
-            "segments": transcript_segments,
-            "text": " ".join(full_text)
-        }
-
-        print(f"✅ Completed transcription: {episode_id}")
-
-        # -------------------------
-        # ✅ Save to S3 (MUST HAPPEN BEFORE RETURN)
-        # -------------------------
-        try:
-            s3 = boto3.client("s3")
-
-            bucket = "podblendz-episode-audio"
-            key = f"segments/education_learning/hidden_brain/{episode_id}.json"
-
-            s3.put_object(
-                Bucket=bucket,
-                Key=key,
-                Body=json.dumps(result),
+            s3_client = get_s3()
+            s3_client.put_object(
+                Bucket=BUCKET,
+                Key=output_key,
+                Body=json.dumps(output, indent=2).encode("utf-8"),
                 ContentType="application/json"
             )
 
-            print(f"✅ Saved to S3: {key}")
+            print("✅ DIRECT SAVE COMPLETE:", output_key)
 
-        except Exception:
-            print("🔥 FAILED TO SAVE TO S3")
-            traceback.print_exc()
-
-        # -------------------------
-        # ✅ Cleanup temp file
-        # -------------------------
-        try:
-            os.remove(audio_path)
-            print("🧹 Temp file removed")
-        except Exception:
-            pass
-
-        # -------------------------
-        # ✅ RETURN LAST (critical fix)
-        # -------------------------
         return {
-            "output": result
+            "status": "COMPLETED",
+            "output": {
+                "episode_id": episode_id,
+                "segment_count": len(segments),
+                "s3_output": output_key
+            }
         }
 
     except Exception as e:
-        print("🔥 HANDLER CRASH")
-        traceback.print_exc()
+        print("🔥 ERROR:", str(e))
+        traceback.print_exc()  # ✅ CRITICAL ADD
+
         return {
+            "status": "FAILED",
             "error": str(e)
         }
 
 
-# -------------------------
-# RUNPOD ENTRYPOINT ✅ REQUIRED
-# -------------------------
+# ============================================================
+# ENTRYPOINT
+# ============================================================
+
 runpod.serverless.start({
     "handler": handler
 })
-print("🚀 NEW BUILD VERSION ACTIVE")
