@@ -32,7 +32,7 @@ SAMPLE_SIZE = 10000
 
 # ✅ Better semantic granularity
 MIN_CLUSTER_SIZE = 12
-MIN_SAMPLES = 6
+MIN_SAMPLES = 15
 
 # ✅ Max transcript docs per cluster
 MAX_DOCS_PER_CLUSTER = 500
@@ -196,6 +196,7 @@ for idx in sample_indices:
     sampled_ids.append(id_map[idx])
 
 vectors = np.array(vectors).astype("float32")
+faiss.normalize_L2(vectors)
 
 print(f"✅ Sampled vectors: {len(vectors)}")
 
@@ -233,7 +234,8 @@ clusterer = hdbscan.HDBSCAN(
 
 try:
 
-    labels = clusterer.fit_predict(embedding_2d)
+    labels = clusterer.fit_predict(vectors)
+    probabilities = clusterer.probabilities_
 
 except Exception as e:
 
@@ -263,6 +265,8 @@ clusters = defaultdict(list)
 for i, label in enumerate(labels):
 
     if label == -1:
+        continue
+    if probabilities[i] < 0.35:
         continue
 
     coords = embedding_2d[i]
