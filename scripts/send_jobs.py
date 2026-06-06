@@ -13,7 +13,7 @@ RUNPOD_API_KEY = os.environ.get("RUNPOD_API_KEY")
 ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", "").strip()
 
 DELAY_BETWEEN_JOBS = 2
-MAX_EPISODES = 750
+MAX_EPISODES = 1500
 
 # ✅ NEW — optional diversity control
 MAX_PER_PODCAST = 3
