@@ -320,7 +320,7 @@ for cluster_id, items in clusters.items():
 
         for term, score in ranked:
 
-            simplified = set(term.split())
+            simplified = frozenset(term.split())
 
             duplicate = False
 
