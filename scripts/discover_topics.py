@@ -6,7 +6,7 @@ import re
 import traceback
 import boto3
 
-from collections import defaultdict
+from collections import defaultdict, Counter
 from typing import cast
 
 import umap
@@ -27,13 +27,15 @@ OUTPUT_CARDS = "discovery_cards.json"
 
 BUCKET = "podblendz-episode-audio"
 
-# ✅ IMPORTANT
-# Start smaller first for testing/stability
-SAMPLE_SIZE = 3000
+# ✅ Increase gradually as stability improves
+SAMPLE_SIZE = 10000
 
-# ✅ HDBSCAN SETTINGS
-MIN_CLUSTER_SIZE = 25
-MIN_SAMPLES = 10
+# ✅ Better semantic granularity
+MIN_CLUSTER_SIZE = 12
+MIN_SAMPLES = 6
+
+# ✅ Max transcript docs per cluster
+MAX_DOCS_PER_CLUSTER = 500
 
 # =========================================================
 # ✅ AWS CLIENT
@@ -43,7 +45,7 @@ s3 = boto3.client("s3")
 
 # =========================================================
 # ✅ STOPWORDS
-# Spoken-language cleanup
+# Spoken language cleanup
 # =========================================================
 
 STOPWORDS = {
@@ -63,7 +65,10 @@ STOPWORDS = {
     "theyre", "wasnt", "wouldnt",
     "couldnt", "youve", "weve",
     "hes", "shes", "lets",
-    "kind", "sort", "maybe"
+    "kind", "sort", "maybe",
+    "just", "like", "know",
+    "right", "good", "great",
+    "able", "probably", "literally"
 }
 
 # =========================================================
@@ -119,7 +124,53 @@ def fetch_segment_text(segment_id):
         return ""
 
 # =========================================================
-# ✅ EXTRACT SAMPLE VECTORS
+# ✅ CLEAN TEXT
+# =========================================================
+
+def clean_text(text):
+
+    text = text.lower()
+
+    text = re.sub(r"[^a-zA-Z0-9\s]", " ", text)
+
+    words = [
+        w for w in text.split()
+        if len(w) > 3 and w not in STOPWORDS
+    ]
+
+    return " ".join(words)
+
+# =========================================================
+# ✅ GENERATE CLEAN TITLE
+# =========================================================
+
+def generate_cluster_title(keywords, phrases):
+
+    strong_words = []
+
+    for word, count in keywords:
+
+        if (
+            len(word) > 4
+            and word not in STOPWORDS
+        ):
+            strong_words.append(word)
+
+        if len(strong_words) >= 4:
+            break
+
+    if strong_words:
+
+        return " ".join(strong_words[:4]).title()
+
+    if phrases:
+
+        return phrases[0].title()
+
+    return "Semantic Topic"
+
+# =========================================================
+# ✅ VECTOR SAMPLING
 # =========================================================
 
 print("\n🧠 Sampling semantic vectors...")
@@ -149,14 +200,14 @@ vectors = np.array(vectors).astype("float32")
 print(f"✅ Sampled vectors: {len(vectors)}")
 
 # =========================================================
-# ✅ BUILD SEMANTIC MAP (UMAP)
+# ✅ BUILD SEMANTIC MAP
 # =========================================================
 
 print("\n🌌 Building semantic neighborhood map...")
 
 reducer = umap.UMAP(
-    n_neighbors=15,
-    min_dist=0.1,
+    n_neighbors=20,
+    min_dist=0.05,
     metric="cosine",
     random_state=42
 )
@@ -211,7 +262,6 @@ clusters = defaultdict(list)
 
 for i, label in enumerate(labels):
 
-    # ✅ Ignore noise points
     if label == -1:
         continue
 
@@ -233,23 +283,6 @@ largest_cluster = max(
 print(f"🔥 Largest cluster size: {largest_cluster}")
 
 # =========================================================
-# ✅ CLEAN TEXT
-# =========================================================
-
-def clean_text(text):
-
-    text = text.lower()
-
-    text = re.sub(r"[^a-zA-Z0-9\s]", " ", text)
-
-    words = [
-        w for w in text.split()
-        if len(w) > 3 and w not in STOPWORDS
-    ]
-
-    return " ".join(words)
-
-# =========================================================
 # ✅ TOPIC LABEL GENERATION
 # =========================================================
 
@@ -259,12 +292,12 @@ cluster_labels = {}
 
 for cluster_id, items in clusters.items():
 
+    print(f"\n🔎 Processing cluster {cluster_id}...")
+
     docs = []
 
-    print(f"🔎 Processing cluster {cluster_id}...")
-
     # ✅ Pull REAL transcript text
-    for item in items[:500]:
+    for item in items[:MAX_DOCS_PER_CLUSTER]:
 
         seg_id = item["segment_id"]
 
@@ -284,41 +317,84 @@ for cluster_id, items in clusters.items():
 
         cluster_labels[cluster_id] = {
             "topic_terms": [],
-            "cluster_size": len(items)
+            "keywords": [],
+            "cluster_size": len(items),
+            "title": f"semantic_cluster_{cluster_id}"
         }
 
         continue
 
-    vectorizer = CountVectorizer(
+    # =====================================================
+    # ✅ LONG PHRASE EXTRACTION
+    # =====================================================
+
+    phrase_vectorizer = CountVectorizer(
         ngram_range=(5, 8),
         stop_words="english",
-        max_features=50
+        max_features=100
+    )
+
+    # =====================================================
+    # ✅ SHORT KEYWORD EXTRACTION
+    # =====================================================
+
+    keyword_vectorizer = CountVectorizer(
+        ngram_range=(1, 3),
+        stop_words="english",
+        max_features=100
     )
 
     try:
 
-        X = vectorizer.fit_transform(docs)
+        # -------------------------------------------------
+        # LONG PHRASES
+        # -------------------------------------------------
 
-        X = cast(np.ndarray, X)
+        X_phrases = phrase_vectorizer.fit_transform(docs)
 
-        terms = vectorizer.get_feature_names_out()
+        X_phrases = cast(np.ndarray, X_phrases)
 
-        freqs = np.asarray(
-            X.sum(axis=0)
+        phrase_terms = phrase_vectorizer.get_feature_names_out()
+
+        phrase_freqs = np.asarray(
+            X_phrases.sum(axis=0)
         ).ravel()
 
-        ranked = sorted(
-            zip(terms, freqs),
+        phrase_ranked = sorted(
+            zip(phrase_terms, phrase_freqs),
             key=lambda x: x[1],
             reverse=True
         )
 
-        top_terms = []
+        # -------------------------------------------------
+        # KEYWORDS
+        # -------------------------------------------------
 
-        # ✅ Reduce duplicate-like phrases
+        X_keywords = keyword_vectorizer.fit_transform(docs)
+
+        X_keywords = cast(np.ndarray, X_keywords)
+
+        keyword_terms = keyword_vectorizer.get_feature_names_out()
+
+        keyword_freqs = np.asarray(
+            X_keywords.sum(axis=0)
+        ).ravel()
+
+        keyword_ranked = sorted(
+            zip(keyword_terms, keyword_freqs),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        # -------------------------------------------------
+        # REMOVE DUPLICATE-LIKE PHRASES
+        # -------------------------------------------------
+
+        top_phrases = []
+
         seen = set()
 
-        for term, score in ranked:
+        for term, score in phrase_ranked:
 
             simplified = frozenset(term.split())
 
@@ -335,26 +411,68 @@ for cluster_id, items in clusters.items():
             if duplicate:
                 continue
 
-            top_terms.append(term)
+            # ✅ reject weak conversational fragments
+            weak_words = {
+                "like", "just", "really",
+                "actually", "probably",
+                "literally", "maybe"
+            }
+
+            if any(w in weak_words for w in term.split()):
+                continue
+
+            top_phrases.append(term)
 
             seen.add(simplified)
 
-            if len(top_terms) >= 5:
+            if len(top_phrases) >= 5:
                 break
+
+        # -------------------------------------------------
+        # TOP KEYWORDS
+        # -------------------------------------------------
+
+        top_keywords = []
+
+        for word, score in keyword_ranked:
+
+            if len(word) < 5:
+                continue
+
+            if word in STOPWORDS:
+                continue
+
+            top_keywords.append((word, int(score)))
+
+            if len(top_keywords) >= 15:
+                break
+
+        # -------------------------------------------------
+        # GENERATE TITLE
+        # -------------------------------------------------
+
+        title = generate_cluster_title(
+            top_keywords,
+            top_phrases
+        )
 
     except Exception as e:
 
         print(f"⚠️ Failed labeling cluster {cluster_id}")
         print(e)
 
-        top_terms = []
+        top_phrases = []
+        top_keywords = []
+        title = f"semantic_cluster_{cluster_id}"
 
     cluster_labels[cluster_id] = {
-        "topic_terms": top_terms,
+        "title": title,
+        "topic_terms": top_phrases,
+        "keywords": top_keywords,
         "cluster_size": len(items)
     }
 
-print("✅ Topic labeling complete")
+print("\n✅ Topic labeling complete")
 
 # =========================================================
 # ✅ BUILD DISCOVERY CARDS
@@ -371,18 +489,12 @@ for cluster_id, info in cluster_labels.items():
     if cluster_size < 15:
         continue
 
-    top_terms = info["topic_terms"]
-
-    title = " / ".join(top_terms[:2])
-
-    if not title.strip():
-        title = f"semantic_cluster_{cluster_id}"
-
     card = {
         "cluster_id": cluster_id,
-        "title": title,
+        "title": info["title"],
         "size": cluster_size,
-        "top_terms": top_terms,
+        "top_terms": info["topic_terms"],
+        "keywords": info["keywords"],
         "sample_segments": [
             x["segment_id"]
             for x in clusters[cluster_id][:10]
@@ -391,7 +503,7 @@ for cluster_id, info in cluster_labels.items():
 
     cards.append(card)
 
-# ✅ Largest semantic groups first
+# ✅ biggest semantic groups first
 cards.sort(
     key=lambda x: x["size"],
     reverse=True
@@ -471,11 +583,19 @@ for card in cards[:15]:
 
     print(f"📊 Cluster Size: {card['size']}")
 
+    if card["keywords"]:
+
+        print("🔑 Keywords:")
+
+        for word, score in card["keywords"][:8]:
+
+            print(f"   - {word} ({score})")
+
     if card["top_terms"]:
 
-        print("🧠 Topics:")
+        print("🧠 Semantic Phrases:")
 
-        for term in card["top_terms"][:5]:
+        for term in card["top_terms"][:3]:
 
             print(f"   - {term}")
 
