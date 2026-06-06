@@ -4,6 +4,7 @@ import json
 import random
 import re
 import traceback
+import boto3
 
 from collections import defaultdict
 from typing import cast
@@ -24,6 +25,8 @@ OUTPUT_CLUSTERS = "topic_clusters.json"
 OUTPUT_MAP = "semantic_map.json"
 OUTPUT_CARDS = "discovery_cards.json"
 
+BUCKET = "podblendz-episode-audio"
+
 # ✅ IMPORTANT
 # Start smaller first for testing/stability
 SAMPLE_SIZE = 3000
@@ -31,6 +34,12 @@ SAMPLE_SIZE = 3000
 # ✅ HDBSCAN SETTINGS
 MIN_CLUSTER_SIZE = 25
 MIN_SAMPLES = 10
+
+# =========================================================
+# ✅ AWS CLIENT
+# =========================================================
+
+s3 = boto3.client("s3")
 
 # =========================================================
 # ✅ STOPWORDS
@@ -50,7 +59,11 @@ STOPWORDS = {
     "stuff", "make", "made",
     "getting", "going", "yeah",
     "okay", "dont", "cant",
-    "thats", "theres", "youre"
+    "thats", "theres", "youre",
+    "theyre", "wasnt", "wouldnt",
+    "couldnt", "youve", "weve",
+    "hes", "shes", "lets",
+    "kind", "sort", "maybe"
 }
 
 # =========================================================
@@ -71,6 +84,39 @@ with open(ID_MAP_FILE, "r") as f:
     id_map = json.load(f)
 
 print(f"✅ Loaded {len(id_map)} IDs")
+
+# =========================================================
+# ✅ FETCH SEGMENT TEXT
+# =========================================================
+
+def fetch_segment_text(segment_id):
+
+    try:
+
+        parts = segment_id.split("_")
+
+        file_key = "_".join(parts[:-1])
+
+        idx = int(parts[-1])
+
+        response = s3.get_object(
+            Bucket=BUCKET,
+            Key=file_key
+        )
+
+        data = json.loads(
+            response["Body"].read()
+        )
+
+        segments = data.get("segments", [])
+
+        if idx >= len(segments):
+            return ""
+
+        return segments[idx].get("text", "")
+
+    except Exception:
+        return ""
 
 # =========================================================
 # ✅ EXTRACT SAMPLE VECTORS
@@ -194,7 +240,7 @@ def clean_text(text):
 
     text = text.lower()
 
-    text = re.sub(r"[^a-zA-Z0-9\s]", "", text)
+    text = re.sub(r"[^a-zA-Z0-9\s]", " ", text)
 
     words = [
         w for w in text.split()
@@ -215,16 +261,32 @@ for cluster_id, items in clusters.items():
 
     docs = []
 
-    for item in items:
+    print(f"🔎 Processing cluster {cluster_id}...")
 
-        seg = item["segment_id"]
+    # ✅ Pull REAL transcript text
+    for item in items[:500]:
 
-        cleaned = clean_text(seg)
+        seg_id = item["segment_id"]
 
-        if cleaned.strip():
+        raw_text = fetch_segment_text(seg_id)
+
+        if not raw_text:
+            continue
+
+        cleaned = clean_text(raw_text)
+
+        if len(cleaned.split()) >= 5:
             docs.append(cleaned)
 
-    if not docs:
+    print(f"   ✅ Transcript docs collected: {len(docs)}")
+
+    if len(docs) < 5:
+
+        cluster_labels[cluster_id] = {
+            "topic_terms": [],
+            "cluster_size": len(items)
+        }
+
         continue
 
     vectorizer = CountVectorizer(
@@ -236,6 +298,7 @@ for cluster_id, items in clusters.items():
     try:
 
         X = vectorizer.fit_transform(docs)
+
         X = cast(np.ndarray, X)
 
         terms = vectorizer.get_feature_names_out()
@@ -250,7 +313,34 @@ for cluster_id, items in clusters.items():
             reverse=True
         )
 
-        top_terms = [t for t, _ in ranked[:5]]
+        top_terms = []
+
+        # ✅ Reduce duplicate-like phrases
+        seen = set()
+
+        for term, score in ranked:
+
+            simplified = set(term.split())
+
+            duplicate = False
+
+            for existing in seen:
+
+                overlap = simplified.intersection(existing)
+
+                if len(overlap) >= 4:
+                    duplicate = True
+                    break
+
+            if duplicate:
+                continue
+
+            top_terms.append(term)
+
+            seen.add(simplified)
+
+            if len(top_terms) >= 5:
+                break
 
     except Exception as e:
 
