@@ -28,36 +28,35 @@ TOP_K = 120
 # =========================================================
 
 SEED_TOPICS = [
-    "artificial intelligence",
-    "robotics",
-    "machine learning",
-    "startup funding",
-    "venture capital",
-    "future of work",
-    "remote work",
-    "creator economy",
-    "productivity",
-    "mental health",
-    "nutrition",
-    "longevity",
-    "bitcoin",
-    "cybersecurity",
-    "relationships",
-    "climate change",
-    "space exploration",
-    "education technology",
-    "neuroscience",
-    "business strategy",
-    "software engineering",
-    "AI agents",
-    "automation",
-    "economic systems",
-    "geopolitics",
-    "fitness",
-    "biohacking",
-    "podcasting",
-    "social media",
-    "marketing strategy"
+    "future of artificial intelligence",
+    "AI agents and automation",
+    "humanoid robotics systems",
+    "machine learning platforms",
+    "startup funding ecosystems",
+    "venture capital investing",
+    "future of remote work",
+    "creator economy monetization",
+    "productivity systems",
+    "mental health and wellness",
+    "nutrition and metabolism",
+    "longevity research",
+    "bitcoin and crypto markets",
+    "cybersecurity threats",
+    "modern relationships",
+    "climate change innovation",
+    "space exploration technology",
+    "education technology platforms",
+    "brain science and neuroscience",
+    "business growth strategy",
+    "software engineering systems",
+    "AI replacing labor",
+    "economic systems and markets",
+    "global geopolitics",
+    "fitness and performance",
+    "biohacking optimization",
+    "podcasting and media",
+    "social media influence",
+    "marketing and brand strategy"
 ]
 
 # =========================================================
@@ -84,7 +83,10 @@ STOPWORDS = {
     "said", "saying", "think",
     "thinks", "talking", "talk",
     "want", "wanted", "maybe",
-    "well", "very", "much"
+    "well", "very", "much",
+    "years", "later", "today",
+    "interesting", "important",
+    "thing", "time"
 }
 
 # =========================================================
@@ -103,7 +105,14 @@ WEAK_WORDS = {
     "people",
     "going",
     "things",
-    "stuff"
+    "stuff",
+    "years",
+    "later",
+    "today",
+    "interesting",
+    "important",
+    "thing",
+    "time"
 }
 
 # =========================================================
@@ -115,7 +124,7 @@ client = OpenAI()
 s3 = boto3.client("s3")
 
 # =========================================================
-# ✅ LOAD FAISS
+# ✅ LOAD FAISS INDEX
 # =========================================================
 
 print("📦 Loading FAISS index...")
@@ -170,21 +179,25 @@ def clean_text(text):
 
     text = text.lower()
 
-    text = re.sub(r"[^a-zA-Z0-9\s]", " ", text)
+    text = re.sub(
+        r"[^a-zA-Z0-9\s]",
+        " ",
+        text
+    )
 
-    words = []
+    cleaned = []
 
-    for w in text.split():
+    for word in text.split():
 
-        if len(w) <= 3:
+        if len(word) <= 3:
             continue
 
-        if w in STOPWORDS:
+        if word in STOPWORDS:
             continue
 
-        words.append(w)
+        cleaned.append(word)
 
-    return " ".join(words)
+    return " ".join(cleaned)
 
 # =========================================================
 # ✅ EMBED QUERY
@@ -202,7 +215,6 @@ def embed_query(text):
         dtype=np.float32
     )
 
-    # ✅ normalize for cosine similarity
     faiss.normalize_L2(vector)
 
     return vector
@@ -213,7 +225,7 @@ def embed_query(text):
 
 def generate_title(topic, keywords):
 
-    title_parts = []
+    words = []
 
     for word, score in keywords:
 
@@ -223,39 +235,51 @@ def generate_title(topic, keywords):
         if word in STOPWORDS:
             continue
 
-        title_parts.append(word)
+        words.append(word)
 
-        if len(title_parts) >= 4:
+        if len(words) >= 4:
             break
 
-    if title_parts:
-        return " ".join(title_parts).title()
+    if words:
+        return " ".join(words).title()
 
     return topic.title()
 
 # =========================================================
-# ✅ DEDUPLICATE PHRASES
+# ✅ CLEAN PHRASES
 # =========================================================
 
-def deduplicate_phrases(ranked_phrases):
+def deduplicate_phrases(phrases, topic):
 
     cleaned = []
 
     seen = []
 
-    for phrase, score in ranked_phrases:
+    topic_words = set(
+        clean_text(topic).split()
+    )
+
+    for phrase, score in phrases:
 
         words = phrase.split()
 
-        # ✅ Skip weak conversational phrases
-        weak = False
+        if len(words) < 3:
+            continue
 
-        for w in words:
-            if w in WEAK_WORDS:
-                weak = True
+        # ✅ reject phrases with weak words
+        skip = False
+
+        for word in words:
+
+            if word in WEAK_WORDS:
+                skip = True
                 break
 
-        if weak:
+        if skip:
+            continue
+
+        # ✅ reject phrases containing years/numbers
+        if any(char.isdigit() for char in phrase):
             continue
 
         signature = set(words)
@@ -266,21 +290,30 @@ def deduplicate_phrases(ranked_phrases):
 
             overlap = signature.intersection(existing)
 
-            if len(overlap) >= 4:
+            if len(overlap) >= 3:
                 duplicate = True
                 break
 
         if duplicate:
             continue
 
-        cleaned.append(phrase)
+        relevance = len(
+            signature.intersection(topic_words)
+        )
+
+        cleaned.append((
+            phrase,
+            relevance
+        ))
 
         seen.append(signature)
 
-        if len(cleaned) >= 8:
-            break
+    cleaned.sort(
+        key=lambda x: x[1],
+        reverse=True
+    )
 
-    return cleaned
+    return [x[0] for x in cleaned[:8]]
 
 # =========================================================
 # ✅ MAIN DISCOVERY LOOP
@@ -297,15 +330,7 @@ for topic in SEED_TOPICS:
 
     try:
 
-        # -------------------------------------------------
-        # ✅ EMBED TOPIC
-        # -------------------------------------------------
-
         query_vector = embed_query(topic)
-
-        # -------------------------------------------------
-        # ✅ SEARCH FAISS
-        # -------------------------------------------------
 
         distances, indices = index.search(
             query_vector,
@@ -365,16 +390,16 @@ for topic in SEED_TOPICS:
             keyword_vectorizer.get_feature_names_out()
         )
 
-        # ✅ Force dense matrix safely
-        keyword_matrix = np.asarray(X_keywords)
+        keyword_matrix = X_keywords.toarray()
 
-        keyword_freqs = np.asarray(
-            keyword_matrix.sum(axis=0)
-            ).flatten()
+        keyword_freqs = np.sum(
+            keyword_matrix,
+            axis=0
+        ).astype(float)
 
         keyword_ranked = sorted(
             zip(keyword_terms, keyword_freqs),
-            key=lambda x: x[1],
+            key=lambda x: float(x[1]),
             reverse=True
         )
 
@@ -383,7 +408,7 @@ for topic in SEED_TOPICS:
         # =================================================
 
         phrase_vectorizer = CountVectorizer(
-            ngram_range=(4, 8),
+            ngram_range=(3, 5),
             stop_words="english",
             max_features=150
         )
@@ -394,16 +419,16 @@ for topic in SEED_TOPICS:
             phrase_vectorizer.get_feature_names_out()
         )
 
-        # ✅ Force dense matrix safely
-        phrase_matrix = np.asarray(X_phrases)
+        phrase_matrix = X_phrases.toarray()
 
-        phrase_freqs = np.asarray(
-            phrase_matrix.sum(axis=0)
-            ).flatten()
+        phrase_freqs = np.sum(
+            phrase_matrix,
+            axis=0
+        ).astype(float)
 
         phrase_ranked = sorted(
             zip(phrase_terms, phrase_freqs),
-            key=lambda x: x[1],
+            key=lambda x: float(x[1]),
             reverse=True
         )
 
@@ -426,19 +451,15 @@ for topic in SEED_TOPICS:
             if word in seen_keywords:
                 continue
 
-            skip = False
+            if any(w in WEAK_WORDS for w in word.split()):
+                continue
 
-            for w in word.split():
-                if w in WEAK_WORDS:
-                    skip = True
-                    break
-
-            if skip:
+            if any(char.isdigit() for char in word):
                 continue
 
             keywords.append((
                 word,
-                int(score)
+                round(float(score), 2)
             ))
 
             seen_keywords.add(word)
@@ -446,12 +467,20 @@ for topic in SEED_TOPICS:
             if len(keywords) >= 15:
                 break
 
+        print(f"✅ Keywords extracted: {len(keywords)}")
+
         # =================================================
         # ✅ CLEAN PHRASES
         # =================================================
 
-        phrases = deduplicate_phrases(
-            phrase_ranked
+        cleaned_phrases = deduplicate_phrases(
+            phrase_ranked,
+            topic
+        )
+
+        print(
+            f"✅ Phrases extracted: "
+            f"{len(cleaned_phrases)}"
         )
 
         # =================================================
@@ -467,15 +496,12 @@ for topic in SEED_TOPICS:
             "topic": topic,
             "title": title,
             "keywords": keywords,
-            "phrases": phrases,
+            "phrases": cleaned_phrases,
             "related_segment_count": len(segment_ids),
             "sample_segments": segment_ids[:10]
         }
 
         cards.append(card)
-
-        print(f"✅ Keywords extracted: {len(keywords)}")
-        print(f"✅ Phrases extracted: {len(phrases)}")
 
     except Exception as e:
 
