@@ -368,7 +368,9 @@ for topic in SEED_TOPICS:
         # ✅ Force dense matrix safely
         keyword_matrix = np.asarray(X_keywords)
 
-        keyword_freqs = keyword_matrix.sum(axis=0)
+        keyword_freqs = np.asarray(
+            keyword_matrix.sum(axis=0)
+            ).flatten()
 
         keyword_ranked = sorted(
             zip(keyword_terms, keyword_freqs),
@@ -395,7 +397,9 @@ for topic in SEED_TOPICS:
         # ✅ Force dense matrix safely
         phrase_matrix = np.asarray(X_phrases)
 
-        phrase_freqs = phrase_matrix.sum(axis=0)
+        phrase_freqs = np.asarray(
+            phrase_matrix.sum(axis=0)
+            ).flatten()
 
         phrase_ranked = sorted(
             zip(phrase_terms, phrase_freqs),
