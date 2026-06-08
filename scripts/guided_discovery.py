@@ -225,25 +225,31 @@ def embed_query(text):
 
 def generate_title(topic, keywords):
 
-    words = []
+    # Use topic directly if it's already clean
+    if topic and len(topic.strip()) > 0:
 
-    for word, score in keywords:
+        return topic.title()
 
-        if len(word) < 5:
-            continue
+    # Fallback cleanup logic
+    seen = set()
 
-        if word in STOPWORDS:
-            continue
+    cleaned = []
 
-        words.append(word)
+    for keyword in keywords:
 
-        if len(words) >= 4:
-            break
+        # Keywords might be tuples
+        if isinstance(keyword, tuple):
+            keyword = keyword[0]
 
-    if words:
-        return " ".join(words).title()
+        normalized = keyword.lower()
 
-    return topic.title()
+        if normalized not in seen:
+
+            seen.add(normalized)
+
+            cleaned.append(keyword)
+
+    return " ".join(cleaned[:4]).title()
 
 # =========================================================
 # ✅ CLEAN PHRASES
