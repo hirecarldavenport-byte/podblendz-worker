@@ -4,6 +4,7 @@ import os
 import json
 import hashlib
 
+# ✅ INIT
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 
@@ -19,7 +20,8 @@ def safe_content(response):
     try:
         content = response.choices[0].message.content
         return content.strip() if content else ""
-    except Exception:
+    except Exception as e:
+        print("⚠️ safe_content error:", str(e))
         return ""
 
 
@@ -31,7 +33,8 @@ def suggest_query(query):
         matches = [p for p in patterns if p in query.lower()]
         return matches[:5] if matches else patterns[:5]
 
-    except Exception:
+    except Exception as e:
+        print("⚠️ suggest_query error:", str(e))
         return []
 
 
@@ -74,7 +77,6 @@ def is_meaningful(text):
     return True
 
 
-# ✅ IMPROVED AD FILTER
 def is_ad(text):
     t = text.lower()
 
@@ -102,14 +104,12 @@ def is_ad(text):
     return any(s in t for s in signals)
 
 
-# ✅ IMPROVED DEDUP (NEAR MATCH)
 def dedup_key(text):
     words = text.lower().split()
-    core = " ".join(words[:12])  # stronger semantic grouping
+    core = " ".join(words[:12])
     return hashlib.md5(core.encode()).hexdigest()
 
 
-# ✅ EXTRACT SHOW NAME
 def extract_show_name(source_path):
     try:
         parts = source_path.split("/")
@@ -130,26 +130,21 @@ def generate_dateline_line(context, text=None, query="", stage="middle"):
         prompt = f"""
 Act like a calm documentary narrator.
 
-Introduce a deeper idea or mystery about:
+Introduce a deeper idea about:
 {query}
 
-Make it intriguing and controlled.
 Max 22 words.
 """
 
     elif stage == "bridge":
         prompt = f"""
-You are guiding a story.
-
 Previous idea:
 "{context}"
 
 Next idea:
 "{text}"
 
-Do NOT summarize.
-
-Instead, build curiosity or tension.
+Build curiosity. Do NOT summarize.
 Max 18 words.
 """
 
@@ -158,26 +153,28 @@ Max 18 words.
 Close with a reflective thought about:
 {query}
 
-Make it feel unresolved and thought-provoking.
 Max 22 words.
 """
 
     else:
         prompt = f"""
-Guide the audience's thinking about this idea:
+Guide the audience's thinking about:
 
 "{text}"
 
-Add meaning or implication without repeating.
 Max 18 words.
 """
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return safe_content(response)
 
-    return safe_content(response)
+    except Exception as e:
+        print("⚠️ GPT error:", str(e))
+        return ""
 
 
 # =========================
@@ -185,6 +182,7 @@ Max 18 words.
 # =========================
 
 def build_blend(query, max_segments=20):
+
     print(f"\n🎧 Building Blend: {query}\n")
 
     results = search(query, k=120) or []
@@ -193,13 +191,22 @@ def build_blend(query, max_segments=20):
 
     seen = set()
     source_counts = {}
-    MAX_PER_SOURCE = 2  # ✅ reduced for diversity
+
+    skipped_missing_audio = 0
+
+    MAX_PER_SOURCE = 2
 
     for r in results:
+
         text = r.get("text", "").strip()
         start = r.get("start")
         end = r.get("end")
         source = r.get("audio_file")
+
+        # ✅ CRITICAL FIX
+        if not source:
+            skipped_missing_audio += 1
+            continue
 
         if start is None or end is None:
             continue
@@ -223,9 +230,13 @@ def build_blend(query, max_segments=20):
         count = source_counts.get(source, 0)
         if count >= MAX_PER_SOURCE:
             continue
+
         source_counts[source] = count + 1
 
         selected_pool.append(r)
+
+    print(f"✅ Retrieved {len(selected_pool)} usable segments")
+    print(f"⚠️ Skipped {skipped_missing_audio} segments missing audio_file")
 
     if not selected_pool:
         print("❌ No usable segments.")
@@ -237,19 +248,27 @@ def build_blend(query, max_segments=20):
     if len(selected) < 8:
         selected = selected_pool[:8]
 
+    print(f"✅ Final selection: {len(selected)} segments")
+
     blend = []
 
+    # =========================
     # 🎬 INTRO
+    # =========================
+
     intro = generate_dateline_line("", query=query, stage="intro")
 
     blend.append({"type": "narration", "text": intro})
     blend.append({"type": "pause", "duration": 0.7})
 
+    # =========================
     # 🎬 FIRST ENTRY
+    # =========================
+
     first = selected[0]
     show_name = extract_show_name(first.get("audio_file", ""))
 
-    narration = f"From {show_name}, {generate_dateline_line('', first['text'])}"
+    narration = f"From {show_name}. {generate_dateline_line('', first['text'])}"
 
     blend.append({"type": "narration", "text": narration})
     blend.append({"type": "pause", "duration": 0.4})
@@ -264,8 +283,12 @@ def build_blend(query, max_segments=20):
 
     blend.append({"type": "pause", "duration": 0.6})
 
+    # =========================
     # 🎬 MAIN SEQUENCE
+    # =========================
+
     for i in range(1, len(selected)):
+
         prev = selected[i - 1]
         curr = selected[i]
 
@@ -281,7 +304,6 @@ def build_blend(query, max_segments=20):
         blend.append({"type": "narration", "text": transition})
         blend.append({"type": "pause", "duration": 0.3})
 
-        # ✅ ADD PODCAST ATTRIBUTION
         blend.append({"type": "narration", "text": f"From {show_name}."})
         blend.append({"type": "pause", "duration": 0.3})
 
@@ -295,20 +317,28 @@ def build_blend(query, max_segments=20):
 
         blend.append({"type": "pause", "duration": 0.6})
 
+    # =========================
     # 🎬 OUTRO
+    # =========================
+
     outro = generate_dateline_line("", query=query, stage="outro")
 
     blend.append({"type": "narration", "text": outro})
+
+    print(f"✅ Built blend with {len(blend)} steps")
 
     return blend
 
 
 # =========================
-# ✅ TEST
+# ✅ TEST (ONLY BUILDS STRUCTURE)
 # =========================
 
 if __name__ == "__main__":
-    result = build_blend("CRISPR gene editing")
+
+    query = "CRISPR gene editing"
+
+    result = build_blend(query)
 
     print("\n🔥 OUTPUT\n")
     for step in result:
