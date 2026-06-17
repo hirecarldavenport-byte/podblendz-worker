@@ -8,6 +8,8 @@ from openai import OpenAI
 from pydub import AudioSegment
 import hashlib
 import azure.cognitiveservices.speech as speechsdk
+from dotenv import load_dotenv
+load_dotenv()
 
 client = OpenAI()
 
