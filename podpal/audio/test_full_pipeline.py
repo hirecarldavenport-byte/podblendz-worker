@@ -241,6 +241,8 @@ def run_test(query="Rare sources"):
             text = step.get("text")
             if not text:
                 continue
+            if is_duplicate(text):
+                continue
 
             tts = generate_tts(text, f"media/{uuid.uuid4()}_narration.mp3")
 
@@ -263,7 +265,12 @@ def run_test(query="Rare sources"):
             start = step.get("start")
             end = step.get("end")
 
-            if not audio_file or start is None or end is None:
+            if (
+                not audio_file
+                or start is None
+                or end is None
+                or not os.path.exists(audio_file)
+            ):
                 continue
 
             is_new_source = last_audio != audio_file
@@ -289,9 +296,7 @@ def run_test(query="Rare sources"):
             MIN_CLIP_MS = 30000
 
             if end_ms - start_ms < MIN_CLIP_MS:
-                end_ms = start_ms + MIN_CLIP_MS
-
-                end_ms += 15000
+                end_ms = start_ms + MIN_CLIP_MS + 15000
 
             if last_audio == audio_file and current_group:
                 current_group["end_ms"] = max(current_group["end_ms"], end_ms)
@@ -317,6 +322,14 @@ def run_test(query="Rare sources"):
 
     if current_group:
         final_clips.append(ClipRange(**current_group))
+        speaker_count = sum(
+            1 for step in blend
+             if step.get("type") == "speaker"
+        )
+
+        print(f"✅ Speaker steps: {speaker_count}")
+        print(f"✅ Final timeline segments: {len(final_clips)}")
+
 
     print(f"✅ Final timeline segments: {len(final_clips)}")
 
@@ -345,4 +358,4 @@ def run_test(query="Rare sources"):
               "test_azure.mp3"
         )
         print("Result:", output)
-
+        
