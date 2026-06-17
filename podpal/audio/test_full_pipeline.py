@@ -321,6 +321,12 @@ def run_test(query="Rare sources"):
     print(f"✅ Final timeline segments: {len(final_clips)}")
 
     builder = AudioBuilder()
+    print("\n===== FINAL CLIPS =====")
+    for clip in final_clips:
+          print(clip)
+          
+
+   
 
     output_path, duration = builder.build(
         blend_id=blend_id,
@@ -332,10 +338,11 @@ def run_test(query="Rare sources"):
     print(f"📂 Output: {output_path}")
     print(f"⏱️ Duration: {duration / 1000:.2f} seconds")
 
-if __name__ == "__main__":
-    run_test()
-
-
-
-
+    def test_azure_tts():
+        print("Testing Azure TTS...")
+        output = generate_tts(
+             "Hello from PodBlendz.",
+              "test_azure.mp3"
+        )
+        print("Result:", output)
 
