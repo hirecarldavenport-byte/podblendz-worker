@@ -1,6 +1,5 @@
 from scripts.build_blend import build_blend
 from podpal.audio.builder import AudioBuilder, ClipRange, AudioOptions
-
 import uuid
 import os
 import asyncio
@@ -8,52 +7,28 @@ import edge_tts
 from openai import OpenAI
 from pydub import AudioSegment
 import hashlib
-import json
-import nest_asyncio
-
 import azure.cognitiveservices.speech as speechsdk
-
-# ✅ FIX ASYNC LOOP (CRITICAL)
-nest_asyncio.apply()
 
 client = OpenAI()
 
 # =========================
-# ✅ CONSTANTS (QUALITY TUNING)
-# =========================
-
-LEAD_PADDING_MS = 8000
-TRAIL_PADDING_MS = 30000
-MIN_CLIP_MS = 30000
-MAX_CLIPS = 85
-
-USED_TEXTS = set()
-
-
-# =========================
-# ✅ EDGE TTS
+# ✅ EDGE TTS (FALLBACK)
 # =========================
 
 async def tts_to_file(text, output_path):
-    communicate = edge_tts.Communicate(
-        text=text,
-        voice="en-US-JennyNeural"
-    )
+    communicate = edge_tts.Communicate(text=text, voice="en-US-JennyNeural")
     await communicate.save(output_path)
-
 
 def fallback_tts(text, path):
     try:
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(tts_to_file(text, path))
+        asyncio.run(tts_to_file(text, path))
         return path
-    except Exception as e:
-        print("⚠️ Fallback TTS failed:", e)
+    except Exception:
+        print("⚠️ Fallback TTS failed")
         return None
 
-
 # =========================
-# ✅ AZURE TTS
+# ✅ AZURE TTS (PRIMARY + DEBUG)
 # =========================
 
 def generate_tts(text, path):
@@ -61,7 +36,12 @@ def generate_tts(text, path):
         key = os.getenv("AZURE_SPEECH_KEY")
         region = os.getenv("AZURE_SPEECH_REGION")
 
+        # ✅ DEBUG VISIBILITY
+        print("🔍 Azure Key Loaded:", bool(key))
+        print("🔍 Azure Region:", region)
+
         if not key or not region:
+            print("⚠️ Missing Azure credentials → using fallback")
             return fallback_tts(text, path)
 
         speech_config = speechsdk.SpeechConfig(
@@ -80,16 +60,27 @@ def generate_tts(text, path):
 
         result = synthesizer.speak_text_async(text).get()
 
-        if result and result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+        # ✅ SUCCESS
+        if result is not None and result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
             return path
 
-        print("⚠️ Azure failed → fallback")
+        # ❌ FAILURE — FULL DEBUG
+        print(f"⚠️ Azure TTS failed: {result.reason if result else 'No result'}")
+
+        if result and result.reason == speechsdk.ResultReason.Canceled:
+            cancellation = result.cancellation_details
+
+            print(f"⚠️ Cancellation reason: {cancellation.reason}")
+
+            if cancellation.error_details:
+                print(f"⚠️ Azure error details: {cancellation.error_details}")
+
+        print("⚠️ Falling back to Edge TTS")
         return fallback_tts(text, path)
 
     except Exception as e:
-        print("⚠️ Azure exception:", e)
+        print(f"⚠️ Azure exception: {e} → using fallback")
         return fallback_tts(text, path)
-
 
 # =========================
 # ✅ SILENCE
@@ -100,47 +91,23 @@ def create_silence(duration_ms, path):
     silence.export(path, format="mp3")
     return path
 
-
 # =========================
-# ✅ QUALITY FILTERS
-# =========================
-
-def is_valid_segment(step):
-    if step.get("type") != "speaker":
-        return True
-
-    if not step.get("audio_file"):
-        return False
-
-    text = step.get("text", "").strip()
-
-    if not text or len(text) < 50:
-        return False
-
-    return True
-
-
-def is_repetitive(text):
-    key = " ".join(text.lower().split())
-
-    if key in USED_TEXTS:
-        return True
-
-    USED_TEXTS.add(key)
-    return False
-
-
-# =========================
-# ✅ INTRO
+# ✅ GLOBAL INTRO
 # =========================
 
-def generate_intro(query):
+def generate_podblendz_intro(query):
     try:
         prompt = f"""
 You are the host of PodBlendz.
-Create a compelling, modern intro.
+
+Create a natural podcast intro.
 
 Topic: {query}
+
+Say:
+- From PodBlendz...
+- what this episode covers
+- why it matters
 
 Max 18 words.
 """
@@ -148,28 +115,52 @@ Max 18 words.
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}]
         )
-        content = response.choices[0].message.content
-        return content.strip() if content else ""
-      
-    except:
-        return f"From PodBlendz, this explores {query}."
+        return (response.choices[0].message.content or "").strip()
 
+    except Exception:
+        return f"From PodBlendz, this episode explores {query}. Enjoy."
+
+# =========================
+# ✅ DUPLICATE FILTER
+# =========================
+
+seen_texts = set()
+
+def is_duplicate(text):
+    cleaned = " ".join(text.lower().split())
+    key = hashlib.md5(cleaned.encode()).hexdigest()
+
+    if key in seen_texts:
+        return True
+
+    seen_texts.add(key)
+    return False
 
 # =========================
 # ✅ SOURCE NARRATION
 # =========================
 
-def generate_source_narration(audio, text, query):
+def generate_source_narration(source_path, text, query):
+    show_name = "this podcast"
+
     try:
-        show_name = audio.split("/")[-2] if "/" in audio else "this podcast"
+        parts = source_path.split("/")
+        if len(parts) > 2:
+            show_name = parts[-2].replace("_", " ").title()
 
         prompt = f"""
-Introduce this clip.
+You are a professional podcast narrator.
 
-Source: {show_name}
 Topic: {query}
+Source: {show_name}
 
-Max 12 words.
+Clip:
+"{text}"
+
+Introduce this segment clearly.
+Explain what insight it offers.
+
+Max 16 words.
 """
 
         response = client.chat.completions.create(
@@ -177,22 +168,17 @@ Max 12 words.
             messages=[{"role": "user", "content": prompt}]
         )
 
-        content = response.choices[0].message.content
-        return content.strip() if content else ""
+        return (response.choices[0].message.content or "").strip()
 
-        
-
-    except:
-        return f"From {audio}, here's a perspective."
-
+    except Exception:
+        return f"From {show_name}, this next perspective adds insight."
 
 # =========================
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="future of AI"):
-
-    print(f"\n🚀 Generating blend: {query}\n")
+def run_test(query="Rare sources"):
+    print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
 
@@ -200,50 +186,51 @@ def run_test(query="future of AI"):
         print("❌ No blend generated.")
         return
 
-    blend_id = str(uuid.uuid4())
+    print(f"✅ Blend steps: {len(blend)}")
 
+    blend_id = str(uuid.uuid4())
     os.makedirs("media", exist_ok=True)
-    os.makedirs("data", exist_ok=True)
 
     final_clips = []
-    timeline_segments = []
+
+    LEAD_PADDING_MS = 8000
+    TRAIL_PADDING_MS = 45000
 
     last_audio = None
     current_group = None
 
-    # ✅ INTRO
-    intro_text = generate_intro(query)
+    # ✅ GLOBAL INTRO
+    intro_text = generate_podblendz_intro(query)
     intro_audio = generate_tts(intro_text, f"media/{uuid.uuid4()}_intro.mp3")
 
     if intro_audio:
         final_clips.append(ClipRange(intro_audio, 0, 60000))
 
-    silence = create_silence(600, f"media/{uuid.uuid4()}_silence.mp3")
-    final_clips.append(ClipRange(silence, 0, 600))
+    silence = create_silence(700, f"media/{uuid.uuid4()}_silence.mp3")
+    final_clips.append(ClipRange(silence, 0, 700))
 
     # =========================
-    # ✅ MAIN LOOP
+    # ✅ EXECUTE BLEND
     # =========================
 
     for step in blend:
 
+        MAX_CLIPS = 85  # increase from ~65 to allow longer runs
         if len(final_clips) > MAX_CLIPS:
-            print("⚠️ Max clips reached")
+            print("⚠️ Reached max clip limit, ending gracefully")
 
-            outro_text = f"This has been a PodBlendz blend on {query}."
+            outro_text = f"This has been a PodBlendz compilation on {query}. Thanks for listenting."
             outro_audio = generate_tts(outro_text, f"media/{uuid.uuid4()}_outro.mp3")
-
             if outro_audio:
-                final_clips.append(ClipRange(outro_audio, 0, 60000))
-
+             final_clips.append(ClipRange(outro_audio, 0, 60000))
             break
 
-        # ✅ FILTER INVALID
-        if not is_valid_segment(step):
-            continue
-
-        # ✅ NARRATION
+        # 🎙️ NARRATION
         if step["type"] == "narration":
+
+            if current_group:
+                final_clips.append(ClipRange(**current_group))
+                current_group = None
 
             text = step.get("text")
             if not text:
@@ -254,18 +241,16 @@ def run_test(query="future of AI"):
             if tts:
                 final_clips.append(ClipRange(tts, 0, 60000))
 
-                pause = create_silence(400, f"media/{uuid.uuid4()}_silence.mp3")
-                final_clips.append(ClipRange(pause, 0, 400))
+                pause = create_silence(500, f"media/{uuid.uuid4()}_silence.mp3")
+                final_clips.append(ClipRange(pause, 0, 500))
 
             last_audio = None
-            continue
 
-        # ✅ SPEAKER
-        if step["type"] == "speaker":
+        # 🎧 SPEAKER
+        elif step["type"] == "speaker":
 
             text = step.get("text")
-
-            if is_repetitive(text):
+            if not text:
                 continue
 
             audio_file = step.get("audio_file")
@@ -277,23 +262,31 @@ def run_test(query="future of AI"):
 
             is_new_source = last_audio != audio_file
 
-            # ✅ SHORT INTRO
             if is_new_source:
-                intro = generate_source_narration(audio_file, text, query)
-                tts = generate_tts(intro, f"media/{uuid.uuid4()}_src.mp3")
+                source_intro = generate_source_narration(audio_file, text, query)
+
+                tts = generate_tts(source_intro, f"media/{uuid.uuid4()}_source.mp3")
 
                 if tts:
                     final_clips.append(ClipRange(tts, 0, 60000))
 
-            # ✅ EXTEND CLIPS
+                    pause = create_silence(400, f"media/{uuid.uuid4()}_silence.mp3")
+                    final_clips.append(ClipRange(pause, 0, 400))
+
+                if current_group:
+                    final_clips.append(ClipRange(**current_group))
+                    current_group = None
+
             start_ms = max(0, int(start * 1000) - LEAD_PADDING_MS)
             end_ms = int(end * 1000) + TRAIL_PADDING_MS
 
-            # ✅ MIN SIZE
+            MIN_CLIP_MS = 30000
+
             if end_ms - start_ms < MIN_CLIP_MS:
                 end_ms = start_ms + MIN_CLIP_MS
 
-            # ✅ GROUPING
+                end_ms += 15000
+
             if last_audio == audio_file and current_group:
                 current_group["end_ms"] = max(current_group["end_ms"], end_ms)
             else:
@@ -306,62 +299,37 @@ def run_test(query="future of AI"):
                     "end_ms": end_ms
                 }
 
-            timeline_segments.append({
-                "audio": audio_file,
-                "start": start,
-                "end": end,
-                "text": text
-            })
-
             last_audio = audio_file
+            end_ms += 5000
 
-        # ✅ PAUSE
+        # ⏸️ PAUSE
         elif step["type"] == "pause":
             duration = int(step.get("duration", 0.5) * 1000)
+
             silence = create_silence(duration, f"media/{uuid.uuid4()}_silence.mp3")
             final_clips.append(ClipRange(silence, 0, duration))
 
     if current_group:
         final_clips.append(ClipRange(**current_group))
 
-    # =========================
-    # ✅ BUILD AUDIO
-    # =========================
+    print(f"✅ Final timeline segments: {len(final_clips)}")
 
     builder = AudioBuilder()
 
     output_path, duration = builder.build(
         blend_id=blend_id,
         clips=final_clips,
-        options=AudioOptions()
+        options=AudioOptions(),
     )
 
-    print("\n🎧 SUCCESS")
-    print(f"📂 {output_path}")
-    print(f"⏱ {duration / 1000:.2f} seconds")
-
-    # ✅ SAVE METADATA
-
-    record = {
-        "id": blend_id,
-        "title": query,
-        "audio_file": output_path,
-        "duration": duration,
-        "segments": timeline_segments
-    }
-
-    with open("data/generated_blends.json", "a") as f:
-        f.write(json.dumps(record) + "\n")
-
-    print("✅ Saved blend metadata")
-
-
-# =========================
-# ✅ RUN
-# =========================
+    print("\n🎧 SUCCESS!")
+    print(f"📂 Output: {output_path}")
+    print(f"⏱️ Duration: {duration / 1000:.2f} seconds")
 
 if __name__ == "__main__":
     run_test()
+
+
 
 
 
