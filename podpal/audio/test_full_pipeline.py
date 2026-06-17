@@ -10,6 +10,10 @@ import hashlib
 import azure.cognitiveservices.speech as speechsdk
 from dotenv import load_dotenv
 load_dotenv()
+import os
+
+print("AZURE_SPEECH_KEY Exists:", bool(os.getenv("AZURE_SPEECH_KEY")))
+print("AZURE_SPEECH_REGION:", os.getenv("AZURE_SPEECH_REGION"))
 
 client = OpenAI()
 
