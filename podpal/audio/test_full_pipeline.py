@@ -358,4 +358,5 @@ def run_test(query="Rare sources"):
               "test_azure.mp3"
         )
         print("Result:", output)
-        
+        if __name__ == "__main__":
+            run_test()
