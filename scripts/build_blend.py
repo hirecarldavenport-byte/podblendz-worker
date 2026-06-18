@@ -208,7 +208,7 @@ def build_blend(query, max_segments=20):
         print(f"Max score: {max(scores)}")
 
     # =========================
-    # ✅ CURRENT SORT LOGIC
+    # ✅ DISTANCE SORT
     # =========================
 
     selected_pool = sorted(
@@ -254,20 +254,37 @@ def build_blend(query, max_segments=20):
 
     first = selected[0]
 
-    show_name = extract_show_name(
-        first.get("audio_file", "")
+    print("\n✅ First Selected Clip")
+    print(
+        "Podcast:",
+        first.get("podcast_title")
+    )
+    print(
+        "Episode:",
+        first.get("episode_title")
     )
 
     blend.append({
         "type": "speaker",
+
         "audio_file": first["audio_file"],
         "start": first["start"],
         "end": first["end"],
-        "text": first["text"]
+        "text": first["text"],
+
+        # Metadata
+        "episode_id": first.get("episode_id"),
+        "episode_title": first.get("episode_title"),
+        "episode_description": first.get("episode_description"),
+        "published": first.get("published"),
+
+        "podcast_id": first.get("podcast_id"),
+        "podcast_title": first.get("podcast_title"),
+        "podcast_description": first.get("podcast_description")
     })
 
     # =========================
-    # ✅ LOOP
+    # ✅ REMAINING CLIPS
     # =========================
 
     for i in range(1, len(selected)):
@@ -276,10 +293,21 @@ def build_blend(query, max_segments=20):
 
         blend.append({
             "type": "speaker",
+
             "audio_file": curr["audio_file"],
             "start": curr["start"],
             "end": curr["end"],
-            "text": curr["text"]
+            "text": curr["text"],
+
+            # Metadata
+            "episode_id": curr.get("episode_id"),
+            "episode_title": curr.get("episode_title"),
+            "episode_description": curr.get("episode_description"),
+            "published": curr.get("published"),
+
+            "podcast_id": curr.get("podcast_id"),
+            "podcast_title": curr.get("podcast_title"),
+            "podcast_description": curr.get("podcast_description")
         })
 
     print(f"✅ Built blend with {len(blend)} steps")
