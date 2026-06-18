@@ -158,6 +158,18 @@ def fetch_segment(segment_id):
 
         if start is None or end is None:
             return None
+        if not data.get("title"):
+            print("\n===== METADATA KEYS =====")
+            print(file_key)
+            print(data.keys())
+            print("=========================\n")
+            
+
+
+
+            
+
+
 
         # =========================
         # ✅ AUDIO LOOKUP
