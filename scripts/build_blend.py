@@ -147,9 +147,20 @@ def build_blend(query, max_segments=20):
 
     if not selected_pool:
         return []
-
-    selected_pool = sorted(selected_pool, key=lambda x: x["score"])
+    
+    print(
+        f"Lowest score: {selected_pool[0]['score']}"
+    )
+    print(
+        f"Highest score: {selected_pool[-1]['score']}"
+    )
+    selected_pool = sorted(
+        selected_pool,
+        key=lambda x: x["score"]
+    )
     selected = selected_pool[:max_segments]
+
+   
 
     if len(selected) < 8:
         selected = selected_pool[:8]
@@ -168,7 +179,9 @@ def build_blend(query, max_segments=20):
         "type": "speaker",
         "audio_file": first["audio_file"],
         "start": first["start"],
-        "end": first["end"]
+        "end": first["end"],
+        "text": first["text"]
+    
     })
 
     # ✅ LOOP
@@ -179,7 +192,8 @@ def build_blend(query, max_segments=20):
             "type": "speaker",
             "audio_file": curr["audio_file"],
             "start": curr["start"],
-            "end": curr["end"]
+            "end": curr["end"],
+            "text": curr["text"]
         })
 
     print(f"✅ Built blend with {len(blend)} steps")
