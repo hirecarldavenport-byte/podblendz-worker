@@ -54,7 +54,6 @@ segment_cache = {}
 
 def generate_presigned_url(key, expiry=3600):
     try:
-
         return s3.generate_presigned_url(
             "get_object",
             Params={
@@ -65,12 +64,8 @@ def generate_presigned_url(key, expiry=3600):
         )
 
     except Exception as e:
-
-        print(
-            f"⚠️ Failed to generate URL: "
-            f"{key}"
-        )
-
+        print(f"⚠️ Failed to sign URL: {key}")
+        print(e)
         return None
 
 
@@ -100,10 +95,8 @@ def load_segment_file(file_key):
 
     except Exception as e:
 
-        print(
-            f"⚠️ Failed loading "
-            f"{file_key}: {e}"
-        )
+        print(f"⚠️ Failed loading {file_key}")
+        print(e)
 
         return None
 
@@ -114,7 +107,7 @@ def load_segment_file(file_key):
 
 def fetch_segment(segment_id):
     """
-    Expected format:
+    Example segment_id:
 
     segments/file.json_3
     """
@@ -146,7 +139,7 @@ def fetch_segment(segment_id):
             return None
 
         # =========================
-        # ✅ AUDIO LOOKUP
+        # ✅ AUDIO MAPPING
         # =========================
 
         audio_key = (
@@ -157,8 +150,7 @@ def fetch_segment(segment_id):
         if not audio_key:
 
             print(
-                f"⚠️ Missing audio_file in "
-                f"{file_key}"
+                f"⚠️ Missing audio_file in {file_key}"
             )
 
             return None
@@ -170,19 +162,39 @@ def fetch_segment(segment_id):
         if not audio_url:
             return None
 
+        # =========================
+        # ✅ PODCAST METADATA
+        # =========================
+
+        podcast = data.get("podcast", {})
+
         return {
+
+            # Clip
             "text": text,
             "start": start,
             "end": end,
+
+            # Audio
             "audio_file": audio_url,
-            "source": file_key
+            "source": file_key,
+
+            # Episode Metadata
+            "episode_id": data.get("episode_id"),
+            "episode_title": data.get("title"),
+            "episode_description": data.get("description"),
+            "published": data.get("published"),
+
+            # Podcast Metadata
+            "podcast_id": podcast.get("id"),
+            "podcast_title": podcast.get("title"),
+            "podcast_description": podcast.get("description"),
         }
 
     except Exception as e:
 
         print(
-            f"⚠️ Error fetching "
-            f"{segment_id}: {e}"
+            f"⚠️ Error fetching {segment_id}: {e}"
         )
 
         return None
@@ -195,8 +207,7 @@ def fetch_segment(segment_id):
 def search(query, k=40):
 
     print(
-        f"\n🔍 Searching FAISS for: "
-        f"{query}"
+        f"\n🔍 Searching FAISS for: {query}"
     )
 
     # =========================
@@ -260,13 +271,11 @@ def search(query, k=40):
     # =========================
 
     print(
-        f"✅ Retrieved "
-        f"{usable} usable segments"
+        f"✅ Retrieved {usable} usable segments"
     )
 
     print(
-        f"⚠️ Skipped "
-        f"{skipped} segments"
+        f"⚠️ Skipped {skipped} segments"
     )
 
     if results:
@@ -281,6 +290,20 @@ def search(query, k=40):
             f"{min(scores):.6f}"
             f" → "
             f"{max(scores):.6f}"
+        )
+
+        sample = results[0]
+
+        print("\n✅ Sample Metadata")
+
+        print(
+            f"Podcast: "
+            f"{sample.get('podcast_title')}"
+        )
+
+        print(
+            f"Episode: "
+            f"{sample.get('episode_title')}"
         )
 
     return results
