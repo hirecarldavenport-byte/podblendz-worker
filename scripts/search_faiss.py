@@ -3,34 +3,50 @@ import numpy as np
 import json
 import boto3
 import os
+
 from openai import OpenAI
 
 # =========================
 # ✅ CONFIG
 # =========================
+
 INDEX_FILE = "podcast_index.faiss"
 ID_MAP_FILE = "id_map.json"
+
 BUCKET = "podblendz-episode-audio"
+
 MODEL = "text-embedding-3-small"
 
 # =========================
 # ✅ CLIENTS
 # =========================
-client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+
+client = OpenAI(
+    api_key=os.environ["OPENAI_API_KEY"]
+)
+
 s3 = boto3.client("s3")
 
 # =========================
 # ✅ LOAD INDEX
 # =========================
+
 print("📦 Loading FAISS index...")
+
 index = faiss.read_index(INDEX_FILE)
+
 print("✅ FAISS loaded")
 
-with open(ID_MAP_FILE) as f:
+with open(ID_MAP_FILE, "r", encoding="utf-8") as f:
     id_map = json.load(f)
 
 print(f"✅ Loaded {len(id_map)} IDs")
 
+# =========================
+# ✅ CACHE
+# =========================
+
+segment_cache = {}
 
 # =========================
 # ✅ HELPERS
@@ -38,13 +54,57 @@ print(f"✅ Loaded {len(id_map)} IDs")
 
 def generate_presigned_url(key, expiry=3600):
     try:
+
         return s3.generate_presigned_url(
             "get_object",
-            Params={"Bucket": BUCKET, "Key": key},
+            Params={
+                "Bucket": BUCKET,
+                "Key": key
+            },
             ExpiresIn=expiry
         )
+
     except Exception as e:
-        print(f"⚠️ Failed to sign URL: {key}")
+
+        print(
+            f"⚠️ Failed to generate URL: "
+            f"{key}"
+        )
+
+        return None
+
+
+# =========================
+# ✅ LOAD SEGMENT FILE
+# =========================
+
+def load_segment_file(file_key):
+
+    if file_key in segment_cache:
+        return segment_cache[file_key]
+
+    try:
+
+        response = s3.get_object(
+            Bucket=BUCKET,
+            Key=file_key
+        )
+
+        data = json.loads(
+            response["Body"].read()
+        )
+
+        segment_cache[file_key] = data
+
+        return data
+
+    except Exception as e:
+
+        print(
+            f"⚠️ Failed loading "
+            f"{file_key}: {e}"
+        )
+
         return None
 
 
@@ -54,18 +114,22 @@ def generate_presigned_url(key, expiry=3600):
 
 def fetch_segment(segment_id):
     """
-    segment_id format:
-    'segments/file.json_3'
+    Expected format:
+
+    segments/file.json_3
     """
 
     try:
+
         parts = segment_id.split("_")
+
         file_key = "_".join(parts[:-1])
         idx = int(parts[-1])
 
-        # ✅ Load segment file from S3
-        response = s3.get_object(Bucket=BUCKET, Key=file_key)
-        data = json.loads(response["Body"].read())
+        data = load_segment_file(file_key)
+
+        if not data:
+            return None
 
         segments = data.get("segments", [])
 
@@ -78,21 +142,30 @@ def fetch_segment(segment_id):
         start = seg.get("start")
         end = seg.get("end")
 
-        # ✅ MUST have timestamps
         if start is None or end is None:
             return None
 
-        # ✅ CRITICAL FIX: STOP GUESSING AUDIO PATH
-        audio_key = data.get("audio_file") or data.get("audio_s3_key")
+        # =========================
+        # ✅ AUDIO LOOKUP
+        # =========================
 
+        audio_key = (
+            data.get("audio_file")
+            or data.get("audio_s3_key")
+        )
 
         if not audio_key:
-            # ✅ No audio mapping available → skip
-            print(f"⚠️ Missing audio_file in {file_key}")
+
+            print(
+                f"⚠️ Missing audio_file in "
+                f"{file_key}"
+            )
+
             return None
 
-        # ✅ Generate signed URL
-        audio_url = generate_presigned_url(audio_key)
+        audio_url = generate_presigned_url(
+            audio_key
+        )
 
         if not audio_url:
             return None
@@ -101,12 +174,17 @@ def fetch_segment(segment_id):
             "text": text,
             "start": start,
             "end": end,
-            "audio_file": audio_url,   # ✅ REAL usable audio link
+            "audio_file": audio_url,
             "source": file_key
         }
 
     except Exception as e:
-        print(f"⚠️ Error fetching {segment_id}: {e}")
+
+        print(
+            f"⚠️ Error fetching "
+            f"{segment_id}: {e}"
+        )
+
         return None
 
 
@@ -115,11 +193,16 @@ def fetch_segment(segment_id):
 # =========================
 
 def search(query, k=40):
-    print(f"\n🔍 Searching FAISS for: {query}")
 
-    # -------------------------
-    # ✅ Embed Query
-    # -------------------------
+    print(
+        f"\n🔍 Searching FAISS for: "
+        f"{query}"
+    )
+
+    # =========================
+    # ✅ EMBED QUERY
+    # =========================
+
     response = client.embeddings.create(
         model=MODEL,
         input=query
@@ -129,34 +212,76 @@ def search(query, k=40):
         [response.data[0].embedding]
     ).astype("float32")
 
-    # -------------------------
-    # ✅ FAISS Search
-    # -------------------------
-    distances, indices = index.search(query_vector, k)
+    # =========================
+    # ✅ FAISS SEARCH
+    # =========================
+
+    distances, indices = index.search(
+        query_vector,
+        k
+    )
 
     results = []
 
-    # -------------------------
-    # ✅ Map Results
-    # -------------------------
+    usable = 0
+    skipped = 0
+
+    # =========================
+    # ✅ MAP RESULTS
+    # =========================
+
     for i, idx in enumerate(indices[0]):
 
         if idx < 0 or idx >= len(id_map):
+            skipped += 1
             continue
 
         segment_id = id_map[idx]
 
-        segment = fetch_segment(segment_id)
+        segment = fetch_segment(
+            segment_id
+        )
 
         if not segment:
+            skipped += 1
             continue
 
         results.append({
             **segment,
-            "score": float(distances[0][i])
+            "score": float(
+                distances[0][i]
+            )
         })
 
-    print(f"✅ Retrieved {len(results)} usable segments")
+        usable += 1
+
+    # =========================
+    # ✅ DIAGNOSTICS
+    # =========================
+
+    print(
+        f"✅ Retrieved "
+        f"{usable} usable segments"
+    )
+
+    print(
+        f"⚠️ Skipped "
+        f"{skipped} segments"
+    )
+
+    if results:
+
+        scores = [
+            r["score"]
+            for r in results
+        ]
+
+        print(
+            f"📊 Distance range: "
+            f"{min(scores):.6f}"
+            f" → "
+            f"{max(scores):.6f}"
+        )
 
     return results
 
