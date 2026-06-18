@@ -282,7 +282,7 @@ def test_azure_tts():
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="Rare sources"):
+def run_test(query="Dementia"):
 
     print("\n🚀 Running PodBlendz test...\n")
 
