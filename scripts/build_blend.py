@@ -1,4 +1,3 @@
-from podpal import blend
 from scripts.search_faiss import search
 from openai import OpenAI
 import os
