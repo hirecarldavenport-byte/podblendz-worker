@@ -1,3 +1,4 @@
+from podpal import blend
 from scripts.search_faiss import search
 from openai import OpenAI
 import os
@@ -67,8 +68,62 @@ def extract_show_name(source_path):
 
 
 # =========================
+# ✅ TONE DETECTION
+# =========================
+
+def get_tone(query):
+    q = query.lower()
+    if any(x in q for x in [
+        "dementia",
+        "alzheimer",
+        "brain",
+        "memory",
+        "mental health",
+        "health",
+        "longevity"
+    ]):
+        return (
+            "warm, thoughtful, hopeful, human"
+        )
+    if any(x in q for x in [
+        "startup",
+        "business",
+        "leadership",
+        "venture",
+        "marketing",
+        "sales"
+    ]):
+        return (
+            "confident, practical, insightful"
+        )
+    if any(x in q for x in [
+        "ai",
+        "artificial intelligence",
+        "machine learning",
+        "robotics",
+        "automation"
+    ]):
+        return (
+            "curious, futuristic, innovative"
+        )
+    if any(x in q for x in [
+        "relationship",
+        "dating",
+        "marriage",
+        "parenting"
+    ]):
+        return (
+            "reflective, conversational, relatable"
+        )
+    return (
+        "engaging, intelligent, conversational"
+    )
+
+# =========================
 # ✅ AI NARRATION
 # =========================
+
+
 
 def generate_dateline_line(
     context,
@@ -76,13 +131,23 @@ def generate_dateline_line(
     query="",
     stage="middle"
 ):
+    tone = get_tone(query)
 
     if stage == "intro":
 
-        prompt = (
-            f"Introduce a deeper idea about: "
-            f"{query}. Max 22 words."
-        )
+        prompt = f"""
+        Topic:
+        {query}
+
+        Tone:
+        {tone}
+        Create a compelling opening.
+
+        Do not sound academic.
+        Do not sound like a documentary.
+        Sound natural and engaging.
+        Maximum 22 words.
+        """
 
     elif stage == "bridge":
 
@@ -98,17 +163,33 @@ Max 18 words.
 
     elif stage == "outro":
 
-        prompt = (
-            f"Reflect on: {query}. "
-            f"Max 22 words."
-        )
+        prompt = f"""
+        Topic:
+        {query}
+        Key ideas discussed:
+        {context}
+        
+        Create a final takeaway.
+        Do not summarize mechanically.
+        End with a memorable insight.
+        Maximum 45 words.
+        Sound human.
+        """
 
     else:
-
-        prompt = (
-            f"Guide meaning: {text}. "
-            f"Max 18 words."
-        )
+        prompt = f"""
+        Topic:
+        {query}
+        Tone:
+        {tone}
+        Create a short observation that helps
+        the listener connect ideas.
+        Do not summarize.
+        Do not sound academic.
+        Maximum 18 words.
+        Content:
+        {text}
+        """
 
     try:
 
@@ -310,10 +391,31 @@ def build_blend(query, max_segments=20):
             "podcast_description": curr.get("podcast_description")
         })
 
-    print(f"✅ Built blend with {len(blend)} steps")
+        
+# =========================
+# ✅ OUTRO
+# =========================
 
+    recent_context = "\n".join([
+        shorten(item["text"], 20)
+        for item in selected[-5:]
+        ])
+    
+    outro = generate_dateline_line(
+        recent_context,
+        query=query,
+        stage="outro"
+    
+    )
+
+    blend.append({
+        "type": "narration",
+        "text": outro
+})
+    print(
+        f"✅ Built blend with {len(blend)} steps"
+    )
     return blend
-
 
 # =========================
 # ✅ RENDER AUDIO
@@ -375,7 +477,10 @@ def render_blend(blend):
     with open(files_txt, "w") as f:
 
         for file in file_list:
-            f.write(f"file '{file}'\n")
+            filename = os.path.basename(file)
+            f.write(
+                f"file '{file}'\n"
+                )
 
     final_output = os.path.join(
         folder,
@@ -408,6 +513,8 @@ if __name__ == "__main__":
     query = "CRISPR gene editing"
 
     blend = build_blend(query)
+
+    print(json.dumps(blend[-1], indent=2))
 
     print("\n🎧 Rendering audio...\n")
 
