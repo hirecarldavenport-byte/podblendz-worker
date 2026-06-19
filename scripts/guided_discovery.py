@@ -7,6 +7,7 @@ import traceback
 
 from openai import OpenAI
 from sklearn.feature_extraction.text import CountVectorizer
+from pathlib import Path
 
 # =========================================================
 # ✅ CONFIG
@@ -16,6 +17,8 @@ INDEX_FILE = "podcast_index.faiss"
 ID_MAP_FILE = "id_map.json"
 
 OUTPUT_FILE = "guided_topic_cards.json"
+
+METADATA_ROOT = Path("ingestion/episode_metadata")
 
 BUCKET = "podblendz-episode-audio"
 
@@ -138,6 +141,26 @@ with open(ID_MAP_FILE, "r") as f:
 
 print(f"✅ Loaded {len(id_map)} IDs")
 
+
+# =========================================================
+# ✅ LOAD EPISODE METADATA
+# =========================================================
+episode_metadata = {}
+
+print("📚 Loading episode metadata...")
+for metadata_file in METADATA_ROOT.rglob("*.json"):
+    try:
+        with open(metadata_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            episode_id = data.get("episode_id")
+            if episode_id:
+                episode_metadata[episode_id] = data
+    except Exception:
+                   continue
+    print(
+        f"✅ Loaded {len(episode_metadata)} "
+        f"metadata records"
+    )
 # =========================================================
 # ✅ FETCH SEGMENT TEXT
 # =========================================================
@@ -171,6 +194,18 @@ def fetch_segment_text(segment_id):
     except Exception:
         return ""
 
+
+# =========================================================
+# ✅ EXTRACT EPISODE ID
+# =========================================================
+def extract_episode_id(segment_id):
+    
+    try:
+        filename = segment_id.split("/")[-1]
+        episode_id = filename.split(".json")[0]
+        return episode_id
+    except Exception:
+        return None
 # =========================================================
 # ✅ CLEAN TEXT
 # =========================================================
@@ -488,6 +523,42 @@ for topic in SEED_TOPICS:
             f"✅ Phrases extracted: "
             f"{len(cleaned_phrases)}"
         )
+        # =================================================
+        # ✅ SOURCE EPISODES
+        # =================================================
+
+        source_episodes = []
+        seen_episodes = set()
+        for segment_id in segment_ids:
+            episode_id = extract_episode_id(
+                segment_id
+            )
+            if not episode_id:
+                continue
+            if episode_id in seen_episodes:
+                continue
+            metadata = episode_metadata.get(
+                episode_id
+            )
+            if not metadata:
+                continue
+            source_episodes.append({
+                "episode_id": episode_id,
+                "episode_title":
+                 metadata.get("title"),
+                 "published":
+                 metadata.get("published"),
+                 "podcast_title":
+                 metadata.get(
+                     "podcast",
+                     {}
+                      ).get("title")
+                      })
+            seen_episodes.add(
+                 episode_id
+            )
+            if len(source_episodes) >= 5:
+                break
 
         # =================================================
         # ✅ BUILD CARD
@@ -504,6 +575,10 @@ for topic in SEED_TOPICS:
             "keywords": keywords,
             "phrases": cleaned_phrases,
             "related_segment_count": len(segment_ids),
+            "source_episodes":
+            
+source_episodes,
+
             "sample_segments": segment_ids[:10]
         }
 
