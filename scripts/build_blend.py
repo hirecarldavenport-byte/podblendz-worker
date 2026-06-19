@@ -333,6 +333,8 @@ def build_blend(query, max_segments=20):
     # =========================
 
     first = selected[0]
+    print("\n🔍 FIRST CLIP KEYS")
+    print(first.keys())
 
     print("\n✅ First Selected Clip")
     print(
