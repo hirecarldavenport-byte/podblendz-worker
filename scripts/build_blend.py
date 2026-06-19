@@ -478,7 +478,7 @@ def render_blend(blend):
         for file in file_list:
             filename = os.path.basename(file)
             f.write(
-                f"file '{file}'\n"
+                f"file '{filename}'\n"
                 )
 
     final_output = os.path.join(
