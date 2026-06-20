@@ -308,6 +308,17 @@ def build_blend(query, max_segments=20):
 
     selected = selected_pool[:max_segments]
 
+    total_duration = 0
+    for item in selected:
+        total_duration += (
+            item["end"] -
+            item["start"]
+        )
+        print(
+            f"Total clip duration:"
+            f" {round(total_duration,1)} sec"
+        )
+
     if len(selected) < 8:
         selected = selected_pool[:8]
 
