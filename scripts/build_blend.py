@@ -524,7 +524,10 @@ if __name__ == "__main__":
 
     query = "CRISPR gene editing"
 
-    blend = build_blend(query)
+    blend = build_blend(
+        query,
+        max_segments=50
+        )
 
     print(json.dumps(blend[-1], indent=2))
 
