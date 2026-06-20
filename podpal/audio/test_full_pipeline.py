@@ -288,6 +288,10 @@ def run_test(query="Dementia"):
 
     blend = build_blend(query)
 
+    print("\n===== BLEND TYPES =====")
+    for step in blend:
+        print(step.get("type"))
+
     if not blend:
         print("❌ No blend generated.")
         return
@@ -362,6 +366,26 @@ def run_test(query="Dementia"):
         step_type = step.get("type")
 
         if step_type == "speaker":
+            text = step.get("text", "")
+            if not text:
+                continue  
+        elif step_type == "narration":
+            text = step.get("text", "")
+            if not text:
+                continue
+            tts_file = generate_tts(
+                text,
+                f"media/{uuid.uuid4()}_narration.mp3"
+            )
+            if tts_file:
+                final_clips.append(
+                    ClipRange(
+                        tts_file,
+                         0,
+                          60000
+                    )
+                )
+
 
             text = step.get("text", "")
 
