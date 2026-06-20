@@ -314,7 +314,7 @@ def build_blend(query, max_segments=20):
             item["end"] -
             item["start"]
         )
-        print(
+    print(
             f"Total clip duration:"
             f" {round(total_duration,1)} sec"
         )
