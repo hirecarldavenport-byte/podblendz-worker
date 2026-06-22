@@ -365,27 +365,11 @@ def run_test(query="Dementia"):
 
         step_type = step.get("type")
 
-        if step_type == "speaker":
-            text = step.get("text", "")
-            if not text:
-                continue  
-        elif step_type == "narration":
-            text = step.get("text", "")
-            if not text:
-                continue
-            tts_file = generate_tts(
-                text,
-                f"media/{uuid.uuid4()}_narration.mp3"
-            )
-            if tts_file:
-                final_clips.append(
-                    ClipRange(
-                        tts_file,
-                         0,
-                          60000
-                    )
-                )
+        # =========================
+        # ✅ SPEAKER CLIPS
+        # =========================
 
+        if step_type == "speaker":
 
             text = step.get("text", "")
 
@@ -409,18 +393,17 @@ def run_test(query="Dementia"):
             if audio_file != last_audio:
 
                 if current_group:
+
                     final_clips.append(
                         ClipRange(**current_group)
                     )
 
                     current_group = None
 
-                source_intro = (
-                    generate_source_narration(
-                        audio_file,
-                        text,
-                        query
-                    )
+                source_intro = generate_source_narration(
+                    audio_file,
+                    text,
+                    query
                 )
 
                 intro_tts = generate_tts(
@@ -440,13 +423,11 @@ def run_test(query="Dementia"):
 
             start_ms = max(
                 0,
-                int(start * 1000)
-                - LEAD_PADDING_MS
+                int(start * 1000) - LEAD_PADDING_MS
             )
 
             end_ms = (
-                int(end * 1000)
-                + TRAIL_PADDING_MS
+                int(end * 1000) + TRAIL_PADDING_MS
             )
 
             if end_ms - start_ms < MIN_CLIP_MS:
@@ -463,6 +444,36 @@ def run_test(query="Dementia"):
             }
 
             last_audio = audio_file
+
+        # =========================
+        # ✅ NARRATION
+        # =========================
+
+        elif step_type == "narration":
+
+            text = step.get("text", "")
+
+            if not text:
+                continue
+
+            tts_file = generate_tts(
+                text,
+                f"media/{uuid.uuid4()}_narration.mp3"
+            )
+
+            if tts_file:
+
+                final_clips.append(
+                    ClipRange(
+                        tts_file,
+                        0,
+                        60000
+                    )
+                )
+
+        # =========================
+        # ✅ PAUSE
+        # =========================
 
         elif step_type == "pause":
 
@@ -485,54 +496,9 @@ def run_test(query="Dementia"):
             )
 
     if current_group:
+
         final_clips.append(
             ClipRange(**current_group)
-        )
-
-    print(
-        f"✅ Final timeline segments: "
-        f"{len(final_clips)}"
-    )
-
-    print("\n===== FINAL CLIPS =====")
-
-    for clip in final_clips:
-        print(clip)
-
-    print("=======================\n")
-
-    builder = AudioBuilder()
-
-    output_path, duration = builder.build(
-        blend_id=blend_id,
-        clips=final_clips,
-        options=AudioOptions()
-    )
-
-    print("\n🎧 SUCCESS!")
-    print(f"📂 Output: {output_path}")
-    print(
-        f"⏱️ Duration: "
-        f"{duration / 1000:.2f} seconds"
-    )
-
-    metadata = {
-        "id": blend_id,
-        "query": query,
-        "duration": duration,
-        "output": output_path,
-        "segments": len(final_clips)
-    }
-
-    with open(
-        "data/generated_blends.json",
-        "a",
-        encoding="utf-8"
-    ) as f:
-
-        f.write(
-            json.dumps(metadata)
-            + "\n"
         )
 
 
