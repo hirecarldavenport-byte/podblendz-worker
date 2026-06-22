@@ -31,7 +31,7 @@ def similarity(text_a, text_b):
 def find_supporting_sources(
     segment_text,
     articles,
-    threshold=0.25,
+    threshold=0.50,
     max_results=10
 ):
     """
