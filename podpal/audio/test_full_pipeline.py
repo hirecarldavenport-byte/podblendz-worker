@@ -27,11 +27,14 @@ async def tts_to_file(text, output_path):
 
 def generate_tts(text, path):
     try:
-        asyncio.run(tts_to_file(text, path))
-        return path
-    except Exception:
-        print("⚠️ TTS failed")
-        return None
+       asyncio.run(tts_to_file(text, path))
+       return path
+    except Exception as e:
+
+      print(f"⚠️ TTS failed: {e}")
+
+      return None  
+
 
 # =========================
 # ✅ SILENCE
