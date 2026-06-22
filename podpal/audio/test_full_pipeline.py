@@ -1,5 +1,12 @@
 from scripts.build_blend import build_blend
 from podpal.audio.builder import AudioBuilder, ClipRange, AudioOptions
+from datetime import datetime, UTC
+from podpal.db.database import (
+    SessionLocal
+)
+from podpal.db.blend_store import (
+    create_blend
+)
 import uuid
 import os
 import asyncio
@@ -279,6 +286,69 @@ def run_test(query="AI taking jobs"):
         clips=final_clips,
         options=AudioOptions(),
     )
+
+    creators = set()
+    podcasts = set()
+    for step in blend:
+        if step.get("type") != "speaker":
+            continue
+        source = step.get(
+             "source",
+             ""
+        )
+        podcast_title = step.get(
+            "podcast_title",
+            ""
+        )
+        if source:
+            podcasts.add(source)
+        if podcast_title:
+            creators.add(podcast_title)
+
+    metadata = {
+            "id": blend_id,
+            "title":
+                f"{query}: Shared Perspectives",
+            "summary":
+                f"A PodBlendz conversation about {query}.",
+            "description":
+                f"Generated blend exploring {query}.",
+        "query":
+             query,
+        "audio_file":
+             output_path,
+        "image":
+            "default.jpg",
+        "duration_ms": 
+            duration,
+        "clip_count":
+            len(final_clips),
+        "creators":
+            sorted(list(creators)),
+        "podcasts":
+            sorted(list(podcasts)),
+        "topics":
+            [query],
+        "confidence": {
+            "score": 0,
+            "label": "Pending",
+            "corroboration_count": 0
+        },
+        "created_at":
+            datetime.now(UTC)
+        }
+    db = SessionLocal()
+    try:
+            create_blend(
+             db,
+             metadata
+            )
+            print(
+                f"✅ Blend saved to database: "
+                f"{blend_id}"
+            )
+    finally:
+            db.close()
 
     print("\n🎧 SUCCESS!")
     print(f"📂 Output: {output_path}")
