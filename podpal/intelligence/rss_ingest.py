@@ -141,3 +141,15 @@ if __name__ == "__main__":
     if articles:
         print("\nSample:")
         print(articles[0])
+
+        if __name__ == "__main__":
+
+         articles = fetch_articles()
+
+    print(f"\nArticles: {len(articles)}")
+
+    if articles:
+
+        print("\nSample Article:\n")
+
+        print(articles[0])
