@@ -292,6 +292,7 @@ def run_test(query="AI taking jobs"):
 
     creators = set()
     podcasts = set()
+    episodes = set()
     for step in blend:
         if step.get("type") != "speaker":
             continue
@@ -328,6 +329,8 @@ def run_test(query="AI taking jobs"):
             len(final_clips),
         "creators":
             sorted(list(creators)),
+        "episodes":
+            sorted(list(episodes)),
         "podcasts":
             sorted(list(podcasts)),
         "topics":
@@ -340,6 +343,12 @@ def run_test(query="AI taking jobs"):
         "created_at":
             datetime.now(UTC)
         }
+    print(
+        f"Episodes Found: {len(episodes)}"
+    )
+    print(
+        sorted(list(episodes))[:5]
+    )
     db = SessionLocal()
     try:
             create_blend(
