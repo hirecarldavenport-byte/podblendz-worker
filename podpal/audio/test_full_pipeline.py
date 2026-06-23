@@ -296,6 +296,8 @@ def run_test(query="AI taking jobs"):
     for step in blend:
         if step.get("type") != "speaker":
             continue
+        print("\nSPEAKER STEP KEYS")
+        print(step.keys())
         source = step.get(
              "source",
              ""
