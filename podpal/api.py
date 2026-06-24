@@ -3,6 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 import os
+from podpal.routes.blend_feed_routes import (
+     router as blend_feed_router
+)
+
 
 # -------------------------------------------------
 # ✅ SINGLE SOURCE OF TRUTH
@@ -98,6 +102,7 @@ from podpal.routes.blend_routes import router as blend_router
 app.include_router(health_router)
 app.include_router(search_router)
 app.include_router(blend_router)
+app.include_router(blend_feed_router)
 
 # -------------------------------------------------
 # ✅ ROOT
