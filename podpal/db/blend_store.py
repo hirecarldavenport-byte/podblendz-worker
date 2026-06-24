@@ -164,11 +164,19 @@ def create_blend(
             )
         )
 
-    db.commit()
+    try:
 
-    db.refresh(blend)
+        db.commit()
 
-    return blend
+        db.refresh(blend)
+
+        return blend
+
+    except Exception:
+
+        db.rollback()
+
+        raise
 
 
 # =====================================
@@ -194,10 +202,32 @@ def get_all_blends(
 ):
 
     return (
+
         db.query(Blend)
+
         .order_by(
             Blend.created_at.desc()
         )
+
+        .all()
+    )
+
+
+def get_recent_blends(
+    db: Session,
+    limit: int = 25
+):
+
+    return (
+
+        db.query(Blend)
+
+        .order_by(
+            Blend.created_at.desc()
+        )
+
+        .limit(limit)
+
         .all()
     )
 
@@ -226,6 +256,22 @@ def search_blends(
 
 
 # =====================================
+# STATS
+# =====================================
+
+def count_blends(
+    db: Session
+):
+
+    return (
+
+        db.query(Blend)
+
+        .count()
+    )
+
+
+# =====================================
 # DELETE
 # =====================================
 
@@ -233,6 +279,27 @@ def delete_blend(
     db: Session,
     blend_id: str
 ):
+    """
+    Delete a blend and all related records.
+    """
+
+    db.query(
+        BlendCreator
+    ).filter(
+        BlendCreator.blend_id == blend_id
+    ).delete()
+
+    db.query(
+        BlendPodcast
+    ).filter(
+        BlendPodcast.blend_id == blend_id
+    ).delete()
+
+    db.query(
+        BlendTopic
+    ).filter(
+        BlendTopic.blend_id == blend_id
+    ).delete()
 
     blend = get_blend(
         db,
