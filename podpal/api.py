@@ -12,7 +12,7 @@ from podpal.routes.blend_feed_routes import (
 # ✅ SINGLE SOURCE OF TRUTH
 # -------------------------------------------------
 
-AUDIO_DIR = Path("/app/audio")
+AUDIO_DIR = Path("media")
 TEMP_DIR = AUDIO_DIR / "temp"
 FINAL_DIR = AUDIO_DIR / "final"
 
