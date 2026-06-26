@@ -35,11 +35,41 @@ def is_ad(text):
     t = text.lower()
 
     signals = [
-        "sponsor", "sponsored", "brought to you", "support for",
-        "advertising", "promo", "promotion", "partner",
-        "visit", ".com", "www", "sign up", "subscribe",
-        "use code", "offer", "free trial"
-    ]
+
+    "sponsor",
+    "sponsored by",
+    "this episode is sponsored",
+    "brought to you by",
+
+    "support for this podcast",
+    "our sponsor",
+    "thanks to our sponsor",
+
+    "promo code",
+    "discount code",
+    "use code",
+
+    "limited time offer",
+    "special offer",
+
+    "free trial",
+    "sign up",
+
+    "visit our sponsor",
+    "visit today",
+
+    ".com",
+    "www.",
+
+    "home depot",
+    "betterhelp",
+    "ag1",
+    "athletic greens",
+    "shopify",
+    "squarespace",
+    "rocket money",
+    "ziprecruiter"
+]
 
     return any(s in t for s in signals)
 
@@ -248,6 +278,10 @@ def build_blend(query, max_segments=20):
             continue
 
         if is_ad(text):
+            print(
+                f"🚫 AD REMOVED: "
+                f"{text[:100]}"
+            )
             continue
 
         key = dedup_key(text)
