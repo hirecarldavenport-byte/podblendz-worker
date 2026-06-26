@@ -361,7 +361,7 @@ for cluster_id, items in clusters.items():
         phrase_terms = phrase_vectorizer.get_feature_names_out()
 
         phrase_freqs = np.asarray(
-            X_phrases.sum(axis=0)
+            np.sum(X_phrases, axis=0)
         ).ravel()
 
         phrase_ranked = sorted(
