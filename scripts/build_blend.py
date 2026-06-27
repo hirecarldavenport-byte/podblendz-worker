@@ -262,11 +262,15 @@ def relevance_score(query, text):
                          }
                          ]
              )
-             return int(
-                 safe_content(response)
+             raw = safe_content(response)
+             print(f"GPT RAW RESPONSE: [{raw}]")
+             return int(raw)
+        
+        except Exception as e:
+             print(
+                 f"⚠️ Relevance scoring error: {e}"
              )
-        except Exception:
-         return 0
+             return 0
 
 
 
@@ -319,14 +323,17 @@ def build_blend(query, max_segments=20):
             text
         )
         print(
-            f"🎯 Relevance: {relevance}"
-            f"{text[:80]}"
+            f"\n🎯 Relevance={relevance}"
         )
-        if relevance < 70:
+        print(
+            text[:120]
+        )
+       
+        if relevance < 40:
             print(
-                f"❌ Rejected ({relevance})"
+                f"✅ Accepted ({relevance})"
             )
-            continue
+            
 
         key = dedup_key(text)
 
