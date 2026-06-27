@@ -320,8 +320,12 @@ def build_blend(query, max_segments=20):
         )
         print(
             f"🎯 Relevance: {relevance}"
+            f"{text[:80]}"
         )
         if relevance < 70:
+            print(
+                f"❌ Rejected ({relevance})"
+            )
             continue
 
         key = dedup_key(text)
@@ -609,7 +613,12 @@ if __name__ == "__main__":
         max_segments=50
         )
 
+    if not blend:
+        print("❌ No blend generated.")
+        exit()
     print(json.dumps(blend[-1], indent=2))
+    
+                           
 
     print("\n🎧 Rendering audio...\n")
 
