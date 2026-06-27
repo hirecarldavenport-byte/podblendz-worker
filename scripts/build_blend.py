@@ -239,6 +239,36 @@ Max 18 words.
         print("⚠️ GPT error:", str(e))
         return ""
 
+# =========================
+# ✅ RELEVANCE FILTER
+# =========================
+def relevance_score(query, text):
+        prompt = f"""
+    Topic:
+    {query}
+    Transcript:
+    {text}
+    Rate from 0 to 100.
+    How directly does this transcript discuss the topic?
+    Respond ONLY with a number.
+    """
+        try:
+             response = client.chat.completions.create(
+                 model="gpt-4o-mini",
+                 messages=[
+                     {
+                         "role": "user",
+                         "content": prompt
+                         }
+                         ]
+             )
+             return int(
+                 safe_content(response)
+             )
+        except Exception:
+         return 0
+
+
 
 # =========================
 # ✅ MAIN BUILDER
@@ -248,7 +278,7 @@ def build_blend(query, max_segments=20):
 
     print(f"\n🎧 Building Blend: {query}\n")
 
-    results = search(query, k=120) or []
+    results = search(query, k=30) or []
 
     selected_pool = []
     seen = set()
@@ -256,7 +286,7 @@ def build_blend(query, max_segments=20):
 
     skipped_missing_audio = 0
 
-    MAX_PER_SOURCE = 2
+    MAX_PER_SOURCE = 4
 
     for r in results:
 
@@ -264,6 +294,7 @@ def build_blend(query, max_segments=20):
         start = r.get("start")
         end = r.get("end")
         source = r.get("audio_file")
+        source = r.get("podcast_id")
 
         if not source:
             skipped_missing_audio += 1
@@ -282,6 +313,15 @@ def build_blend(query, max_segments=20):
                 f"🚫 AD REMOVED: "
                 f"{text[:100]}"
             )
+            continue
+        relevance = relevance_score(
+            query,
+            text
+        )
+        print(
+            f"🎯 Relevance: {relevance}"
+        )
+        if relevance < 70:
             continue
 
         key = dedup_key(text)
@@ -341,6 +381,12 @@ def build_blend(query, max_segments=20):
     )
 
     selected = selected_pool[:max_segments]
+
+    print("\n===== SELECTED CLIPS =====")
+    for item in selected:
+        print("\n------------------")
+        print(item.get("podcast_title"))
+        print(item.get("text", "")[:300])
 
     total_duration = 0
     for item in selected:
@@ -556,7 +602,7 @@ def render_blend(blend):
 
 if __name__ == "__main__":
 
-    query = "CRISPR gene editing"
+    query = "mental toughness"
 
     blend = build_blend(
         query,
