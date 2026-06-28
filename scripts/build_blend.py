@@ -1,3 +1,5 @@
+from ast import Continue
+
 from scripts.search_faiss import search
 from openai import OpenAI
 import os
@@ -280,6 +282,8 @@ def relevance_score(query, text):
 
 def build_blend(query, max_segments=20):
 
+    print("🔥 INSIDE BUILD_BLEND")
+
     print(f"\n🎧 Building Blend: {query}\n")
 
     results = search(query, k=30) or []
@@ -293,16 +297,20 @@ def build_blend(query, max_segments=20):
     MAX_PER_SOURCE = 4
 
     for r in results:
+        print("🔥 PROCESSING SEGMENT")
 
         text = r.get("text", "").strip()
         start = r.get("start")
         end = r.get("end")
         source = r.get("audio_file")
-        source = r.get("podcast_id")
 
-        if not source:
-            skipped_missing_audio += 1
-            continue
+        source = (
+            r.get("podcast_id")
+            or r.get("podcast_title")
+            or "unknown"
+        )
+
+        
 
         if start is None or end is None:
             continue
@@ -311,6 +319,8 @@ def build_blend(query, max_segments=20):
 
         if not text or duration < 3:
             continue
+
+        print("🔥 ABOUT TO SCORE")
 
         if is_ad(text):
             print(
@@ -332,7 +342,9 @@ def build_blend(query, max_segments=20):
         if relevance < 40:
             print(
                 f"✅ Accepted ({relevance})"
+
             )
+            continue
             
 
         key = dedup_key(text)
