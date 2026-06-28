@@ -304,7 +304,7 @@ def build_blend(query, max_segments=20):
 
     print(f"\n🎧 Building Blend: {query}\n")
 
-    results = search(query, k=150) or []
+    results = search(query, k=500) or []
 
     selected_pool = []
     seen = set()
@@ -312,7 +312,7 @@ def build_blend(query, max_segments=20):
 
     skipped_missing_audio = 0
 
-    MAX_PER_SOURCE = 4
+    MAX_PER_SOURCE = 2
 
     for r in results:
         print("🔥 PROCESSING SEGMENT")
@@ -360,7 +360,7 @@ def build_blend(query, max_segments=20):
             text[:120]
         )
        
-        if relevance < 50:
+        if relevance < 40:
             print(
                 f"❌ Rejected ({relevance})"
 
