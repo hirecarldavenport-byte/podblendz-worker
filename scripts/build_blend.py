@@ -317,7 +317,7 @@ def build_blend(query, max_segments=20):
 
         duration = end - start
 
-        if not text or duration < 3:
+        if not text or duration < 10:
             continue
 
         print("🔥 ABOUT TO SCORE")
@@ -339,12 +339,15 @@ def build_blend(query, max_segments=20):
             text[:120]
         )
        
-        if relevance < 40:
+        if relevance < 60:
             print(
                 f"✅ Accepted ({relevance})"
 
             )
             continue
+        print(
+            f"✅ Accepted ({relevance})"
+        )
             
 
         key = dedup_key(text)
