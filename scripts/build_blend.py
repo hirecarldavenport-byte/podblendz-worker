@@ -251,6 +251,24 @@ def relevance_score(query, text):
     Transcript:
     {text}
     Rate from 0 to 100.
+
+    A transcript can be relevant if it:
+    - directly mentions the topic
+    - describes the same underlying concept
+    - uses synonymous language
+    - provides examples of the concept
+
+    Examples:
+    Mental toughness includes:
+    grit,
+    resilience,
+    fortitude,
+    perseverance,
+    resolve,
+    strength of character,
+    discipline,
+    mental performance.
+
     How directly does this transcript discuss the topic?
     Respond ONLY with a number.
     """
