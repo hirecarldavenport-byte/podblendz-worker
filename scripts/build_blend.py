@@ -286,7 +286,7 @@ def build_blend(query, max_segments=20):
 
     print(f"\n🎧 Building Blend: {query}\n")
 
-    results = search(query, k=30) or []
+    results = search(query, k=150) or []
 
     selected_pool = []
     seen = set()
