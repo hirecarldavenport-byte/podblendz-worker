@@ -333,6 +333,7 @@ def build_blend(query, max_segments=20):
     seen = set()
     source_counts = {}
 
+    rejected_ads = 0
     rejected_duration = 0
     rejected_relevance = 0
     rejected_dedupe = 0
@@ -341,7 +342,7 @@ def build_blend(query, max_segments=20):
     skipped_missing_audio = 0
 
 
-    MAX_PER_SOURCE = 2
+    MAX_PER_SOURCE = 4
 
     for r in results:
         print("🔥 PROCESSING SEGMENT")
@@ -418,6 +419,15 @@ def build_blend(query, max_segments=20):
             rejected_source_limit += 1
             continue
 
+        if is_ad(text):
+          rejected_ads += 1
+
+          print(
+             f"🚫 AD REMOVED: {text[:100]}" 
+          )
+
+          continue  
+
         source_counts[source] = count + 1
 
         accepted += 1
@@ -430,6 +440,7 @@ def build_blend(query, max_segments=20):
     print(f"Dedupe rejected: {rejected_dedupe}")
     print(f"Source limit rejected: {rejected_source_limit}")
     print(f"Accepted: {accepted}")
+    print(f"Ads rejected: {rejected_ads}")
 
     print(f"✅ Retrieved {len(selected_pool)} usable segments")
     print(f"⚠️ Skipped {skipped_missing_audio} missing audio")
