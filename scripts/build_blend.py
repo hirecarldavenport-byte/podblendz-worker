@@ -385,7 +385,7 @@ def build_blend(query, max_segments=20):
             text[:120]
         )
        
-        if relevance < 40:
+        if relevance < 30:
             print(
                 f"❌ Rejected ({relevance})"
 
