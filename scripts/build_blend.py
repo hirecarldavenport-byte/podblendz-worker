@@ -363,7 +363,7 @@ def build_blend(query, max_segments=20):
 
         duration = end - start
 
-        if not text or duration < 10:
+        if not text or duration < 7:
             rejected_duration += 1
             print(
                 f"⏱ Duration: {duration:.2f}"
