@@ -1,4 +1,3 @@
-from ast import Continue
 
 from scripts.search_faiss import search
 from openai import OpenAI
@@ -63,6 +62,31 @@ def is_ad(text):
     ".com",
     "www.",
 
+    "youtube",
+    "suscribe",
+    "subscribe",
+    "follow me",
+    "follow us",
+    "instagram",
+    "facebook",
+    "twitter",
+    "linkedin",
+
+    "wherever you get your podcasts",
+    "Wherever you get podcasts",
+
+    "app store",
+    "google play",
+
+    "download now",
+
+    "available now",
+
+    "local dealer",
+    "dealership",
+    "test drive",
+
+
     "home depot",
     "betterhelp",
     "ag1",
@@ -77,8 +101,7 @@ def is_ad(text):
 
 
 def dedup_key(text):
-    words = text.lower().split()
-    core = " ".join(words[:12])
+    core = text[:300]
 
     return hashlib.md5(
         core.encode()
@@ -328,14 +351,12 @@ def build_blend(query, max_segments=20):
             or "unknown"
         )
 
-        
-
         if start is None or end is None:
             continue
 
         duration = end - start
 
-        if not text or duration < 3:
+        if not text or duration < 6:
             print(
                 f"⏱ Duration: {duration:.2f}"
             )
@@ -345,16 +366,20 @@ def build_blend(query, max_segments=20):
 
         if is_ad(text):
             print(
-                f"🚫 AD REMOVED: "
-                f"{text[:100]}"
+                f"🚫 AD REMOVED: {text[:100]}"
             )
             continue
+
+
+    
         relevance = relevance_score(
             query,
             text
         )
+        r["relevance"] = relevance
         print(
             f"\n🎯 Relevance={relevance}"
+            f"Duration={duration:.1f}"
         )
         print(
             text[:120]
@@ -414,16 +439,17 @@ def build_blend(query, max_segments=20):
 
     selected_pool = sorted(
         selected_pool,
-        key=lambda x: x["score"]
+        key=lambda x: x["relevance"],
+        reverse=True
     )
 
     print(
-        f"After ascending sort -> first score: "
+        f"Highest relevance: "
         f"{selected_pool[0]['score']}"
     )
 
     print(
-        f"After ascending sort -> last score: "
+        f"Lowest relevance: "
         f"{selected_pool[-1]['score']}"
     )
 
