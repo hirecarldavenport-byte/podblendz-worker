@@ -333,7 +333,13 @@ def build_blend(query, max_segments=20):
     seen = set()
     source_counts = {}
 
+    rejected_duration = 0
+    rejected_relevance = 0
+    rejected_dedupe = 0
+    rejected_source_limit = 0
+    accepted = 0
     skipped_missing_audio = 0
+
 
     MAX_PER_SOURCE = 2
 
@@ -357,6 +363,7 @@ def build_blend(query, max_segments=20):
         duration = end - start
 
         if not text or duration < 10:
+            rejected_duration += 1
             print(
                 f"⏱ Duration: {duration:.2f}"
             )
@@ -386,6 +393,7 @@ def build_blend(query, max_segments=20):
         )
        
         if relevance < 30:
+            rejected_relevance += 1
             print(
                 f"❌ Rejected ({relevance})"
 
@@ -399,6 +407,7 @@ def build_blend(query, max_segments=20):
         key = dedup_key(text)
 
         if key in seen:
+            rejected_dedupe += 1
             continue
 
         seen.add(key)
@@ -406,11 +415,21 @@ def build_blend(query, max_segments=20):
         count = source_counts.get(source, 0)
 
         if count >= MAX_PER_SOURCE:
+            rejected_source_limit += 1
             continue
 
         source_counts[source] = count + 1
 
+        accepted += 1
+
         selected_pool.append(r)
+
+    print("\n===== FILTER STATS =====")
+    print(f"Duration rejected: {rejected_duration}")
+    print(f"Relevance rejected: {rejected_relevance}")
+    print(f"Dedupe rejected: {rejected_dedupe}")
+    print(f"Source limit rejected: {rejected_source_limit}")
+    print(f"Accepted: {accepted}")
 
     print(f"✅ Retrieved {len(selected_pool)} usable segments")
     print(f"⚠️ Skipped {skipped_missing_audio} missing audio")
@@ -425,7 +444,7 @@ def build_blend(query, max_segments=20):
     scores = [
         item["relevance"]
         for item in selected_pool
-        if "score" in item
+        if "relevance" in item
     ]
 
     if scores:
@@ -444,17 +463,17 @@ def build_blend(query, max_segments=20):
             x["score"]
         )
     )
-    reverse=True
+
 
 
     print(
         f"Highest relevance: "
-        f"{selected_pool[0]['score']}"
+        f"{selected_pool[0]['relevance']}"
     )
 
     print(
         f"Lowest relevance: "
-        f"{selected_pool[-1]['score']}"
+        f"{selected_pool[-1]['relevance']}"
     )
 
     selected = selected_pool[:max_segments]
