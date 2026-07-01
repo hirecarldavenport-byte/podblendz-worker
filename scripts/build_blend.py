@@ -101,7 +101,7 @@ def is_ad(text):
 
 
 def dedup_key(text):
-    core = text[:300]
+    core = text[:150]
 
     return hashlib.md5(
         core.encode()
@@ -356,7 +356,7 @@ def build_blend(query, max_segments=20):
 
         duration = end - start
 
-        if not text or duration < 6:
+        if not text or duration < 10:
             print(
                 f"⏱ Duration: {duration:.2f}"
             )
@@ -423,7 +423,7 @@ def build_blend(query, max_segments=20):
     # =========================
 
     scores = [
-        item["score"]
+        item["relevance"]
         for item in selected_pool
         if "score" in item
     ]
@@ -439,9 +439,13 @@ def build_blend(query, max_segments=20):
 
     selected_pool = sorted(
         selected_pool,
-        key=lambda x: x["relevance"],
-        reverse=True
+        key=lambda x: (
+            -x["relevance"],
+            x["score"]
+        )
     )
+    reverse=True
+
 
     print(
         f"Highest relevance: "
