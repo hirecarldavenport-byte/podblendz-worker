@@ -1,3 +1,4 @@
+
 import json
 import boto3
 from pathlib import Path
@@ -20,7 +21,10 @@ s3 = boto3.client("s3")
 # BUILD CHUNKS
 # =====================================================
 
-def build_chunks(segments):
+def build_chunks(
+        segments,
+        metadata
+        ):
 
     chunks = []
 
@@ -40,7 +44,10 @@ def build_chunks(segments):
         if current_words >= TARGET_WORDS:
 
             chunks.append(
-                create_chunk(current_segments)
+                create_chunk(
+                    current_segments,
+                     metadata
+                    )
             )
 
             current_segments = []
@@ -48,13 +55,16 @@ def build_chunks(segments):
 
     if current_segments:
         chunks.append(
-            create_chunk(current_segments)
+            create_chunk(
+                current_segments,
+                metadata
+                )
         )
 
     return chunks
 
 
-def create_chunk(segment_group):
+def create_chunk(segment_group, metadata):
 
     return {
         "start": float(segment_group[0]["start"]),
@@ -69,6 +79,14 @@ def create_chunk(segment_group):
             if s.get("text")
         ),
         "segment_count": len(segment_group),
+
+        # metadata
+        "episode_id": metadata.get("episode_id"),
+        "episode_title": metadata.get("title"),
+        "episode_description": metadata.get("description"),
+        "podcast": metadata.get("podcast"),
+        "category": metadata.get("category"),
+        "published": metadata.get("published"),
     }
 
 
@@ -92,7 +110,13 @@ def process_file(key):
     if not segments:
         return None
 
-    chunks = build_chunks(segments)
+    chunks = build_chunks(
+        segments,
+        data
+    )
+
+    #print("\nDEBUG KEYS")
+    #print(data.keys())
 
     output = {
         **data,

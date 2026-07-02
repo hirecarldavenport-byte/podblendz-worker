@@ -127,8 +127,12 @@ def fetch_chunk(chunk_id):
             # Source Metadata
             # ------------------------------
 
-            "episode_id": data.get("episode_id"),
-            "podcast_id": data.get("podcast_id"),
+            "episode_id": chunk.get("episode_id"),
+            "episode_title": chunk.get("episode_title"),
+
+            "podcast": chunk.get("podcast"),
+
+            "category": chunk.get("category"),
 
             "source_file": file_path
         }
