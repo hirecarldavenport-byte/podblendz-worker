@@ -222,8 +222,8 @@ def search(query, k=20):
 if __name__ == "__main__":
 
     results = search(
-        "Parkinson's disease",
-        k=10
+        "How do people overcome adversity and become stronger?",
+        k=20
     )
 
     print("\n===== TOP RESULTS =====\n")
