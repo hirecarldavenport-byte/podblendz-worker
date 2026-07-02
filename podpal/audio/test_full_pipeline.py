@@ -14,6 +14,7 @@ import edge_tts
 from openai import OpenAI
 from pydub import AudioSegment
 import hashlib
+import traceback
 
 client = OpenAI()
 
@@ -26,14 +27,24 @@ async def tts_to_file(text, output_path):
     await communicate.save(output_path)
 
 def generate_tts(text, path):
+    
     try:
        asyncio.run(tts_to_file(text, path))
        return path
+    
+    
     except Exception as e:
+    
+        print("\n===== TTS ERROR =====")
+        print(type(e))
+        print(str(e))
+        traceback.print_exc()
+        print("=====================\n")
+    return None
 
-      print(f"⚠️ TTS failed: {e}")
+        
 
-      return None  
+ 
 
 
 # =========================
@@ -147,8 +158,8 @@ def run_test(query="Mental Toughness"):
 
     final_clips = []
 
-    LEAD_PADDING_MS = 8000
-    TRAIL_PADDING_MS = 30000
+    LEAD_PADDING_MS = 4000
+    TRAIL_PADDING_MS = 12000
 
     last_audio = None
     current_group = None
@@ -209,8 +220,9 @@ def run_test(query="Mental Toughness"):
                 continue
 
             # ✅ TEMP disable dedup for debugging
-            if is_duplicate(text):
-             continue
+            #temp
+            #if is_duplicate(text):
+             #continue
 
             audio_file = step.get("audio_file")
             start = step.get("start")
@@ -222,7 +234,10 @@ def run_test(query="Mental Toughness"):
             # ✅ SOURCE CHANGE
             is_new_source = last_audio != audio_file
 
-            if is_new_source:
+            introduced_sources = set()
+
+            if is_new_source and audio_file not in introduced_sources:
+                introduced_sources.add(audio_file)
                 source_intro = generate_source_narration(audio_file, text, query)
 
                 tts = generate_tts(source_intro, f"media/{uuid.uuid4()}_source.mp3")
