@@ -232,7 +232,7 @@ if __name__ == "__main__":
         )
 
         print(
-            f"podcast={result.get('podcast_id')}"
+            f"source={result.get('source_file')}"
         )
 
         print(
