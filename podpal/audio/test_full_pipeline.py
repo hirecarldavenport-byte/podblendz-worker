@@ -142,7 +142,7 @@ Max 16 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="parkinsons and exercise"):
+def run_test(query="mental toughness"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
