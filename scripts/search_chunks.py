@@ -222,7 +222,7 @@ def search(query, k=20):
 if __name__ == "__main__":
 
     results = search(
-        "How do people overcome adversity and become stronger?",
+        "How do great leaders build trust?",
         k=20
     )
 
