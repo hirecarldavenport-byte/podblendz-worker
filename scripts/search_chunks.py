@@ -218,7 +218,7 @@ def search(query, k=20):
 if __name__ == "__main__":
 
     results = search(
-        "mental toughness",
+        "Parkinson's disease",
         k=10
     )
 
