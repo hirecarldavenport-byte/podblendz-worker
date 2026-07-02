@@ -7,7 +7,7 @@ async def main():
 
     communicate = edge_tts.Communicate(
         text="Hello PodBlendz",
-        voice="en-US-JennyNeural"
+        voice="en-US-AriaNeural"
     )
 
     await communicate.save(
