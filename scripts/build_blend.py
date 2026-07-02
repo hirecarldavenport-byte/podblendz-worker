@@ -1,5 +1,5 @@
 
-from scripts.search_faiss import search
+from scripts.search_chunks import search
 from openai import OpenAI
 import os
 import json
@@ -282,15 +282,29 @@ def relevance_score(query, text):
     - provides examples of the concept
 
     Examples:
-    Mental toughness includes:
-    grit,
-    resilience,
-    fortitude,
-    perseverance,
-    resolve,
-    strength of character,
-    discipline,
-    mental performance.
+
+    Mental toughness may include:
+    grit
+    resilience
+    perseverance
+    discipline
+    mental endurance
+    psychological stability
+    self-belief
+    self-efficacy
+    determination
+    focus
+    fortitude
+    mental performance
+    overcoming adversity
+    coping with stress
+    mindset
+    staying calm under pressure
+    persistence
+    anti-fragility
+
+    Indirect examples can still be highly relevant.
+
 
     How directly does this transcript discuss the topic?
     Respond ONLY with a number.
@@ -419,18 +433,16 @@ def build_blend(query, max_segments=20):
             rejected_source_limit += 1
             continue
 
-        if is_ad(text):
-          rejected_ads += 1
-
-          print(
-             f"🚫 AD REMOVED: {text[:100]}" 
-          )
-
-          continue  
-
         source_counts[source] = count + 1
 
         accepted += 1
+
+        print(
+            f"✅ ACCEPTED | "
+            f"score={r.get('score')} | "
+            f"relevance={relevance} | "
+            f"source={source}"
+        )
 
         selected_pool.append(r)
 
@@ -466,14 +478,14 @@ def build_blend(query, max_segments=20):
     # =========================
     # ✅ DISTANCE SORT
     # =========================
-
-    selected_pool = sorted(
-        selected_pool,
-        key=lambda x: (
-            -x["relevance"],
-            x["score"]
-        )
-    )
+    #Test
+    #selected_pool = sorted(
+        #selected_pool,
+        #key=lambda x: (
+            #-x["relevance"],
+            #x["score"]
+        #)
+    #)
 
 
 
@@ -709,7 +721,7 @@ def render_blend(blend):
 
 if __name__ == "__main__":
 
-    query = "mental toughness"
+    query = "How do people overcome adversity and become stronger"
 
     blend = build_blend(
         query,
