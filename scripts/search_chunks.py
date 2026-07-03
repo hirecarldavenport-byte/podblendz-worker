@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 
+import boto3
 import numpy as np
 from openai import OpenAI
 
@@ -15,15 +16,19 @@ ID_MAP_FILE = "chunk_id_map.json"
 
 CHUNK_DIR = Path("chunked_segments")
 
+BUCKET = "podblendz-episode-audio"
+
 MODEL = "text-embedding-3-small"
 
 # =====================================================
-# CLIENT
+# CLIENTS
 # =====================================================
 
 client = OpenAI(
     api_key=os.environ["OPENAI_API_KEY"]
 )
+
+s3 = boto3.client("s3")
 
 # =====================================================
 # LOAD INDEX
@@ -49,6 +54,50 @@ print(f"✅ Loaded {len(id_map)} chunk IDs")
 # =====================================================
 
 chunk_cache = {}
+
+# =====================================================
+# HELPERS
+# =====================================================
+
+def generate_presigned_url(
+    key,
+    expiry=3600
+):
+
+    try:
+
+        return s3.generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": BUCKET,
+                "Key": key
+            },
+            ExpiresIn=expiry
+        )
+
+    except Exception as e:
+
+        print(
+            f"⚠️ Failed signing URL: {key}"
+        )
+
+        print(e)
+
+        return None
+
+
+def normalize_podcast(podcast):
+
+    if isinstance(podcast, dict):
+        return podcast
+
+    if isinstance(podcast, str):
+
+        return {
+            "title": podcast
+        }
+
+    return {}
 
 # =====================================================
 # LOAD FILE
@@ -80,17 +129,11 @@ def load_chunk_file(file_path):
 
         return None
 
-
 # =====================================================
 # FETCH CHUNK
 # =====================================================
 
 def fetch_chunk(chunk_id):
-    """
-    Example:
-
-    chunked_segments/business/podcast/episode.json_17
-    """
 
     try:
 
@@ -104,46 +147,110 @@ def fetch_chunk(chunk_id):
         if not data:
             return None
 
-        chunks = data.get("chunks", [])
+        chunks = data.get(
+            "chunks",
+            []
+        )
 
         if idx >= len(chunks):
             return None
 
         chunk = chunks[idx]
 
+        audio_key = (
+            data.get("audio_file")
+            or data.get("audio_s3_key")
+            or data.get("audio_key")
+        )
+
+        audio_url = None
+
+        if audio_key:
+
+            audio_url = generate_presigned_url(
+                audio_key
+            )
+
+        podcast = normalize_podcast(
+            chunk.get("podcast")
+            or data.get("podcast")
+        )
+
         return {
 
-            # ------------------------------
-            # Chunk Content
-            # ------------------------------
+            # ---------------------------------
+            # Clip Metadata
+            # ---------------------------------
 
             "text": chunk.get("text", ""),
             "start": chunk.get("start"),
             "end": chunk.get("end"),
+
+            # ---------------------------------
+            # Chunk Metadata
+            # ---------------------------------
+
             "duration": chunk.get("duration"),
-            "segment_count": chunk.get("segment_count"),
+            "segment_count": chunk.get(
+                "segment_count"
+            ),
 
-            # ------------------------------
-            # Source Metadata
-            # ------------------------------
+            # ---------------------------------
+            # Audio
+            # ---------------------------------
 
-            "episode_id": chunk.get("episode_id"),
-            "episode_title": chunk.get("episode_title"),
+            "audio_file": audio_url,
 
-            "podcast": chunk.get("podcast"),
+            "source": file_path,
+            "source_file": file_path,
 
-            "category": chunk.get("category"),
+            # ---------------------------------
+            # Episode Metadata
+            # ---------------------------------
 
-            "source_file": file_path
+            "episode_id": (
+                chunk.get("episode_id")
+                or data.get("episode_id")
+            ),
+
+            "episode_title": (
+                chunk.get("episode_title")
+                or data.get("title")
+            ),
+
+            "episode_description":
+                data.get("description"),
+
+            "published":
+                data.get("published"),
+
+            # ---------------------------------
+            # Podcast Metadata
+            # ---------------------------------
+
+            "podcast_id":
+                podcast.get("id"),
+
+            "podcast_title":
+                podcast.get("title"),
+
+            "podcast_description":
+                podcast.get("description"),
+
+            "category":
+                chunk.get("category")
         }
 
     except Exception as e:
 
-        print(f"⚠️ Failed chunk lookup: {chunk_id}")
+        print(
+            f"⚠️ Failed chunk lookup: "
+            f"{chunk_id}"
+        )
+
         print(e)
 
         return None
-
 
 # =====================================================
 # SEARCH
@@ -151,7 +258,9 @@ def fetch_chunk(chunk_id):
 
 def search(query, k=20):
 
-    print(f"\n🔍 Searching Chunk Index: {query}")
+    print(
+        f"\n🔍 Searching Chunk Index: {query}"
+    )
 
     response = client.embeddings.create(
         model=MODEL,
@@ -177,6 +286,7 @@ def search(query, k=20):
     for i, idx in enumerate(indices[0]):
 
         if idx < 0 or idx >= len(id_map):
+
             skipped += 1
             continue
 
@@ -185,18 +295,28 @@ def search(query, k=20):
         chunk = fetch_chunk(chunk_id)
 
         if not chunk:
+
             skipped += 1
             continue
 
         results.append({
+
             **chunk,
-            "score": float(distances[0][i])
+
+            "score": float(
+                distances[0][i]
+            )
         })
 
         usable += 1
 
-    print(f"✅ Retrieved {usable} chunks")
-    print(f"⚠️ Skipped {skipped}")
+    print(
+        f"✅ Retrieved {usable} chunks"
+    )
+
+    print(
+        f"⚠️ Skipped {skipped}"
+    )
 
     if results:
 
@@ -212,8 +332,21 @@ def search(query, k=20):
             f"{max(scores):.6f}"
         )
 
-    return results
+        print("\n✅ Sample Metadata")
 
+        sample = results[0]
+
+        print(
+            f"Podcast: "
+            f"{sample.get('podcast_title')}"
+        )
+
+        print(
+            f"Episode: "
+            f"{sample.get('episode_title')}"
+        )
+
+    return results
 
 # =====================================================
 # QUICK TEST
@@ -226,9 +359,14 @@ if __name__ == "__main__":
         k=20
     )
 
-    print("\n===== TOP RESULTS =====\n")
+    print(
+        "\n===== TOP RESULTS =====\n"
+    )
 
-    for i, result in enumerate(results, start=1):
+    for i, result in enumerate(
+        results,
+        start=1
+    ):
 
         print(
             f"\n[{i}] "
@@ -236,7 +374,11 @@ if __name__ == "__main__":
         )
 
         print(
-            f"source={result.get('source_file')}"
+            f"podcast={result.get('podcast_title')}"
+        )
+
+        print(
+            f"episode={result.get('episode_title')}"
         )
 
         print(
