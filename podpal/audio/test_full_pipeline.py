@@ -237,16 +237,36 @@ def run_test(query="mental toughness"):
             introduced_sources = set()
 
             if is_new_source and audio_file not in introduced_sources:
+                if current_group:
+                    final_clips.append(ClipRange(**current_group))
+                    current_group = None
+            
                 introduced_sources.add(audio_file)
-                source_intro = generate_source_narration(audio_file, text, query)
+                
+                source_intro = generate_source_narration(
+                    audio_file,
+                      text,
+                        query
+                    )
 
-                tts = generate_tts(source_intro, f"media/{uuid.uuid4()}_source.mp3")
+                tts = generate_tts(
+                    source_intro,
+                    f"media/{uuid.uuid4()}_source.mp3"
+                    
+                    )
 
                 if tts:
-                    final_clips.append(ClipRange(tts, 0, 60000))
+                    final_clips.append(
+                        ClipRange(tts, 0, 60000)
+                        )
 
-                    pause = create_silence(400, f"media/{uuid.uuid4()}_silence.mp3")
-                    final_clips.append(ClipRange(pause, 0, 400))
+                    pause = create_silence(
+                        400,
+                        f"media/{uuid.uuid4()}_silence.mp3"
+                        
+                        )
+                    final_clips.append(
+                        ClipRange(pause, 0, 400))
 
                 # ✅ flush before switching source
                 if current_group:
