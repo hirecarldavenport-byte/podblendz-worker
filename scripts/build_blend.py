@@ -657,6 +657,14 @@ def render_blend(blend):
 
         url = step["audio_file"]
 
+        if not url:
+            print("\n===================")
+            print("\n⚠️ Missing audio_file")
+            print("===================")
+            print(json.dumps(step, indent=2))
+            continue
+
+
         url = url.replace(
             "&amp;amp;",
             "&amp;"
