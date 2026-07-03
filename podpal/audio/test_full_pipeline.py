@@ -142,7 +142,7 @@ Max 16 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="mental toughness"):
+def run_test(query="how does genetics factor in dementia"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
