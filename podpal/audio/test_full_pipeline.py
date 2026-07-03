@@ -242,18 +242,24 @@ def run_test(query="how does genetics factor in dementia"):
                     current_group = None
             
                 introduced_sources.add(audio_file)
+
+                print("\n🎙 SOURCE INTRO")
+                print("audio_file:", audio_file)
+                print("text:", text[:120])
                 
                 source_intro = generate_source_narration(
                     audio_file,
                       text,
                         query
                     )
+                print("intro:", source_intro)
 
                 tts = generate_tts(
                     source_intro,
                     f"media/{uuid.uuid4()}_source.mp3"
                     
                     )
+                print("tts:", tts)
 
                 if tts:
                     final_clips.append(
@@ -312,6 +318,10 @@ def run_test(query="how does genetics factor in dementia"):
         final_clips.append(ClipRange(**current_group))
 
     print(f"✅ Final timeline segments: {len(final_clips)}")
+
+    print("\n=== TIMELINE ===")
+    for i, clip in enumerate(final_clips[:20]):
+        print(i, clip)
 
     # =========================
     # ✅ BUILD AUDIO
