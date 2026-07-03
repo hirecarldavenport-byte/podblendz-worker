@@ -142,7 +142,7 @@ Max 16 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="how does genetics factor in dementia"):
+def run_test(query="What are the benefits of reading books?"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
