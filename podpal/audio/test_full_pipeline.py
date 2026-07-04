@@ -122,8 +122,23 @@ Source: {show_name}
 Clip:
 "{text}"
 
-Introduce this segment clearly.
-Explain what insight it offers.
+
+You are introducing a podcast clip.
+
+Podcast: {show_name}
+
+Write ONE short sentence.
+Mention the speaker if known.
+Do not summarize broadly.
+Do not say "in this clip" or "this segment."
+
+Examples:
+
+"From Hidden Brain, a look at how stories build empathy."
+
+"Lex Fridman reflects on why books shape identity."
+
+"Diary of a CEO explores the lifelong impact of learning."
 
 Max 16 words.
 """
@@ -142,7 +157,7 @@ Max 16 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="What are the benefits of reading books?"):
+def run_test(query="How much should I sleep each night?"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
