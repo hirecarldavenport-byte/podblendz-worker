@@ -354,6 +354,7 @@ def build_blend(query, max_segments=20):
     rejected_source_limit = 0
     accepted = 0
     skipped_missing_audio = 0
+    rejected_overlap = 0
 
 
     MAX_PER_SOURCE = 4
@@ -435,6 +436,37 @@ def build_blend(query, max_segments=20):
 
         source_counts[source] = count + 1
 
+
+        def overlaps_existing(candidate, selected, threshold=0.5):
+            candidate_start = candidate.get("start")
+            candidate_end = candidate.get("end")
+            candidate_audio = candidate.get("audio_file")
+
+            if candidate_start is None or candidate_end is None:
+                return False
+            for clip in selected:
+                if clip.get("audio_file") != candidate_audio:
+                    continue
+                overlap = max(
+                    0,
+                    min(candidate_end, clip.get("end"))
+                    - max(candidate_start, clip.get("start"))
+                )
+                shorter = min(
+                    candidate_end - candidate_start,
+                    clip.get("end") - clip.get("start")
+                )
+                if shorter <= 0:
+                    continue
+                overlap_pct = overlap / shorter
+                if overlap_pct >= threshold:
+                    return True
+                return False
+            
+        if overlaps_existing(r, selected_pool):
+                rejected_overlap += 1
+                continue
+
         accepted += 1
 
         print(
@@ -453,6 +485,7 @@ def build_blend(query, max_segments=20):
     print(f"Source limit rejected: {rejected_source_limit}")
     print(f"Accepted: {accepted}")
     print(f"Ads rejected: {rejected_ads}")
+    print(f"Overlap rejected: {rejected_overlap}")
 
     print(f"✅ Retrieved {len(selected_pool)} usable segments")
     print(f"⚠️ Skipped {skipped_missing_audio} missing audio")
