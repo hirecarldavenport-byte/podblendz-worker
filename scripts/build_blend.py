@@ -437,7 +437,7 @@ def build_blend(query, max_segments=20):
         source_counts[source] = count + 1
 
 
-        def overlaps_existing(candidate, selected, threshold=0.5):
+        def overlaps_existing(candidate, selected, threshold=0.25):
             candidate_start = candidate.get("start")
             candidate_end = candidate.get("end")
             candidate_audio = candidate.get("audio_file")
