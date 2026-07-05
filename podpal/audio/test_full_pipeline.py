@@ -157,7 +157,7 @@ Max 16 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="How much should I sleep each night?"):
+def run_test(query="How harmful are microplastics?"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
