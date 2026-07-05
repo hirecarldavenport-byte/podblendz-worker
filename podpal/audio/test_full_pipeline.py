@@ -127,24 +127,20 @@ You are introducing a podcast clip.
 
 Podcast: {show_name}
 
-Do NOT summarize the clip.
-Do NOT explain the clip.
+Clip:
+"{text}"
+
+Write ONE sentence.
+
+Mention the podcast name.
+
+Summarize ONLY ideas clearly present in the clip.
 Do NOT infer facts.
-Do NOT mention information not explicitly provided.
+Do not mention things not explicitly discussed.
 
-Only introduce the podcast.
+The listener should understand what they are about to hear.
 
-Examples:
-
-"From Hidden Brain."
-
-"Next, a perspective from Lex Fridman."
-
-"Here's Diary of a CEO."
-
-"Now, from Freakonomics Radio."
-
-Max 8 words.
+Max 15 words.
 """
 
         response = client.chat.completions.create(
@@ -161,7 +157,7 @@ Max 8 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="How will new AI tools impact government assistance programs"):
+def run_test(query="Will there be an AI bubble?"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
