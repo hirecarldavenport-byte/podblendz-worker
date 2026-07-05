@@ -127,20 +127,24 @@ You are introducing a podcast clip.
 
 Podcast: {show_name}
 
-Write ONE short sentence.
-Mention the speaker if known.
-Do not summarize broadly.
-Do not say "in this clip" or "this segment."
+Do NOT summarize the clip.
+Do NOT explain the clip.
+Do NOT infer facts.
+Do NOT mention information not explicitly provided.
+
+Only introduce the podcast.
 
 Examples:
 
-"From Hidden Brain, a look at how stories build empathy."
+"From Hidden Brain."
 
-"Lex Fridman reflects on why books shape identity."
+"Next, a perspective from Lex Fridman."
 
-"Diary of a CEO explores the lifelong impact of learning."
+"Here's Diary of a CEO."
 
-Max 16 words.
+"Now, from Freakonomics Radio."
+
+Max 8 words.
 """
 
         response = client.chat.completions.create(
@@ -157,7 +161,7 @@ Max 16 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="How harmful are microplastics?"):
+def run_test(query="How will new AI tools impact government assistance programs"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
