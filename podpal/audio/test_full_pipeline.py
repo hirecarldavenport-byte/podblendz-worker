@@ -41,12 +41,6 @@ def generate_tts(text, path):
         traceback.print_exc()
         print("=====================\n")
     return None
-
-        
-
- 
-
-
 # =========================
 # ✅ SILENCE
 # =========================
@@ -157,7 +151,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="Will there be an AI bubble?"):
+def run_test(query="How to start your own business"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
@@ -353,21 +347,48 @@ def run_test(query="Will there be an AI bubble?"):
     creators = set()
     podcasts = set()
     episodes = set()
+    episode_objects = []
+
     for step in blend:
         if step.get("type") != "speaker":
             continue
         print("\nSPEAKER STEP KEYS")
         print(step.keys())
-        source = step.get(
-             "source",
-             ""
-        )
+    
         podcast_title = step.get(
             "podcast_title",
             ""
         )
-        if source:
-            podcasts.add(source)
+
+        episode_title = step.get(
+            "episode_title",
+            ""
+        )
+
+        episode_id = step.get(
+            "episode_id"
+            ""
+        )
+
+        published = step.get(
+            "published"
+            ""
+        )
+
+        if episode_title:
+            episodes.add(episode_title)
+
+            episode_objects.append({
+                "episode_id": episode_id,
+                "episode_title": episode_title,
+                "podcast_title": podcast_title,
+                "published": published
+                })
+
+
+        if episode_title:
+            episodes.add(episode_title)
+            
         if podcast_title:
             creators.add(podcast_title)
 
@@ -395,6 +416,8 @@ def run_test(query="Will there be an AI bubble?"):
             sorted(list(episodes)),
         "podcasts":
             sorted(list(podcasts)),
+            "episode_objects":
+            episode_objects,
         "topics":
             [query],
         "confidence": {
@@ -411,6 +434,11 @@ def run_test(query="Will there be an AI bubble?"):
     print(
         sorted(list(episodes))[:5]
     )
+
+    print("\n===== EPISODE OBJECTS =====")
+    for ep in episode_objects[:5]:
+        print(ep)
+
     db = SessionLocal()
     try:
             create_blend(
