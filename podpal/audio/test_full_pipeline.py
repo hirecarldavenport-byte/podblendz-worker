@@ -151,7 +151,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="How to start your own business"):
+def run_test(query="How does meditation help sleep?"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
@@ -354,6 +354,21 @@ def run_test(query="How to start your own business"):
             continue
         print("\nSPEAKER STEP KEYS")
         print(step.keys())
+
+        print(
+             "episode_title:",
+             repr(step.get("episode_title"))
+        )
+
+        print(
+            "episode_id:",
+            repr(step.get("episode_id"))
+        )
+
+        print(
+            "podcast_title:",
+            repr(step.get("podcast_title"))
+        )
     
         podcast_title = step.get(
             "podcast_title",
