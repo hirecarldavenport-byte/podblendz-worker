@@ -23,9 +23,9 @@ class ClipRange:
 class AudioOptions:
     output_format: str = "mp3"
     bitrate_kbps: int = 160
-    crossfade_ms: int = 300
-    fade_in_ms: int = 50
-    fade_out_ms: int = 50
+    crossfade_ms: int = 0
+    fade_in_ms: int = 250
+    fade_out_ms: int = 250
 
     music_bed: Optional[str] = None
     music_bed_gain_db: float = -20.0
@@ -84,8 +84,9 @@ class AudioBuilder:
                 seg = seg.apply_gain(+2)  # slight boost
 
             # ✅ Fades
-            if options.fade_in_ms > 0:
-                seg = seg.fade_in(options.fade_in_ms)
+            if not c.is_narration:
+                if options.fade_in_ms > 0:
+                    seg = seg.fade_in(options.fade_in_ms)
 
             if options.fade_out_ms > 0:
                 seg = seg.fade_out(options.fade_out_ms)

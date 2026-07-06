@@ -276,7 +276,7 @@ def run_test(query="How does meditation help sleep?"):
                         )
 
                     pause = create_silence(
-                        400,
+                        800,
                         f"media/{uuid.uuid4()}_silence.mp3"
                         
                         )
