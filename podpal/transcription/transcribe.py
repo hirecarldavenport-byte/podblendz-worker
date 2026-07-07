@@ -10,6 +10,7 @@ Transcription Module
 
 import json
 from pathlib import Path
+from typing import Optional
 
 import whisper
 
@@ -80,25 +81,16 @@ def load_episode_metadata(episode_id: str) -> dict:
 def transcribe_audio(
     audio_path: str,
     podcast_id: str,
-    episode_id: str
+    episode_id: str,
+    title: Optional[str] = None,
+    published: Optional[str] = None,
 ):
     print(
         f"[TRANSCRIBE] Transcribing: "
         f"{audio_path}"
     )
 
-    # -----------------------------------------
-    # Load episode metadata
-    # -----------------------------------------
 
-    metadata = load_episode_metadata(
-        episode_id
-    )
-
-    print(
-        f"[TRANSCRIBE] Title: "
-        f"{metadata.get('title')}"
-    )
 
     # -----------------------------------------
     # Whisper
@@ -118,12 +110,10 @@ def transcribe_audio(
     transcript_data = {
         "podcast_id": podcast_id,
         "episode_id": episode_id,
-
-        # ✅ Preserve metadata
-        "title": metadata.get("title"),
-        "published": metadata.get("published"),
-        "audio_url": metadata.get("audio_url"),
-        "s3_key": metadata.get("s3_key"),
+        "title": title,
+        "published": published,
+        "segments": segments,
+        
 
         # ✅ Transcript
         "segments": segments,
