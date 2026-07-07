@@ -81,11 +81,13 @@ def run_ingest():
                     audio_path=audio_path,
                     podcast_id=podcast_id,
                     episode_id=episode_id,
+                    title=str(item.get("title", "")),
+                    published=str(item.get("published", "")),
                 )
 
                 print("TRANSCRIPT:", transcript_path)
 
-                chunk_path = process_transcript(transcript_path)
+                chunk_path = process_transcript(Path(transcript_path))
 
                 print("CHUNK:", chunk_path)
 
