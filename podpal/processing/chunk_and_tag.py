@@ -136,6 +136,10 @@ def process_transcript(path: Path):
         processed.append({
             "text": full_text,
             "tag": tag_text(full_text),
+            "episode_title": episode_title,
+            "published": published,
+            "podcast_id": podcast_id,
+            "episode_id": episode_id,
 
             # ✅ CRITICAL CHANGE HERE
             "audio_path": audio_path,
@@ -173,6 +177,7 @@ def process_transcript(path: Path):
         )
 
     print(f"✅ Saved → {out_path}")
+    return str(out_path)
 
 
 # -------------------------------------------------
