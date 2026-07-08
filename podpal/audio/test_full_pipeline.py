@@ -151,7 +151,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="What are the health benefits of marijuana?"):
+def run_test(query="Saving money for retirement."):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
