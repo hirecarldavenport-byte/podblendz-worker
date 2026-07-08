@@ -305,6 +305,14 @@ def relevance_score(query, text):
 
     Indirect examples can still be highly relevant.
 
+    If the topic contains a specific substance,
+    product, disease, technology, company,
+    person, or method, heavily prioritize
+    segments that directly discuss that subject.
+
+    Do not score based solely on general health,
+    wellness, medicine, business, or lifestyle
+    themes.
 
     How directly does this transcript discuss the topic?
     Respond ONLY with a number.
@@ -342,6 +350,26 @@ def build_blend(query, max_segments=20):
     print(f"\n🎧 Building Blend: {query}\n")
 
     results = search(query, k=500) or []
+
+    print("\n===== RAW RESULT =====")
+    sample = results[0]
+    print(
+        "episode_id:",
+        repr(sample.get("episode_id"))
+    )
+    print(
+        "episode_title:",
+        repr(sample.get("episode_title"))
+    )
+    print(
+        "podcast_title:",
+        repr(sample.get("podcast_title"))
+    )
+    print(
+        "published:",
+        repr(sample.get("published"))
+    )
+
 
     selected_pool = []
     seen = set()
@@ -589,6 +617,14 @@ def build_blend(query, max_segments=20):
         first.get("episode_title")
     )
 
+    print("\n===== FIRST CLIP DEBUG =====")
+    print("episode_title:", repr(first.get("episode_title")))
+    print("podcast_title:", repr(first.get("podcast_title")))
+    print("published:", repr(first.get("published")))
+    print("episode_id:", repr(first.get("episode_id")))
+    print("keys:", first.keys())
+    print("============================\n")
+
     blend.append({
         "type": "speaker",
 
@@ -607,6 +643,10 @@ def build_blend(query, max_segments=20):
         "podcast_title": first.get("podcast_title"),
         "podcast_description": first.get("podcast_description")
     })
+
+    print("\nFIRST SELECTED CLIP")
+    from pprint import pprint
+    pprint(selected[0])
 
     # =========================
     # ✅ REMAINING CLIPS

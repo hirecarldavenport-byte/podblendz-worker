@@ -172,6 +172,7 @@ def run_test(query="What are the health benefits of marijuana?"):
 
     last_audio = None
     current_group = None
+    introduced_sources = set()
 
     # =========================
     # ✅ GLOBAL INTRO
@@ -243,7 +244,7 @@ def run_test(query="What are the health benefits of marijuana?"):
             # ✅ SOURCE CHANGE
             is_new_source = last_audio != audio_file
 
-            introduced_sources = set()
+            
 
             if is_new_source and audio_file not in introduced_sources:
                 if current_group:
@@ -381,7 +382,7 @@ def run_test(query="What are the health benefits of marijuana?"):
         )
 
         episode_id = step.get(
-            "episode_id"
+            "episode_id",
             ""
         )
 
