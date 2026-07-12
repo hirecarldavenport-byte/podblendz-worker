@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 import sqlite3
 
-DB_PATH = "podcast_pal.db"
+DB_PATH = "podblendz.db"
 METADATA_ROOT = Path("ingestion/episode_metadata")
 
 conn = sqlite3.connect(DB_PATH)
