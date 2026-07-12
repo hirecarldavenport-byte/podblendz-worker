@@ -1,16 +1,14 @@
+# scripts/show_podcasts.py
+
 import sqlite3
 
 conn = sqlite3.connect("podblendz.db")
 
-rows = conn.execute("""
-SELECT podcast_id, COUNT(*)
-FROM episodes
-GROUP BY podcast_id
-ORDER BY COUNT(*) DESC
-LIMIT 100
-""").fetchall()
-
-for row in rows:
-    print(row)
+for row in conn.execute("""
+SELECT id
+FROM podcasts
+ORDER BY id
+"""):
+    print(row[0])
 
 conn.close()
