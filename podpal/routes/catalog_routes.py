@@ -151,6 +151,77 @@ def podcast_episodes(
     finally:
         conn.close()
 
+@router.get("/podcasts/{podcast_id}/stats")
+def podcast_stats(podcast_id: str):
+    conn = sqlite3.connect(DB_PATH)
+
+    try:
+        total_episodes = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM episodes
+            WHERE podcast_id = ?
+            """,
+
+            (podcast_id,)
+            ).fetchone()[0]
+        real_titles = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM episodes
+            WHERE podcast_id = ?
+            AND title IS NOT NULL
+            AND TRIM(title) != ''
+            AND title != id
+            """,
+            (podcast_id,)
+            ).fetchone()[0]
+        transcripts = conn.execute(
+             
+            """
+            SELECT COUNT(*)
+            FROM episodes
+            WHERE podcast_id = ?
+            AND transcript_status = 'completed'
+            """,
+             (podcast_id,)
+             ).fetchone()[0]
+        placeholder_titles = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM episodes
+            WHERE podcast_id = ?
+            AND title = id
+            """,
+            (podcast_id,)
+            ).fetchone()[0]
+        metadata_coverage_pct = round(
+            (real_titles / total_episodes) * 100,
+                2
+                ) if total_episodes else 0
+        transcript_coverage_pct = round(
+            (transcripts / total_episodes) * 100,
+                2
+                ) if total_episodes else 0
+        return {
+            
+            "podcast_id": podcast_id,
+            "episodes": total_episodes,
+            "real_titles": real_titles,
+            "placeholder_titles": placeholder_titles,
+            "transcripts": transcripts,
+            "metadata_coverage_pct": metadata_coverage_pct,
+            "transcript_coverage_pct": transcript_coverage_pct,
+             }
+    finally:
+        conn.close()
+
+
+
+
+
+
+
 
 @router.get("/catalog/stats")
 def catalog_stats():
