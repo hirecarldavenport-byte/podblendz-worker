@@ -6,7 +6,9 @@ import os
 from podpal.routes.blend_feed_routes import (
      router as blend_feed_router
 )
-
+from podpal.routes.catalog_routes import (
+    router as catalog_router
+)
 
 # -------------------------------------------------
 # ✅ SINGLE SOURCE OF TRUTH
@@ -103,6 +105,7 @@ app.include_router(health_router)
 app.include_router(search_router)
 app.include_router(blend_router)
 app.include_router(blend_feed_router)
+app.include_router(catalog_router)
 
 # -------------------------------------------------
 # ✅ ROOT
