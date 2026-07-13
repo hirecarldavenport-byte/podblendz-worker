@@ -29,7 +29,7 @@ for metadata_file in METADATA_ROOT.rglob("*.json"):
                 title = COALESCE(?, title),
                 published_at = COALESCE(?, published_at),
                 audio_url = COALESCE(?, audio_url)
-            WHERE episode_id = ?
+            WHERE id = ?
             """,
             (
                 data.get("title"),
