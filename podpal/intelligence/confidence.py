@@ -1,6 +1,6 @@
 from podpal.intelligence.models import (
     ConfidenceResult,
-    SupportingSource
+    SupportingSource,
 )
 
 
@@ -9,20 +9,49 @@ from podpal.intelligence.models import (
 # =====================================
 
 AUTHORITATIVE_SOURCES = {
+    # Health / Medicine
     "NIH",
     "NIA",
+    "NINDS",
+    "PubMed",
     "CDC",
     "WHO",
-    "PubMed",
-    "Nature",
-    "JAMA",
-    "NEJM",
     "Mayo Clinic",
     "Cleveland Clinic",
-    "Harvard Health",
     "Johns Hopkins",
+    "Harvard Health",
     "Stanford Medicine",
-    "NINDS",
+    "The Lancet",
+    "JAMA",
+    "NEJM",
+
+    # Science
+    "Nature",
+    "Science",
+
+    # Business / Strategy
+    "McKinsey",
+    "Deloitte Insights",
+    "Harvard Business Review",
+    "MIT Sloan",
+    "Brookings",
+
+    # Economics / Policy
+    "Federal Reserve",
+    "World Bank",
+    "IMF",
+    "OECD",
+    "BLS",
+    "CBO",
+
+    # AI / Research
+    "OpenAI Research",
+    "Google Research",
+    "DeepMind",
+    "Anthropic Research",
+    "Stanford HAI",
+    "MIT CSAIL",
+    "arXiv",
 }
 
 
@@ -30,10 +59,10 @@ AUTHORITATIVE_SOURCES = {
 # LABELS
 # =====================================
 
-HIGH_CONFIDENCE = "High"
+VERIFIED = "Verified"
 SUPPORTED = "Supported"
 EMERGING = "Emerging"
-SPECULATIVE = "Speculative"
+UNVERIFIED = "Unverified"
 
 
 # =====================================
@@ -47,12 +76,12 @@ def calculate_confidence(
     contradiction_count: int,
 ) -> ConfidenceResult:
     """
-    Calculate confidence based on:
+    Confidence is determined by:
 
-    - reputable corroborating sources
-    - podcast diversity
-    - supporting transcript segments
-    - contradictions
+    - Authoritative corroboration sources
+    - Number of supporting podcasts
+    - Number of supporting transcript segments
+    - Contradiction penalties
     """
 
     corroboration_count = len(supporting_sources)
@@ -72,7 +101,7 @@ def calculate_confidence(
     score += min(authoritative_count * 0.15, 0.45)
 
     # =====================================
-    # PODCAST SUPPORT
+    # PODCAST CONSENSUS
     # =====================================
 
     score += min(podcast_count * 0.08, 0.24)
@@ -84,13 +113,13 @@ def calculate_confidence(
     score += min(segment_count * 0.03, 0.21)
 
     # =====================================
-    # CONTRADICTION PENALTY
+    # CONTRADICTIONS
     # =====================================
 
     score -= contradiction_count * 0.10
 
     # =====================================
-    # NORMALIZATION
+    # NORMALIZE
     # =====================================
 
     score = max(0.0, min(score, 1.0))
@@ -104,7 +133,7 @@ def calculate_confidence(
         and podcast_count >= 3
         and contradiction_count == 0
     ):
-        label = HIGH_CONFIDENCE
+        label = VERIFIED
 
     elif score >= 0.70:
         label = SUPPORTED
@@ -113,7 +142,7 @@ def calculate_confidence(
         label = EMERGING
 
     else:
-        label = SPECULATIVE
+        label = UNVERIFIED
 
     return ConfidenceResult(
         score=score,
@@ -128,8 +157,8 @@ def calculate_confidence(
 # =====================================
 
 def confidence_badge(
-    result: ConfidenceResult
-):
+    result: ConfidenceResult,
+) -> str:
     return (
         f"{result.label} Confidence "
         f"({result.corroboration_count} sources)"
@@ -166,22 +195,55 @@ def confidence_metadata(
 
 
 # =====================================
-# REPUTABLE RSS SOURCES
+# TRUSTED RSS FEEDS
 # =====================================
 
 TRUSTED_RSS_FEEDS = {
+    # Health
     "nih": "https://www.nih.gov/news-events/news-releases/feed",
     "nia": "https://www.nia.nih.gov/news/rss.xml",
     "cdc": "https://tools.cdc.gov/api/v2/resources/media/rss.xml",
     "who": "https://www.who.int/rss-feeds/news-english.xml",
-    "nature": "https://www.nature.com/nature.rss",
     "mayo_clinic": "https://newsnetwork.mayoclinic.org/feed/",
     "cleveland_clinic": "https://health.clevelandclinic.org/feed/",
     "harvard_health": "https://www.health.harvard.edu/blog/feed",
     "johns_hopkins": "https://hub.jhu.edu/rss/",
-    "pubmed": (
-        "https://pubmed.ncbi.nlm.nih.gov/rss/search/"
-    ),
+    "pubmed": "https://pubmed.ncbi.nlm.nih.gov/rss/search/",
+
+    # Science
+    "nature": "https://www.nature.com/nature.rss",
+
+    # Economics / Policy
+    "federal_reserve":
+        "https://www.federalreserve.gov/feeds/press_all.xml",
+
+    "world_bank":
+        "https://www.worldbank.org/en/news/all/rss",
+
+    "imf":
+        "https://www.imf.org/en/News/rss",
+
+    "oecd":
+        "https://www.oecd.org/newsroom/rss.xml",
+
+    "bls":
+        "https://www.bls.gov/feed/bls_latest.rss",
+
+    # AI / Research
+    "openai":
+        "https://openai.com/blog/rss.xml",
+
+    "google_research":
+        "https://research.google/blog/rss/",
+
+    "deepmind":
+        "https://deepmind.google/discover/blog/rss.xml",
+
+    "anthropic":
+        "https://www.anthropic.com/news/rss.xml",
+
+    "mit_csail":
+        "https://www.csail.mit.edu/news/rss.xml",
 }
 
 
@@ -209,6 +271,12 @@ if __name__ == "__main__":
             title="Cognitive Decline",
             url="https://www.nature.com",
             score=0.84,
+        ),
+        SupportingSource(
+            source="OpenAI Research",
+            title="Reasoning Models",
+            url="https://openai.com/research",
+            score=0.95,
         ),
     ]
 
