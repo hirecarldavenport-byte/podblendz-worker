@@ -1,26 +1,70 @@
 import csv
-from collections import defaultdict
 
 TRUTH_TABLE = "episodes_truth.csv"
+OUTPUT_FILE = "confidence_report.csv"
 
-candidates = []
-podcast_counts = defaultdict(int)
+results = []
 
 with open(TRUTH_TABLE, newline="", encoding="utf-8") as f:
     reader = csv.DictReader(f)
 
     for row in reader:
 
-        if row["confidence_ready"] == "True":
+        score = 0
 
-            candidates.append(row)
-            podcast_counts[row["podcast"]] += 1
+        #
+        # Audio
+        #
+        if row["audio_exists"] == "True":
+            score += 10
+
+        #
+        # Metadata
+        #
+        if row["metadata_exists"] == "True":
+            score += 25
+
+        #
+        # Segments
+        #
+        if row["segment_exists"] == "True":
+            score += 35
+
+        #
+        # Title
+        #
+        if row["title"].strip():
+            score += 15
+
+        #
+        # Published Date
+        #
+        if row["published"].strip():
+            score += 15
+
+        results.append(
+            {
+                "podcast": row["podcast"],
+                "topic": row["topic"],
+                "episode_hash": row["episode_hash"],
+                "title": row["title"],
+                "confidence_score": score,
+            }
+        )
 
 #
-# Write candidate file
+# Sort highest confidence first
+#
+results.sort(
+    key=lambda r: r["confidence_score"],
+    reverse=True,
+)
+
+#
+# Export report
 #
 with open(
-    "confidence_candidates.csv",
+    OUTPUT_FILE,
     "w",
     newline="",
     encoding="utf-8",
@@ -33,36 +77,45 @@ with open(
             "topic",
             "episode_hash",
             "title",
-            "published",
+            "confidence_score",
         ],
     )
 
     writer.writeheader()
 
-    for row in candidates:
+    writer.writerows(results)
 
-        writer.writerow(
-            {
-                "podcast": row["podcast"],
-                "topic": row["topic"],
-                "episode_hash": row["episode_hash"],
-                "title": row["title"],
-                "published": row["published"],
-            }
-        )
+#
+# Summary
+#
+print()
+print("CONFIDENCE REPORT CREATED")
+print("-------------------------")
+print(f"Episodes Scored: {len(results):,}")
+
+top_90 = sum(
+    1 for r in results
+    if r["confidence_score"] >= 90
+)
+
+top_70 = sum(
+    1 for r in results
+    if r["confidence_score"] >= 70
+)
+
+print(f"90+ Confidence: {top_90:,}")
+print(f"70+ Confidence: {top_70:,}")
 
 print()
-print("CONFIDENCE CANDIDATES")
-print("---------------------")
-print(f"Candidates: {len(candidates):,}")
-print()
+print("Top 20 Episodes")
+print("---------------")
 
-for podcast, count in sorted(
-    podcast_counts.items(),
-    key=lambda x: x[1],
-    reverse=True,
-):
-    print(f"{podcast}: {count}")
+for row in results[:20]:
+    print(
+        f"{row['confidence_score']:3} | "
+        f"{row['podcast']:20} | "
+        f"{row['title'][:60]}"
+    )
 
 print()
-print("Output: confidence_candidates.csv")
+print(f"Output: {OUTPUT_FILE}")
