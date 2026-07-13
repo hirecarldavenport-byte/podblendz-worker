@@ -95,6 +95,63 @@ def list_episodes(
         conn.close()
 
 
+@router.get("/podcasts/{podcast_id}/episodes")
+def podcast_episodes(
+    podcast_id: str,
+    limit: int = 100,
+    offset: int = 0,
+    real_titles_only: bool = False,
+):
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+
+    try:
+
+        query = """
+        SELECT
+            id,
+            podcast_id,
+            title,
+            published_at,
+            audio_s3_key,
+            transcript_status
+        FROM episodes
+        WHERE podcast_id = ?
+        """
+
+        params: list[object] = [podcast_id]
+
+        if real_titles_only:
+            query += """
+            AND title IS NOT NULL
+            AND TRIM(title) != ''
+            AND title != id
+            """
+
+        query += """
+        ORDER BY updated_at DESC
+        LIMIT ?
+        OFFSET ?
+        """
+
+        params.extend([limit, offset])
+
+        rows = conn.execute(
+            query,
+            params
+        ).fetchall()
+
+        return {
+            "podcast_id": podcast_id,
+            "count": len(rows),
+            "episodes": [dict(row) for row in rows],
+        }
+
+    finally:
+        conn.close()
+
+
 @router.get("/catalog/stats")
 def catalog_stats():
 
