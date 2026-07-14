@@ -184,14 +184,7 @@ def iter_ingestible_podcasters():
             ):
                 yield topic, podcaster
 
-for master_topic, podcaster in iter_ingestible_podcasters():
-    print(f"FOUND PODCAST: {podcaster['id']}")
-    feed_url = podcaster.get("feed_url")
 
-for master_topic, podcaster in iter_ingestible_podcasters():
-    if podcaster["id"] != "kevonstage_not_my_best_moment":
-        continue
-    feed_url = podcaster.get("feed_url")
 
 
 
