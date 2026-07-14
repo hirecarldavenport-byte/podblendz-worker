@@ -152,6 +152,18 @@ TOP_PODCASTERS_BY_MASTER_TOPIC: Dict[str, List[CanonicalPodcaster]] = {
             "media_access": "direct",
             "source_quality": "core",
         },
+
+        {
+            "id": "kevonstage_not_my_best_moment",
+            "name": "Not My Best Moment with KevOnStage",
+            "ingestible": True,
+            "primary_topic": "literature_culture",
+            "allow_cross_topic": True,
+            "feed_url": "https://www.omnycontent.com/d/playlist/e73c998e-6e60-432f-8610-ae210140c5b1/ed96ed15-e1a5-40a6-9e19-b386014b76d5/ecbf132e-df53-49a5-aee0-b386014b7a9f/podcast.rss",
+            "media_access": "direct",
+            "source_quality": "core",
+        }
+
     ],
 }
 
