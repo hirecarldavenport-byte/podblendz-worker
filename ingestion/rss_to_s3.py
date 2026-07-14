@@ -231,8 +231,6 @@ def run(dry_run: bool = False):
     print("▶ Starting ingestion")
 
     for master_topic, podcaster in iter_ingestible_podcasters():
-        if podcaster["id"] != "kevonstage_not_my_best_moment":
-            continue
         feed_url = podcaster.get("feed_url")
         media_access = podcaster.get("media_access")
 
