@@ -11,12 +11,10 @@ DB_PATH = BASE_DIR / "podblendz.db"
 
 S3_BUCKET = "podblendz-episode-audio"
 BASE_PREFIX = "raw_audio"
-MASTER_TOPIC = "education_learning"
+MASTER_TOPIC = "media_culture"
 
 PODCAST_IDS = [
-    "hidden_brain",
-    "99_percent_invisible",
-    "ted_talks_daily",
+    "kevonstage_not_my_best_moment"
 ]
 
 AUDIO_EXTENSION = ".mp3"
