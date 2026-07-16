@@ -10,7 +10,14 @@ from collections import Counter, defaultdict
 # ✅ CONFIG
 # --------------------------------------
 RUNPOD_API_KEY = os.environ.get("RUNPOD_API_KEY")
-ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID", "").strip()
+ENDPOINT_ID = (
+os.environ.get("RUNPOD_ENDPOINT_ID", "")
+.strip()
+
+.replace("'", "")
+.replace('"', "")
+)
+
 
 DELAY_BETWEEN_JOBS = 2
 MAX_EPISODES = 1500
@@ -160,6 +167,10 @@ def main():
         ep for ep in all_episodes
         if not transcript_exists(ep["category"], ep["podcast"], ep["episode_id"])
     ]
+    new_episodes = [
+        ep for ep in new_episodes
+        if ep["podcast"] == "kevonstage_not_my_best_moment"
+        ]
 
     print(f"✅ New episodes available: {len(new_episodes)}")
 
