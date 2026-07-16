@@ -191,7 +191,7 @@ def main():
     #
     # Start small
     #
-    files = files[:1000]
+    "files = files[:1000]"
 
     print(
         f"✅ Processing {len(files)} files"
