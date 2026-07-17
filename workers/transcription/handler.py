@@ -131,6 +131,7 @@ def handler(job):
 
         print("🔥 PAYLOAD RECEIVED:", payload)
 
+
         # ✅ Validation
         for field in ["episode_id", "category", "podcast", "audio_s3_key"]:
             if field not in payload:
@@ -141,6 +142,12 @@ def handler(job):
         podcast = payload["podcast"]
         audio_s3_key = payload["audio_s3_key"]
         language = payload.get("language", "en")
+        title = payload.get("title")
+        published_at = payload.get("published_at")
+
+        print("TITLE:", title)
+        print("PUBLISHED_AT:", published_at)
+
 
         print(f"🎧 Processing: {category}/{podcast}/{episode_id}")
 
@@ -165,13 +172,19 @@ def handler(job):
 
             output = {
                 "episode_id": episode_id,
+                "title": title,
+                "published_at": published_at,
+
                 "podcast": podcast,
                 "category": category,
                 "audio_s3_key": audio_s3_key,
+
                 "model": MODEL_NAME,
                 "language": language,
+
                 "segment_count": len(segments),
                 "segments": segments,
+
                 "created_at": datetime.utcnow().isoformat() + "Z"
             }
 

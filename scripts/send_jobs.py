@@ -3,9 +3,11 @@ import time
 import random
 import requests
 import boto3
+import sqlite3
 from botocore.exceptions import ClientError
 from collections import Counter, defaultdict
 
+conn = sqlite3.connect("podblendz.db")
 # --------------------------------------
 # ✅ CONFIG
 # --------------------------------------
@@ -65,6 +67,8 @@ def get_all_episodes():
     paginator = s3.get_paginator("list_objects_v2")
     episodes = []
 
+    cur = conn.cursor()
+
     for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=S3_PREFIX):
         for obj in page.get("Contents", []):
             key = obj["Key"]
@@ -80,16 +84,46 @@ def get_all_episodes():
             category, podcast, filename = parts[1], parts[2], parts[3]
             episode_id = filename.replace(".mp3", "")
 
+           
+
+            cur.execute("""
+            SELECT title, published_at
+            FROM episodes
+            WHERE id = ?
+            """, (episode_id,))
+
+            row = cur.fetchone()
+
+            title = None
+            published_at = None
+
+            if row:
+                title = row[0]
+                published_at = row[1]
+
+                if row:
+                    print(f"✅ FOUND TITLE: {title}")
+                else:
+                    print(f"❌ NO DB MATCH: {episode_id}")
+
             episodes.append({
                 "episode_id": episode_id,
                 "audio_s3_key": key,
                 "category": category,
                 "podcast": podcast,
-                "language": "en"
-            })
+                "language": "en",
+                "title": title,
+                "published_at": published_at
+                 })
+       
 
     print(f"✅ Found {len(episodes)} total audio files")
     return episodes
+
+     
+
+
+ 
 
 
 # --------------------------------------
@@ -214,6 +248,8 @@ def main():
         time.sleep(DELAY_BETWEEN_JOBS)
 
     print("\n✅ DONE")
+
+    conn.close()
 
 
 if __name__ == "__main__":
