@@ -94,6 +94,8 @@ def get_all_episodes():
 
             row = cur.fetchone()
 
+            print("ROW =", row)
+
             title = None
             published_at = None
 
