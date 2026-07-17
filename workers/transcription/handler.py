@@ -145,6 +145,7 @@ def handler(job):
         title = payload.get("title")
         published_at = payload.get("published_at")
 
+
         print("TITLE:", title)
         print("PUBLISHED_AT:", published_at)
 
