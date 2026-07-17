@@ -100,21 +100,18 @@ def get_all_episodes():
             published_at = None
 
             if row:
-                print(f"✅ FOUND TITLE: {title}")
-            else:
-                 print(f"❌ NO MATCH: {episode_id}") 
+                print("TITLE FIELD =", row[0])
+                print("PUBLISHED FIELD =", row[1])
 
-            title = None
-            published_at = None
-
-            if row:
                 title = row[0]
                 published_at = row[1]
 
-                if row:
-                    print(f"✅ FOUND TITLE: {title}")
-                else:
-                    print(f"❌ NO DB MATCH: {episode_id}")
+                print(f"✅ FOUND TITLE: {title}")
+
+            else:
+                 print(f"❌ NO DB MATCH: {episode_id}")
+
+           
 
             episodes.append({
                 "episode_id": episode_id,
