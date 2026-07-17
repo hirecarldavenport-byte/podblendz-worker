@@ -98,6 +98,14 @@ def get_all_episodes():
             published_at = None
 
             if row:
+                print(f"✅ FOUND TITLE: {title}")
+            else:
+                 print(f"❌ NO MATCH: {episode_id}") 
+
+            title = None
+            published_at = None
+
+            if row:
                 title = row[0]
                 published_at = row[1]
 
