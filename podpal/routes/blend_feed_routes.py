@@ -6,7 +6,8 @@ from podpal.db.database import (
 
 from podpal.db.blend_store import (
     get_recent_blends,
-    get_blend
+    get_blend,
+    get_blend_podcasts,
 )
 
 router = APIRouter()
@@ -73,6 +74,10 @@ def blend_detail(
             return {
                 "error": "Blend not found"
             }
+        podcasts = get_blend_podcasts(
+            db,
+            blend_id
+        )
 
         return {
 
@@ -101,7 +106,11 @@ def blend_detail(
                 blend.confidence_label,
 
             "created_at":
-                str(blend.created_at)
+                str(blend.created_at),
+            "podcasts": [
+                p.podcast_name
+                for p in podcasts
+            ]
         }
 
     finally:

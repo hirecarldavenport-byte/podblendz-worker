@@ -195,7 +195,20 @@ def get_blend(
         )
         .first()
     )
-
+def get_blend_podcasts(
+        db: Session,
+        blend_id: str
+    ):
+    
+    return (
+        db.query(
+            BlendPodcast
+        )
+        .filter(
+            BlendPodcast.blend_id == blend_id
+        )
+        .all()
+    )
 
 def get_all_blends(
     db: Session
