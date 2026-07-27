@@ -1,0 +1,204 @@
+diff --git a/blends.zip b/blends.zip
+new file mode 100644
+index 0000000..b556e79
+Binary files /dev/null and b/blends.zip differ
+diff --git a/podpal/db/blend_store.py b/podpal/db/blend_store.py
+index 5d43bcd..6be163b 100644
+--- a/podpal/db/blend_store.py
++++ b/podpal/db/blend_store.py
+@@ -210,6 +210,19 @@ def get_blend_podcasts(
+         .all()
+     )
+ 
++def get_blend_creators(
++        db: Session,
++        blend_id: str
++    ):
++
++        return(
++            db.query(
++                BlendCreator
++            )
++            .filter(BlendCreator.blend_id == blend_id)
++            .all()
++            )
++
+ def get_all_blends(
+     db: Session
+ ):
+diff --git a/podpal/routes/blend_feed_routes.py b/podpal/routes/blend_feed_routes.py
+index 8232a2c..05353eb 100644
+--- a/podpal/routes/blend_feed_routes.py
++++ b/podpal/routes/blend_feed_routes.py
+@@ -1,21 +1,20 @@
+ from fastapi import APIRouter
+ 
+-from podpal.db.database import (
+-    SessionLocal
+-)
++from podpal.db.database import SessionLocal
+ 
+ from podpal.db.blend_store import (
+     get_recent_blends,
+     get_blend,
+     get_blend_podcasts,
++    get_blend_creators,
+ )
+ 
+ router = APIRouter()
+ 
+ 
+-# =====================================
+-# FEED
+-# =====================================
++# -------------------------------------------------
++# BLENDS FEED
++# -------------------------------------------------
+ 
+ @router.get("/blends")
+ def list_blends():
+@@ -29,36 +28,68 @@ def list_blends():
+             limit=100
+         )
+ 
+-        return [
++        results = []
++
++        for blend in blends:
++
++            creators = get_blend_creators(
++                db,
++                blend.id
++            )
++
++            podcasts = get_blend_podcasts(
++                db,
++                blend.id
++            )
++
++            results.append({
+ 
+-            {
+                 "id": blend.id,
++
+                 "title": blend.title,
++
+                 "summary": blend.summary,
++
+                 "description": blend.description,
++
+                 "duration_ms": blend.duration_ms,
++
+                 "clip_count": blend.clip_count,
++
+                 "audio_file": blend.audio_file,
++
+                 "confidence_label": blend.confidence_label,
+-                "created_at": str(blend.created_at)
+-            }
+ 
+-            for blend in blends
+-        ]
++                "created_at": str(blend.created_at),
++
++                # -------------------------------------------------
++                # SOURCE ATTRIBUTION
++                # -------------------------------------------------
++
++                "creators": [
++                    c.creator_name
++                    for c in creators
++                ],
++
++                "podcasts": [
++                    p.podcast_name
++                    for p in podcasts
++                ]
++            })
++
++        return results
+ 
+     finally:
+ 
+         db.close()
+ 
+ 
+-# =====================================
++# -------------------------------------------------
+ # BLEND DETAIL
+-# =====================================
++# -------------------------------------------------
+ 
+ @router.get("/blend/{blend_id}")
+-def blend_detail(
+-    blend_id: str
+-):
++def blend_detail(blend_id: str):
+ 
+     db = SessionLocal()
+ 
+@@ -74,6 +105,12 @@ def blend_detail(
+             return {
+                 "error": "Blend not found"
+             }
++
++        creators = get_blend_creators(
++            db,
++            blend_id
++        )
++
+         podcasts = get_blend_podcasts(
+             db,
+             blend_id
+@@ -81,32 +118,33 @@ def blend_detail(
+ 
+         return {
+ 
+-            "id":
+-                blend.id,
++            "id": blend.id,
++
++            "title": blend.title,
++
++            "summary": blend.summary,
++
++            "description": blend.description,
+ 
+-            "title":
+-                blend.title,
++            "duration_ms": blend.duration_ms,
+ 
+-            "summary":
+-                blend.summary,
++            "clip_count": blend.clip_count,
+ 
+-            "description":
+-                blend.description,
++            "audio_file": blend.audio_file,
+ 
+-            "duration_ms":
+-                blend.duration_ms,
++            "confidence_label": blend.confidence_label,
+ 
+-            "clip_count":
+-                blend.clip_count,
++            "created_at": str(blend.created_at),
+ 
+-            "audio_file":
+-                blend.audio_file,
++            # -------------------------------------------------
++            # SOURCE ATTRIBUTION
++            # -------------------------------------------------
+ 
+-            "confidence_label":
+-                blend.confidence_label,
++            "creators": [
++                c.creator_name
++                for c in creators
++            ],
+ 
+-            "created_at":
+-                str(blend.created_at),
+             "podcasts": [
+                 p.podcast_name
+                 for p in podcasts
