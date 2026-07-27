@@ -88,3 +88,8 @@ __pycache__/
 
 # Env
 .venv/
+blends.zip
+*.zip
+
+media/blends/
+app/audio/blends/

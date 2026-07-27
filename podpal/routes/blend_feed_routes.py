@@ -1,21 +1,20 @@
 from fastapi import APIRouter
 
-from podpal.db.database import (
-    SessionLocal
-)
+from podpal.db.database import SessionLocal
 
 from podpal.db.blend_store import (
     get_recent_blends,
     get_blend,
     get_blend_podcasts,
+    get_blend_creators,
 )
 
 router = APIRouter()
 
 
-# =====================================
-# FEED
-# =====================================
+# -------------------------------------------------
+# BLENDS FEED
+# -------------------------------------------------
 
 @router.get("/blends")
 def list_blends():
@@ -29,36 +28,68 @@ def list_blends():
             limit=100
         )
 
-        return [
+        results = []
 
-            {
+        for blend in blends:
+
+            creators = get_blend_creators(
+                db,
+                blend.id
+            )
+
+            podcasts = get_blend_podcasts(
+                db,
+                blend.id
+            )
+
+            results.append({
+
                 "id": blend.id,
-                "title": blend.title,
-                "summary": blend.summary,
-                "description": blend.description,
-                "duration_ms": blend.duration_ms,
-                "clip_count": blend.clip_count,
-                "audio_file": blend.audio_file,
-                "confidence_label": blend.confidence_label,
-                "created_at": str(blend.created_at)
-            }
 
-            for blend in blends
-        ]
+                "title": blend.title,
+
+                "summary": blend.summary,
+
+                "description": blend.description,
+
+                "duration_ms": blend.duration_ms,
+
+                "clip_count": blend.clip_count,
+
+                "audio_file": blend.audio_file,
+
+                "confidence_label": blend.confidence_label,
+
+                "created_at": str(blend.created_at),
+
+                # -------------------------------------------------
+                # SOURCE ATTRIBUTION
+                # -------------------------------------------------
+
+                "creators": [
+                    c.creator_name
+                    for c in creators
+                ],
+
+                "podcasts": [
+                    p.podcast_name
+                    for p in podcasts
+                ]
+            })
+
+        return results
 
     finally:
 
         db.close()
 
 
-# =====================================
+# -------------------------------------------------
 # BLEND DETAIL
-# =====================================
+# -------------------------------------------------
 
 @router.get("/blend/{blend_id}")
-def blend_detail(
-    blend_id: str
-):
+def blend_detail(blend_id: str):
 
     db = SessionLocal()
 
@@ -74,6 +105,12 @@ def blend_detail(
             return {
                 "error": "Blend not found"
             }
+
+        creators = get_blend_creators(
+            db,
+            blend_id
+        )
+
         podcasts = get_blend_podcasts(
             db,
             blend_id
@@ -81,32 +118,33 @@ def blend_detail(
 
         return {
 
-            "id":
-                blend.id,
+            "id": blend.id,
 
-            "title":
-                blend.title,
+            "title": blend.title,
 
-            "summary":
-                blend.summary,
+            "summary": blend.summary,
 
-            "description":
-                blend.description,
+            "description": blend.description,
 
-            "duration_ms":
-                blend.duration_ms,
+            "duration_ms": blend.duration_ms,
 
-            "clip_count":
-                blend.clip_count,
+            "clip_count": blend.clip_count,
 
-            "audio_file":
-                blend.audio_file,
+            "audio_file": blend.audio_file,
 
-            "confidence_label":
-                blend.confidence_label,
+            "confidence_label": blend.confidence_label,
 
-            "created_at":
-                str(blend.created_at),
+            "created_at": str(blend.created_at),
+
+            # -------------------------------------------------
+            # SOURCE ATTRIBUTION
+            # -------------------------------------------------
+
+            "creators": [
+                c.creator_name
+                for c in creators
+            ],
+
             "podcasts": [
                 p.podcast_name
                 for p in podcasts

@@ -210,6 +210,19 @@ def get_blend_podcasts(
         .all()
     )
 
+def get_blend_creators(
+        db: Session,
+        blend_id: str
+    ):
+
+        return(
+            db.query(
+                BlendCreator
+            )
+            .filter(BlendCreator.blend_id == blend_id)
+            .all()
+            )
+
 def get_all_blends(
     db: Session
 ):
