@@ -387,7 +387,7 @@ def run_test(query="Methaylation in gen silencing."):
         )
 
         published = step.get(
-            "published"
+            "published",
             ""
         )
 
@@ -408,6 +408,20 @@ def run_test(query="Methaylation in gen silencing."):
         if podcast_title:
             creators.add(podcast_title)
 
+    def clean_query(text):
+        if not text:
+            return ""
+        text = text.strip()
+        fixes = {
+            "Methaylation": "Methylation",
+            "gen silencing": "Gene Silencing"
+            }
+        for old, new in fixes.items():
+                text = text.replace(old, new)
+        text = text.rstrip(".")
+        return text
+    cleaned_query = clean_query(query)
+    
     metadata = {
             "id": blend_id,
             "title":
