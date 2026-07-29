@@ -802,7 +802,7 @@ def render_blend(blend):
 
 if __name__ == "__main__":
 
-    query = "How do people overcome adversity and become stronger"
+    query = "When Grief Changes Everything"
 
     blend = build_blend(
         query,
