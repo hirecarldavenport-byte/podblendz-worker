@@ -151,7 +151,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="Methaylation in gen silencing."):
+def run_test(query="When Grief Changes Everything."):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
