@@ -15,6 +15,7 @@ from openai import OpenAI
 from pydub import AudioSegment
 import hashlib
 import traceback
+import requests
 
 client = OpenAI()
 
@@ -474,6 +475,26 @@ def run_test(query="When Grief Changes Everything."):
             create_blend(
              db,
              metadata
+            )
+
+            try:
+                response = requests.post(
+                    "https://api.podblendz.com/publish-blend",
+                    headers={
+                        "x-api-key": "change-me"
+                        },
+                        json=metadata,
+                        timeout=60
+                )
+                print(
+                    "🚀 Publish:",
+                    response.status_code,
+                    response.text
+                )
+            except Exception as e:
+                print(
+                "⚠️ Publish failed:",
+                str(e)
             )
             print(
                 f"✅ Blend saved to database: "
