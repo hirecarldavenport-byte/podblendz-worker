@@ -67,8 +67,12 @@ print("✅ Audio mount active")
 
 from podpal.routes.health import router as health_router
 from podpal.routes.search_routes import router as search_router
-
+from podpal.routes.blend_publish_routes import (
+    router as blend_publish_router
+)
 # Optional routes
+
+
 try:
     from podpal.routes.blend_routes import router as blend_router
 except Exception as e:
@@ -98,6 +102,8 @@ except Exception as e:
 app.include_router(health_router)
 
 app.include_router(search_router)
+
+app.include_router(blend_publish_router)
 
 if blend_router:
     app.include_router(blend_router)
