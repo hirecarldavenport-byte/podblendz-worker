@@ -154,7 +154,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="When Grief Changes Everything."):
+def run_test(query="The New Science of Longevity."):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
@@ -473,28 +473,35 @@ def run_test(query="When Grief Changes Everything."):
         print(ep)
 
     db = SessionLocal()
+
     try:
-            create_blend(
-             db,
-             metadata
+        create_blend(
+            db,
+            metadata
             )
-            def json_safe(obj):
+        
+        def json_safe(obj):
                 print("SERIALIZING:", type(obj), obj)
+
                 if isinstance(obj, datetime):
                     return obj.isoformat()
+                
                 raise TypeError(
                     f"Type {type(obj)} not serializable"
                 )
-            for k, v in metadata.items():
+        for k, v in metadata.items():
                 print(k, type(v))
-            safe_metadata = json.loads(
+
+        safe_metadata = json.loads(
                 json.dumps(
                     metadata,
                     default=json_safe
                 )
             )
 
-            try:
+        try:
+                print("🚀 ABOUT TO PUBLISH")
+
                 response = requests.post(
                     "https://api.podblendz.com/publish-blend",
                     headers={
@@ -503,17 +510,20 @@ def run_test(query="When Grief Changes Everything."):
                         json=safe_metadata,
                         timeout=60
                 )
+
+                print("🚀 PUBLISH RESPONSE RECEIVED")
                 print(
                     "🚀 Publish:",
                     response.status_code,
                     response.text
                 )
-            except Exception as e:
+        except Exception as e:
+                    
                 print(
-                "⚠️ Publish failed:",
+                    "⚠️ Publish failed:",
                 str(e)
             )
-            print(
+        print(
                 f"✅ Blend saved to database: "
                 f"{blend_id}"
             )
@@ -526,4 +536,3 @@ def run_test(query="When Grief Changes Everything."):
 
 if __name__ == "__main__":
     run_test()
-
