@@ -16,6 +16,8 @@ from pydub import AudioSegment
 import hashlib
 import traceback
 import requests
+import json
+
 
 client = OpenAI()
 
@@ -476,6 +478,21 @@ def run_test(query="When Grief Changes Everything."):
              db,
              metadata
             )
+            def json_safe(obj):
+                print("SERIALIZING:", type(obj), obj)
+                if isinstance(obj, datetime):
+                    return obj.isoformat()
+                raise TypeError(
+                    f"Type {type(obj)} not serializable"
+                )
+            for k, v in metadata.items():
+                print(k, type(v))
+            safe_metadata = json.loads(
+                json.dumps(
+                    metadata,
+                    default=json_safe
+                )
+            )
 
             try:
                 response = requests.post(
@@ -483,7 +500,7 @@ def run_test(query="When Grief Changes Everything."):
                     headers={
                         "x-api-key": "change-me"
                         },
-                        json=metadata,
+                        json=safe_metadata,
                         timeout=60
                 )
                 print(
