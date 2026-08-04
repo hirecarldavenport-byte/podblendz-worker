@@ -141,6 +141,33 @@ class BlendPodcast(Base):
 
 
 # =====================================
+# BLEND EPISODES
+# =====================================
+
+class BlendEpisode(Base):
+    __tablename__ = "blend_episodes"
+
+    id = Column(
+        String,
+        primary_key=True
+    )
+
+    blend_id = Column(
+        String,
+        ForeignKey("blends.id"),
+        nullable=False
+    )
+
+    podcast_title = Column(String)
+
+    episode_title = Column(String)
+
+    episode_id = Column(String)
+
+    published = Column(String)
+
+
+# =====================================
 # BLEND TOPICS
 # =====================================
 

@@ -7,6 +7,7 @@ from podpal.db.blend_store import (
     get_blend,
     get_blend_podcasts,
     get_blend_creators,
+    get_blend_episodes,
 )
 
 router = APIRouter()
@@ -34,12 +35,17 @@ def list_blends():
 
             creators = get_blend_creators(
                 db,
-                blend.id
+                str(blend.id)
             )
 
             podcasts = get_blend_podcasts(
                 db,
-                blend.id
+                str(blend.id)
+            )
+
+            episodes = get_blend_episodes(
+                db,
+                str(blend.id)
             )
 
             results.append({
@@ -74,6 +80,16 @@ def list_blends():
                 "podcasts": [
                     p.podcast_name
                     for p in podcasts
+                ],
+
+                "episode_objects": [
+                    {
+                        "podcast_title": e.podcast_title,
+                        "episode_title": e.episode_title,
+                        "episode_id": e.episode_id,
+                        "published": e.published
+                    }
+                    for e in episodes
                 ]
             })
 
@@ -116,6 +132,11 @@ def blend_detail(blend_id: str):
             blend_id
         )
 
+        episodes = get_blend_episodes(
+            db,
+            blend_id
+        )
+
         return {
 
             "id": blend.id,
@@ -148,6 +169,16 @@ def blend_detail(blend_id: str):
             "podcasts": [
                 p.podcast_name
                 for p in podcasts
+            ],
+
+            "episode_objects": [
+                {
+                    "podcast_title": e.podcast_title,
+                    "episode_title": e.episode_title,
+                    "episode_id": e.episode_id,
+                    "published": e.published
+                }
+                for e in episodes
             ]
         }
 

@@ -6,7 +6,8 @@ from podpal.db.models import (
     Blend,
     BlendCreator,
     BlendPodcast,
-    BlendTopic
+    BlendTopic,
+    BlendEpisode
 )
 
 
@@ -209,6 +210,19 @@ def get_blend_podcasts(
         )
         .all()
     )
+def get_blend_episodes(
+        db: Session,
+        blend_id: str
+        ):
+            return (
+                 db.query(
+                      BlendEpisode
+                 )
+                 .filter(
+                      BlendEpisode.blend_id == blend_id
+                 )
+                 .all()
+            )
 
 def get_blend_creators(
         db: Session,
