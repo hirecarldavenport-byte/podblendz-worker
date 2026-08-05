@@ -154,7 +154,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="The New Science of Longevity."):
+def run_test(query="Raising children in the smartphone age."):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
@@ -498,7 +498,7 @@ def run_test(query="The New Science of Longevity."):
                     default=json_safe
                 )
             )
-
+       
         try:
                 print("🚀 ABOUT TO PUBLISH")
 
