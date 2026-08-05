@@ -142,7 +142,26 @@ def fetch_chunk(chunk_id):
         file_path = parts[0]
         idx = int(parts[1])
 
+
         data = load_chunk_file(file_path)
+
+        if not data:
+            return None
+
+        print("\n===== CHUNK FILE DEBUG =====")
+        print("file_path:", file_path)
+        print("data title:", repr(data.get("title")))
+        print("episode_id:", repr(data.get("episode_id")))
+
+        chunks = data.get("chunks", [])
+
+        if chunks:
+            print(
+                "first chunk episode_title:",
+                repr(chunks[0].get("episode_title"))
+            )
+
+        print("============================\n")
 
         if not data:
             return None
