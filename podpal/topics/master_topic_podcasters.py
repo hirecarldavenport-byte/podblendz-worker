@@ -58,6 +58,18 @@ TOP_PODCASTERS_BY_MASTER_TOPIC: Dict[str, List[CanonicalPodcaster]] = {
             "media_access": "direct",
             "source_quality": "core",
         },
+
+        {
+            "id": "diary_of_a_ceo",
+            "name": "The Diary Of A CEO",
+            "ingestible": True,
+            "primary_topic": "entrepreneurship",
+            "allow_cross_topic": True,
+            "feed_url": "https://api.substack.com/feed/podcast/8155644.rss",
+            "media_access": "direct",
+            "source_quality": "core",
+        },
+
         {
             "id": "hidden_brain",
             "name": "Hidden Brain",
