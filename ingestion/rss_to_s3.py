@@ -10,6 +10,7 @@ from typing import Optional
 import argparse
 import hashlib
 import json
+import unicodedata
 
 import boto3
 import feedparser
@@ -57,6 +58,9 @@ def already_ingested(s3_key: str) -> bool:
         return True
     except Exception:
         return False
+
+def ascii_safe(text):
+    return text.encode("ascii", "ignore").decode("ascii")
 
 
 def extract_audio_url(entry):
@@ -179,7 +183,7 @@ def ingest_feed(
                     Metadata={
                         "episode_id": episode_id,
                         "podcaster_id": podcaster_id,
-                        "title": episode_title[:250],
+                        "title": ascii_safe(episode_title)[:250],
                     },
                 )
 
