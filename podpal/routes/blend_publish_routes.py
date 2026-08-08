@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException, Header
 from podpal.db.database import SessionLocal
 from podpal.db.models import Blend
 from podpal.db.blend_store import create_blend
+from datetime import datetime
+
 
 import os
 import traceback
@@ -76,6 +78,11 @@ def publish_blend(
                 "message": "Blend already exists",
                 "id": blend_id
             }
+        created_at = payload.get("created_at")
+        if isinstance(created_at, str):
+            payload["created_at"] = datetime.fromisoformat(
+                created_at
+            )
 
         create_blend(
             db,

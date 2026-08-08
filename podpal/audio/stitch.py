@@ -2,14 +2,25 @@ import os
 import uuid
 import subprocess
 from pathlib import Path
-import boto3
 
-# ✅ S3 SETUP
-s3 = boto3.client("s3")
+import boto3
+from botocore.exceptions import ClientError
+
+
+# =================================================
+# S3 CONFIG
+# =================================================
+
 BUCKET_NAME = "podblendz-episode-audio"
 
-# ✅ OUTPUT DIRECTORIES
-BASE_DIR = Path("/app/audio")
+s3 = boto3.client("s3")
+
+
+# =================================================
+# DIRECTORIES
+# =================================================
+
+BASE_DIR = Path("media")
 TEMP_DIR = BASE_DIR / "temp"
 FINAL_DIR = BASE_DIR / "final"
 
@@ -17,63 +28,114 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 FINAL_DIR.mkdir(parents=True, exist_ok=True)
 
 
-# -------------------------------------------------
-# ✅ MAIN STITCH FUNCTION
-# -------------------------------------------------
+# =================================================
+# HELPERS
+# =================================================
 
-def stitch_blendz(audio_files, minutes=5):
+def build_public_url(bucket: str, key: str) -> str:
+    """
+    Build a public S3 URL.
+    """
+    return f"https://{bucket}.s3.amazonaws.com/{key}"
+
+
+# =================================================
+# MAIN STITCH FUNCTION
+# =================================================
+
+def stitch_blendz(audio_files, max_files=20):
+    """
+    Build a single MP3 from one or more source MP3 files,
+    upload it to S3, and return URLs.
+
+    Returns:
+    {
+        "local_file": "...",
+        "s3_key": "...",
+        "public_url": "..."
+    }
+    """
 
     if not audio_files:
-        return None
+        raise ValueError("No audio files supplied")
 
-    print("🎯 Building PodBlend...")
+    print("\n🎯 Building PodBlend...")
 
-    max_files = max(1, min(len(audio_files), int(minutes)))
+    max_files = max(
+        1,
+        min(len(audio_files), int(max_files))
+    )
 
-    sequence = audio_files * (max_files // len(audio_files) + 1)
-    sequence = sequence[:max_files]
+    sequence = audio_files[:max_files]
 
     temp_outputs = []
 
-    # -------------------------------------------------
-    # ✅ STEP 1 — RE-ENCODE CLIPS
-    # -------------------------------------------------
+    # ============================================
+    # STEP 1 - RE-ENCODE CLIPS
+    # ============================================
 
-    for file_path in sequence:
-        temp_out = TEMP_DIR / f"{uuid.uuid4().hex}.mp3"
+    for source_file in sequence:
 
-        print(f"🎧 Processing: {file_path}")
+        if not os.path.exists(source_file):
+            print(f"⚠️ Missing file: {source_file}")
+            continue
+
+        temp_file = TEMP_DIR / f"{uuid.uuid4().hex}.mp3"
+
+        print(f"🎧 Processing: {source_file}")
 
         subprocess.run(
             [
                 "ffmpeg",
                 "-y",
-                "-i", file_path,
+                "-i",
+                str(source_file),
                 "-vn",
-                "-acodec", "libmp3lame",
-                "-ab", "128k",
-                str(temp_out),
+                "-acodec",
+                "libmp3lame",
+                "-ab",
+                "128k",
+                str(temp_file),
             ],
             check=True,
         )
 
-        temp_outputs.append(temp_out)
+        temp_outputs.append(temp_file)
 
-    # -------------------------------------------------
-    # ✅ STEP 2 — CREATE CONCAT FILE
-    # -------------------------------------------------
+    if not temp_outputs:
+        raise RuntimeError(
+            "No valid audio clips were processed"
+        )
 
-    concat_file = TEMP_DIR / f"concat_{uuid.uuid4().hex}.txt"
+    # ============================================
+    # STEP 2 - CREATE CONCAT FILE
+    # ============================================
 
-    with open(concat_file, "w") as f:
-        for file in temp_outputs:
-            f.write(f"file '{file}'\n")
+    concat_file = TEMP_DIR / (
+        f"concat_{uuid.uuid4().hex}.txt"
+    )
 
-    # -------------------------------------------------
-    # ✅ STEP 3 — FINAL RENDER
-    # -------------------------------------------------
+    with open(
+        concat_file,
+        "w",
+        encoding="utf-8"
+    ) as f:
 
-    output_file = FINAL_DIR / f"{uuid.uuid4().hex}.mp3"
+        for file_path in temp_outputs:
+
+            abs_path = file_path.resolve()
+
+            f.write(
+                f"file '{abs_path.as_posix()}'\n"
+            )
+
+    # ============================================
+    # STEP 3 - FINAL RENDER
+    # ============================================
+
+    output_file = FINAL_DIR / (
+        f"{uuid.uuid4().hex}.mp3"
+    )
 
     print("🎧 Rendering final audio...")
 
@@ -81,42 +143,72 @@ def stitch_blendz(audio_files, minutes=5):
         [
             "ffmpeg",
             "-y",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", str(concat_file),
-            "-acodec", "libmp3lame",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_file),
+            "-acodec",
+            "libmp3lame",
+            "-b:a",
+            "192k",
             str(output_file),
         ],
         check=True,
     )
 
-    print(f"✅ Blend created → {output_file}")
+    print(f"✅ Final MP3: {output_file}")
 
-    # -------------------------------------------------
-    # ✅ ✅ ✅ STEP 4 — UPLOAD TO S3 (FINAL FIX)
-    # -------------------------------------------------
+    # ============================================
+    # STEP 4 - UPLOAD TO S3
+    # ============================================
 
     try:
-        s3_key = f"final_blends/{output_file.name}"
 
-        print(f"☁️ Uploading to S3: {s3_key}")
-
-        s3.upload_file(
-            str(output_file),
-            BUCKET_NAME,
-            s3_key,
-            ExtraArgs={"ContentType": "audio/mpeg"}
+        s3_key = (
+            f"final_blends/{output_file.name}"
         )
 
-        public_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{s3_key}"
+        print("\n☁️ Uploading to S3...")
+        print("Bucket:", BUCKET_NAME)
+        print("Key:", s3_key)
 
-        print(f"✅ Uploaded → {public_url}")
+        s3.upload_file(
+            Filename=str(output_file),
+            Bucket=BUCKET_NAME,
+            Key=s3_key,
+            ExtraArgs={
+                "ContentType": "audio/mpeg"
+            },
+        )
 
-        return public_url   # ✅ Final return
+        public_url = build_public_url(
+            BUCKET_NAME,
+            s3_key
+        )
 
-    except Exception as e:
-        print("🔥🔥🔥 S3 UPLOAD ERROR:", str(e))
-        raise e
+        print("✅ Upload successful")
+        print("🔗", public_url)
+
+        return {
+            "local_file": str(output_file),
+            "s3_key": s3_key,
+            "public_url": public_url,
+        }
+
+    except ClientError as e:
+
+        print("\n🔥 S3 UPLOAD FAILED 🔥")
+        print(str(e))
+        raise
+
+    finally:
+
+        try:
+            concat_file.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 
