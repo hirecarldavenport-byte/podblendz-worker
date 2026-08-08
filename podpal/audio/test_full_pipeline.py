@@ -154,7 +154,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="Raising children in the smartphone age."):
+def run_test(query="Takeing care of aging parents."):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
@@ -347,6 +347,10 @@ def run_test(query="Raising children in the smartphone age."):
         clips=final_clips,
         options=AudioOptions(),
     )
+
+    print("\n===== AUDIO OUTPUT =====")
+    print(output_path)
+    print("Exists:", os.path.exists(output_path))
 
     creators = set()
     podcasts = set()
