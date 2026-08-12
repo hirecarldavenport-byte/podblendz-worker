@@ -696,10 +696,39 @@ def build_blend(query, max_segments=20):
         "type": "narration",
         "text": outro
 })
-    print(
-        f"✅ Built blend with {len(blend)} steps"
+    contributors = {}
+
+    for clip in selected:
+
+        episode_id = clip.get("episode_id")
+
+        if not episode_id:
+            continue
+        if episode_id not in contributors:
+
+
+            contributors[episode_id] = {
+                "episode_id": episode_id,
+                "episode_title": clip.get("episode_title"),
+                "podcast_title": clip.get("podcast_title"),
+                "published": clip.get("published"),
+            }
+    contributing_episodes = list(
+                contributors.values()
     )
-    return blend
+    print("\n===== CONTRIBUTING EPISODES =====")
+
+    for ep in contributing_episodes:
+        print(
+            f"{ep.get('podcast_title')} -> "
+            f"{ep.get('episode_title')}"
+        )
+
+        print(
+                f"✅ Built blend with {len(blend)} steps"
+        )
+        return blend
+
 
 # =========================
 # ✅ RENDER AUDIO
