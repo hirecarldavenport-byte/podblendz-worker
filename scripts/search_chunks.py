@@ -153,6 +153,21 @@ def fetch_chunk(chunk_id):
         print("data title:", repr(data.get("title")))
         print("episode_id:", repr(data.get("episode_id")))
 
+        print(
+            "data episode_title:",
+            repr(data.get("episode_title"))
+        )
+
+        print(
+            "data podcast:",
+            repr(data.get("podcast"))
+        )
+
+        print(
+            "data keys:",
+            list(data.keys())
+        )
+
         chunks = data.get("chunks", [])
 
         if chunks:
