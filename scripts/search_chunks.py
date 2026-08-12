@@ -191,6 +191,30 @@ def fetch_chunk(chunk_id):
 
         chunk = chunks[idx]
 
+        if idx == 0:
+            print("\n===== CHUNK RECORD =====")
+            print(
+                "chunk episode_title:",
+                repr(chunk.get("episode_title"))
+            )
+            print(
+                "chunk keys:",
+                list(chunk.keys())
+            )
+            print(
+                "data title:",
+                repr(data.get("title"))
+            )
+            print(
+                "data episode_title:",
+                repr(data.get("episode_title"))
+            )
+            print(
+                "data keys:",
+                list(data.keys())
+            )
+            print("========================\n")
+
         audio_key = (
             data.get("audio_file")
             or data.get("audio_s3_key")
