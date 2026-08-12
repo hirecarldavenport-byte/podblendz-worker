@@ -154,7 +154,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="How do people build resilience after loss?"):
+def run_test(query="How can people improve brain health as they age?"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
