@@ -105,6 +105,13 @@ def process_transcript(path: Path):
     audio_url = data.get("audio_url")
     s3_key = data.get("s3_key")
 
+    print("\n===== TRANSCRIPT METADATA =====")
+    print("path:", path)
+    print("title:", repr(data.get("title")))
+    print("episode_title:", repr(data.get("episode_title")))
+    print("keys:", list(data.keys()))
+    print("===============================\n")
+
 
     # ✅ FIXED: ALWAYS USE S3 PATH
     s3_key = f"raw_audio/{podcast_id}/{episode_id}.mp3"
