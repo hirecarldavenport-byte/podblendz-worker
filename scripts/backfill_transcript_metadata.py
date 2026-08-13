@@ -4,46 +4,48 @@ import json
 from pathlib import Path
 from typing import Dict
 
+
 ROOT = Path(__file__).resolve().parents[1]
 
-MANIFEST = ROOT / "manifests" / "episode_manifest_clean.jsonl"
+METADATA_ROOT = ROOT / "ingestion" / "episode_metadata"
 TRANSCRIPTS = ROOT / "transcripts"
 
 
-def load_manifest() -> Dict[str, dict]:
-    lookup = {}
+def load_metadata() -> Dict[str, dict]:
+    """
+    Build lookup:
 
-    with open(MANIFEST, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
+        episode_id -> metadata json
+    """
 
-            if not line:
-                continue
+    lookup: Dict[str, dict] = {}
 
-            try:
-                row = json.loads(line)
-            except Exception as e:
-                print(f"⚠️ Bad manifest row: {e}")
-                continue
+    for path in METADATA_ROOT.rglob("*.json"):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
 
-            episode_id = row.get("episode_id")
+            episode_id = data.get("episode_id")
 
             if episode_id:
-                lookup[episode_id] = row
+                lookup[episode_id] = data
+
+        except Exception as e:
+            print(f"⚠️ Bad metadata file: {path} -> {e}")
 
     return lookup
 
 
 def update_transcript(
     transcript_path: Path,
-    manifest_lookup: Dict[str, dict]
+    metadata_lookup: Dict[str, dict],
 ) -> tuple[bool, str]:
 
     try:
         with open(
             transcript_path,
             "r",
-            encoding="utf-8"
+            encoding="utf-8",
         ) as f:
             data = json.load(f)
 
@@ -55,57 +57,54 @@ def update_transcript(
     if not episode_id:
         return False, "Missing episode_id"
 
-    metadata = manifest_lookup.get(episode_id)
+    metadata = metadata_lookup.get(episode_id)
 
     if not metadata:
-        return False, "No manifest match"
+        return False, "No metadata match"
 
     changed = False
 
-    # ----------------------------------------------------
-    # Episode title
-    # ----------------------------------------------------
+    # --------------------------------------------------
+    # Title
+    # --------------------------------------------------
+
     if not data.get("title"):
-        title = metadata.get("episode_title")
+        title = metadata.get("title")
 
         if title:
             data["title"] = title
             changed = True
 
-    # ----------------------------------------------------
+    # --------------------------------------------------
     # Published
-    # ----------------------------------------------------
+    # --------------------------------------------------
+
     if not data.get("published"):
-        published = (
-            metadata.get("published")
-            or metadata.get("published_at")
-        )
+        published = metadata.get("published")
 
         if published:
             data["published"] = published
             changed = True
 
-    # ----------------------------------------------------
+    # --------------------------------------------------
     # Description
-    # ----------------------------------------------------
+    # --------------------------------------------------
+
     if not data.get("description"):
-        description = (
-            metadata.get("description")
-            or metadata.get("episode_description")
-        )
+        description = metadata.get("description")
 
         if description:
             data["description"] = description
             changed = True
 
-    # ----------------------------------------------------
+    # --------------------------------------------------
     # Podcast title
-    # ----------------------------------------------------
+    # --------------------------------------------------
+
     if not data.get("podcast_title"):
         podcast_title = (
-            metadata.get("podcast_title")
-            or metadata.get("podcast_name")
-            or metadata.get("podcast_id")
+            metadata.get("podcast", {})
+            .get("title")
         )
 
         if podcast_title:
@@ -116,13 +115,13 @@ def update_transcript(
         with open(
             transcript_path,
             "w",
-            encoding="utf-8"
+            encoding="utf-8",
         ) as f:
             json.dump(
                 data,
                 f,
                 ensure_ascii=False,
-                indent=2
+                indent=2,
             )
 
         return True, "Updated"
@@ -134,16 +133,15 @@ def main():
 
     print("\n🚀 BACKFILLING TRANSCRIPT METADATA\n")
 
-    if not MANIFEST.exists():
+    if not METADATA_ROOT.exists():
         raise FileNotFoundError(
-            f"Manifest not found:\n{MANIFEST}"
+            f"Metadata directory not found:\n{METADATA_ROOT}"
         )
 
-    manifest_lookup = load_manifest()
+    metadata_lookup = load_metadata()
 
     print(
-        f"✅ Loaded {len(manifest_lookup):,} "
-        "manifest records"
+        f"✅ Loaded {len(metadata_lookup):,} metadata records"
     )
 
     transcript_files = sorted(
@@ -151,8 +149,7 @@ def main():
     )
 
     print(
-        f"✅ Found {len(transcript_files):,} "
-        "transcripts"
+        f"✅ Found {len(transcript_files):,} transcripts"
     )
 
     updated = 0
@@ -164,7 +161,7 @@ def main():
 
         success, message = update_transcript(
             path,
-            manifest_lookup
+            metadata_lookup,
         )
 
         rel = path.relative_to(ROOT)
@@ -176,9 +173,8 @@ def main():
         elif message == "Already complete":
             already_complete += 1
 
-        elif message == "No manifest match":
+        elif message == "No metadata match":
             missing_match += 1
-            print(f"⚠️ No match -> {rel}")
 
         else:
             errors += 1
@@ -189,10 +185,10 @@ def main():
     print("==============================")
     print(f"Updated:          {updated:,}")
     print(f"Already Complete: {already_complete:,}")
-    print(f"No Manifest:      {missing_match:,}")
+    print(f"No Metadata:      {missing_match:,}")
     print(f"Errors:           {errors:,}")
     print("==============================\n")
 
 
 if __name__ == "__main__":
-    main()
+    main() 
