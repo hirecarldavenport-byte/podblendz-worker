@@ -169,6 +169,12 @@ def create_blend(
     # EPISODES
     # =========================
 
+    print("🔥 NEW CREATE_BLEND LOADED")
+    print(
+        "Episode objects found:",
+        len(metadata.get("episode_objects", []))
+    )
+
     for episode in metadata.get(
         "episode_objects",
         []
