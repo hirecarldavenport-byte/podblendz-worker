@@ -154,7 +154,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="Where did Elon Musk earn his money?"):
+def run_test(query="Were mandatory COVID vaccines illegal?"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
@@ -357,6 +357,12 @@ def run_test(query="Where did Elon Musk earn his money?"):
     episodes = set()
     episode_objects = []
 
+    import sqlite3
+
+    conn = sqlite3.connect("podblendz.db")
+    cur = conn.cursor()
+
+
     for step in blend:
         if step.get("type") != "speaker":
             continue
@@ -373,6 +379,7 @@ def run_test(query="Where did Elon Musk earn his money?"):
             repr(step.get("episode_id"))
         )
 
+
         print(
             "podcast_title:",
             repr(step.get("podcast_title"))
@@ -385,7 +392,6 @@ def run_test(query="Where did Elon Musk earn his money?"):
 
         episode_title = step.get(
             "episode_title",
-            ""
         )
 
         episode_id = step.get(
@@ -398,6 +404,22 @@ def run_test(query="Where did Elon Musk earn his money?"):
             ""
         )
 
+        if not episode_title and episode_id:
+            cur.execute("""
+            SELECT title
+            FROM episodes
+            WHERE id = ?
+            """, (episode_id,))
+
+            row = cur.fetchone()
+
+            if row:
+                episode_title = row[0]
+        print(
+            "FINAL TITLE:",
+            episode_title
+        )
+                
         if episode_title:
             episodes.add(episode_title)
 
