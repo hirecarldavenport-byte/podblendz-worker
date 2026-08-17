@@ -165,9 +165,46 @@ def create_blend(
             )
         )
 
+    # =========================
+    # EPISODES
+    # =========================
+
+    for episode in metadata.get(
+        "episode_objects",
+        []
+    ):
+            db.add(
+                BlendEpisode(
+                id=str(
+                        uuid.uuid4()
+                    ),
+                    blend_id=blend.id,
+                    podcast_title=episode.get(
+                        "podcast_title",
+                        ""
+                    ),
+                     episode_title=episode.get(
+                         "episode_title",
+                         ""
+                     ),
+                     episode_id=episode.get(
+                         "episode_id",
+                         ""
+                     ),
+                     published=episode.get(
+                         "published",
+                         ""
+                     )
+                 )
+             )
+
     try:
 
         db.commit()
+
+
+
+
 
         db.refresh(blend)
 
@@ -340,6 +377,12 @@ def delete_blend(
     ).filter(
         BlendTopic.blend_id == blend_id
     ).delete()
+
+    db.query(
+         BlendEpisode
+    ).filter(
+         BlendEpisode.blend_id == blend_id
+         ).delete()
 
     blend = get_blend(
         db,
