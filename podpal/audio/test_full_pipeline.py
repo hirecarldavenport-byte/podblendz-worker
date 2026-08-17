@@ -154,7 +154,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="How does President Trump go unchecked?"):
+def run_test(query="Where did Elon Musk earn his money?"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
