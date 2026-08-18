@@ -84,6 +84,8 @@ def publish_blend(
                 created_at
             )
 
+        print(payload.get("episode_objects"))
+
         create_blend(
             db,
             payload
