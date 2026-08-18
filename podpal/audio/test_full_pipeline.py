@@ -154,7 +154,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="Were mandatory COVID vaccines illegal?"):
+def run_test(query="Genome Decode: The moment DNA stops being abstract and starts making sense."):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
