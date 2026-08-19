@@ -144,6 +144,49 @@ def create_blend(
         )
 
     # =========================
+    # EPISODES
+    # =========================
+
+    for episode in metadata.get(
+        "episode_objects",
+        []
+    ):
+
+        db.add(
+
+            BlendEpisode(
+                id=str(
+                    uuid.uuid4()
+                ),
+
+                blend_id=blend.id,
+
+                podcast_title=episode.get(
+                    "podcast_title"
+                ),
+
+                episode_title=episode.get(
+                    "episode_title"
+                ),
+
+                episode_id=episode.get(
+                    "episode_id"
+                ),
+
+                published=episode.get(
+                    "published"
+                )
+            )
+        )
+
+        print("🔥 NEW CREATE_BLEND LOADED")
+
+        print(
+    "Episode objects found:",
+    len(metadata.get("episode_objects", []))
+)
+
+    # =========================
     # TOPICS
     # =========================
 
@@ -165,64 +208,7 @@ def create_blend(
             )
         )
 
-    # =========================
-    # EPISODES
-    # =========================
-
-    print("🔥 NEW CREATE_BLEND LOADED")
-    print(
-        "Episode objects found:",
-        len(metadata.get("episode_objects", []))
-    )
-
-    for episode in metadata.get(
-        "episode_objects",
-        []
-    ):
-            db.add(
-                BlendEpisode(
-                id=str(
-                        uuid.uuid4()
-                    ),
-                    blend_id=blend.id,
-                    podcast_title=episode.get(
-                        "podcast_title",
-                        ""
-                    ),
-                     episode_title=episode.get(
-                         "episode_title",
-                         ""
-                     ),
-                     episode_id=episode.get(
-                         "episode_id",
-                         ""
-                     ),
-                     published=episode.get(
-                         "published",
-                         ""
-                     )
-                 )
-             )
-
-    try:
-
-        db.commit()
-
-
-
-
-
-        db.refresh(blend)
-
-        return blend
-
-    except Exception:
-
-        db.rollback()
-
-        raise
-
-
+   
 # =====================================
 # READ
 # =====================================
@@ -315,7 +301,6 @@ def get_recent_blends(
     )
 
 
-# =====================================
 # SEARCH
 # =====================================
 

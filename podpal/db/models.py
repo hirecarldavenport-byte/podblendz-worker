@@ -166,6 +166,24 @@ class BlendEpisode(Base):
 
     published = Column(String)
 
+    class BlendEpisode(Base):
+        __tablename__ = "blend_episodes"
+    
+    id = Column(
+        String,
+        primary_key=True
+    )
+
+    blend_id = Column(
+        String,
+        ForeignKey("blends.id")
+    )
+
+    podcast_title = Column(String)
+    episode_title = Column(String)
+    episode_id = Column(String)
+    published = Column(String)
+
 
 # =====================================
 # BLEND TOPICS
