@@ -154,7 +154,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="The Myth of ‘If You Want It Done Right, Do It Yourself."):
+def run_test(query="When Helping Too Much Becomes a Problem."):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
