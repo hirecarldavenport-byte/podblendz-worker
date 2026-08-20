@@ -154,7 +154,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="Genome Decode: The moment DNA stops being abstract and starts making sense."):
+def run_test(query="The Myth of ‘If You Want It Done Right, Do It Yourself."):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
