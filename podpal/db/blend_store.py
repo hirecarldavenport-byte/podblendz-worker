@@ -147,6 +147,13 @@ def create_blend(
     # EPISODES
     # =========================
 
+    print("🔥 NEW CREATE_BLEND LOADED")
+
+    print(
+        "Episode objects found:",
+        len(metadata.get("episode_objects", []))
+    )
+
     for episode in metadata.get(
         "episode_objects",
         []
@@ -179,12 +186,6 @@ def create_blend(
             )
         )
 
-        print("🔥 NEW CREATE_BLEND LOADED")
-
-        print(
-    "Episode objects found:",
-    len(metadata.get("episode_objects", []))
-)
 
     # =========================
     # TOPICS
@@ -207,6 +208,20 @@ def create_blend(
                 topic=topic
             )
         )
+
+    try:
+
+        db.commit()
+
+        db.refresh(blend)
+
+        return blend
+
+    except Exception:
+
+        db.rollback()
+
+        raise
 
    
 # =====================================
