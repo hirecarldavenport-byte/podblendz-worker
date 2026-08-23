@@ -68,9 +68,15 @@ def looks_like_episode(url: str) -> bool:
 
 
 def scrape_archive(
-    archive_url: str,
-    podcast_id: str | None = None,
+    archive_url,
+    podcast_id=None,
 ):
+    print("ARCHIVE_URL_RAW:", repr(archive_url))
+
+    logging.info(
+        "Scraping %s",
+        archive_url,
+    )
     """
     Scrape a podcast archive page and return candidate episode links.
     """
