@@ -45,6 +45,26 @@ def normalize_url(href: str, base_url: str) -> str:
     Convert relative URLs into absolute URLs.
     """
     return urljoin(base_url, href)
+def looks_like_episode(url: str) -> bool:
+
+    url = url.lower()
+
+    if "/contact/" in url:
+        return False
+
+    if "twitter.com" in url:
+        return False
+
+    if "youtube.com" in url:
+        return False
+
+    if "apple.com" in url:
+        return False
+
+    if "-transcript" in url:
+        return True
+
+    return False
 
 
 def scrape_archive(
@@ -94,6 +114,9 @@ def scrape_archive(
             raw_href,
             archive_url,
         )
+
+        if not looks_like_episode(href):
+            continue
 
         if href in seen:
             continue
