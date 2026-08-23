@@ -103,6 +103,10 @@ def scrape_archive(
     for a in soup.find_all("a"):
 
         raw_href = a.get("href")
+        if isinstance(raw_href, str):
+            print("RAW_HREF:", repr(raw_href))
+        break
+
 
         if not isinstance(raw_href, str):
             continue
