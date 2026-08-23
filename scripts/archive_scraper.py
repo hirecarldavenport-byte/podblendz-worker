@@ -107,6 +107,11 @@ def scrape_archive(
         if not isinstance(raw_href, str):
             continue
 
+        raw_href = raw_href.strip()
+
+        if raw_href.startswith("<a "):
+            continue
+
         if not is_valid_link(raw_href):
             continue
 
