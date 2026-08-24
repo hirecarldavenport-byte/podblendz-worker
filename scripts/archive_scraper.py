@@ -54,6 +54,9 @@ def scrape_archive(url, podcast_id):
         if href.startswith("javascript:"):
             continue
 
+        if len(results) < 5:
+            print("RAW HREF =", repr(href))
+
         full_url = urljoin(url, href)
 
         if full_url in seen:
