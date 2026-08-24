@@ -69,7 +69,7 @@ if __name__ == "__main__":
     ),
 ]
 
-   
+    print("TARGETS =", repr(targets))
 
     for podcast_id, url in targets:
 
