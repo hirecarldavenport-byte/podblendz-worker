@@ -55,10 +55,21 @@ def scrape_archive(url, podcast_id):
 if __name__ == "__main__":
 
     targets = [
-        ("lex_fridman", "https://lexfridman.com/podcast/"),
-        ("econtalk", "https://www.econtalk.org/"),
-        ("huberman_lab", "https://www.hubermanlab.com/podcast"),
-    ]
+    (
+        "lex_fridman",
+        "https://lexfridman.com/podcast/",
+    ),
+    (
+        "econtalk",
+        "https://www.econtalk.org/",
+    ),
+    (
+        "huberman_lab",
+        "https://www.hubermanlab.com/podcast",
+    ),
+]
+
+   
 
     for podcast_id, url in targets:
 
