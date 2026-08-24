@@ -130,6 +130,7 @@ def download_audio(url):
 def ingest_feed(
     master_topic: str,
     podcaster_id: str,
+    podcaster_name: str,
     feed_url: str,
     *,
     dry_run: bool,
@@ -197,9 +198,13 @@ def ingest_feed(
         metadata_payload = {
             "episode_id": episode_id,
             "podcaster_id": podcaster_id,
+            "podcast_name": podcaster_name,
             "master_topic": master_topic,
             "title": episode_title,
             "published": entry.get("published"),
+            "guid": entry.get("id"),
+            "link": entry.get("link"),
+            "summary": entry.get("summary"),
             "audio_url": audio_url,
             "s3_key": s3_key,
         }
@@ -251,6 +256,7 @@ def run(dry_run: bool = False):
             ingest_feed(
                 master_topic=master_topic,
                 podcaster_id=podcaster["id"],
+                podcaster_name=podcaster["name"],
                 feed_url=feed_url,
                 dry_run=dry_run,
             )
