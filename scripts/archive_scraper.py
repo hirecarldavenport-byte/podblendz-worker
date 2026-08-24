@@ -71,7 +71,6 @@ def scrape_archive(
     archive_url,
     podcast_id=None,
 ):
-    print("ARCHIVE_URL_RAW:", repr(archive_url))
 
     logging.info(
         "Scraping %s",
@@ -110,8 +109,7 @@ def scrape_archive(
 
         raw_href = a.get("href")
         if isinstance(raw_href, str):
-            print("RAW_HREF:", repr(raw_href))
-        break
+            continue
 
 
         if not isinstance(raw_href, str):
