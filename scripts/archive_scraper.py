@@ -47,6 +47,8 @@ def normalize_url(href: str, base_url: str) -> str:
     return urljoin(base_url, href)
 def looks_like_episode(url: str) -> bool:
 
+    return True
+
     url = url.lower()
 
     if "/contact/" in url:
@@ -72,10 +74,7 @@ def scrape_archive(
     podcast_id=None,
 ):
 
-    logging.info(
-        "Scraping %s",
-        archive_url,
-    )
+ 
     """
     Scrape a podcast archive page and return candidate episode links.
     """
@@ -108,9 +107,11 @@ def scrape_archive(
     for a in soup.find_all("a"):
 
         raw_href = a.get("href")
+
         if isinstance(raw_href, str):
             continue
 
+        raw_href = a.get("href")
 
         if not isinstance(raw_href, str):
             continue
