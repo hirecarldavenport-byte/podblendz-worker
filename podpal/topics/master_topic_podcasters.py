@@ -187,9 +187,9 @@ TOP_PODCASTERS_BY_MASTER_TOPIC: Dict[str, List[CanonicalPodcaster]] = {
                 {
                     "id": "the_daily",
                     "name": "The Daily",
-                    "ingestible": true,
+                    "ingestible": True,
                     "primary_topic": "news_politics",
-                    "allow_cross_topic": true,
+                    "allow_cross_topic": True,
                     "feed_url": "https://feeds.simplecast.com/54nAGcIl",
                     "media_access": "direct",
                     "source_quality": "core"
@@ -465,6 +465,7 @@ TOP_PODCASTERS_BY_MASTER_TOPIC: Dict[str, List[CanonicalPodcaster]] = {
                     "media_access": "direct",
                     "source_quality": "core",
                 },
+                    ],
 }
 # =================================================
 # ✅ SAFE ITERATOR (CRITICAL)
