@@ -20,6 +20,7 @@ MASTER_TOPIC = "media_culture"
 
 PODCAST_IDS = [
     "kevonstage_not_my_best_moment",
+    "code_switch",
 ]
 
 # ============================================================
