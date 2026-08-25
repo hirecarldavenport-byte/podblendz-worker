@@ -29,35 +29,60 @@ PODCAST_IDS = [
 conn = sqlite3.connect(DB_PATH)
 conn.row_factory = sqlite3.Row
 
+# Faster + safer SQLite writes
+conn.execute("PRAGMA journal_mode=WAL")
+conn.execute("PRAGMA synchronous=NORMAL")
+
 # ============================================================
 # HELPERS
 # ============================================================
 
-def episode_exists(episode_id: str) -> bool:
+def episode_exists(guid: str) -> bool:
     return (
         conn.execute(
             """
             SELECT 1
             FROM episodes
-            WHERE id = ?
+            WHERE guid = ?
             """,
-            (episode_id,),
+            (guid,),
         ).fetchone()
         is not None
     )
 
 
 def insert_episode(metadata: dict):
+    """
+    Insert episode using the CURRENT schema.
+
+    Existing episodes table columns:
+
+        id
+        podcast_id
+        guid
+        title
+        published_at
+        audio_url
+        audio_s3_key
+        duration_seconds
+        storage_tier
+        transcript_status
+        ingested_at
+        updated_at
+    """
+
+    episode_id = metadata["episode_id"]
+    guid = metadata.get("guid") or episode_id
 
     conn.execute(
         """
         INSERT INTO episodes (
             id,
-            guid,
             podcast_id,
+            guid,
             title,
             published_at,
-            source_url,
+            audio_url,
             audio_s3_key,
             storage_tier,
             transcript_status,
@@ -72,13 +97,12 @@ def insert_episode(metadata: dict):
         )
         """,
         (
-            metadata["episode_id"],
-            metadata.get("guid")
-            or metadata["episode_id"],
+            episode_id,
             metadata["podcaster_id"],
+            guid,
             metadata.get("title"),
             metadata.get("published"),
-            metadata.get("link"),
+            metadata.get("audio_url"),
             metadata.get("s3_key"),
             "s3",
             "pending",
@@ -106,6 +130,9 @@ def index_podcast(podcast_id: str):
 
     inserted = 0
     skipped = 0
+    errors = 0
+
+    print(f"\n🔍 Processing {podcast_id}")
 
     for metadata_file in metadata_dir.glob("*.json"):
 
@@ -118,30 +145,36 @@ def index_podcast(podcast_id: str):
             ) as f:
                 metadata = json.load(f)
 
+            episode_id = metadata["episode_id"]
+            guid = metadata.get("guid") or episode_id
+
+            if episode_exists(guid):
+                skipped += 1
+                continue
+
+            insert_episode(metadata)
+
+            inserted += 1
+
+            if inserted % 100 == 0:
+                conn.commit()
+
         except Exception as exc:
 
+            errors += 1
+
             print(
-                f"❌ Could not read "
-                f"{metadata_file}: {exc}"
+                f"❌ Failed: "
+                f"{metadata_file.name} - {exc}"
             )
-            continue
-
-        episode_id = metadata["episode_id"]
-
-        if episode_exists(episode_id):
-            skipped += 1
-            continue
-
-        insert_episode(metadata)
-
-        inserted += 1
 
     conn.commit()
 
     print(
         f"✅ {podcast_id}: "
         f"inserted={inserted}, "
-        f"skipped={skipped}"
+        f"skipped={skipped}, "
+        f"errors={errors}"
     )
 
 # ============================================================
@@ -150,19 +183,17 @@ def index_podcast(podcast_id: str):
 
 def main():
 
-    print(
-        "🚀 Starting Metadata → DB indexing"
-    )
+    print("🚀 Starting Metadata → DB indexing")
 
-    for podcast_id in PODCAST_IDS:
+    try:
 
-        index_podcast(podcast_id)
+        for podcast_id in PODCAST_IDS:
+            index_podcast(podcast_id)
 
-    conn.close()
+    finally:
+        conn.close()
 
-    print(
-        "\n✅ Indexing complete"
-    )
+    print("\n✅ Indexing complete")
 
 # ============================================================
 # ENTRY
