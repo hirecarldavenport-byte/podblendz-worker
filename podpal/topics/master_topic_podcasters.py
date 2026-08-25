@@ -184,16 +184,7 @@ TOP_PODCASTERS_BY_MASTER_TOPIC: Dict[str, List[CanonicalPodcaster]] = {
                 },
 
                 
-                {
-                    "id": "the_daily",
-                    "name": "The Daily",
-                    "ingestible": True,
-                    "primary_topic": "news_politics",
-                    "allow_cross_topic": True,
-                    "feed_url": "https://feeds.simplecast.com/54nAGcIl",
-                    "media_access": "direct",
-                    "source_quality": "core"
-                },
+    
                 {
                     "id": "ted_talks_daily",
                     "name": "TED Talks Daily",
@@ -444,16 +435,7 @@ TOP_PODCASTERS_BY_MASTER_TOPIC: Dict[str, List[CanonicalPodcaster]] = {
                     "media_access": "direct",
                     "source_quality": "core",
                 },
-                {
-                    "id": "hidden_brain",
-                    "name": "Hidden Brain",
-                    "ingestible": True,
-                    "primary_topic": "education_learning",
-                    "allow_cross_topic": True,
-                    "feed_url": "https://feeds.npr.org/510308/podcast.xml",
-                    "media_access": "direct",
-                    "source_quality": "core",
-                },
+             
                 
                 {
                     "id": "kevonstage_not_my_best_moment",
