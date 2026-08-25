@@ -16,12 +16,7 @@ METADATA_BASE = (
     / "episode_metadata"
 )
 
-MASTER_TOPIC = "media_culture"
-
-PODCAST_IDS = [
-    "kevonstage_not_my_best_moment",
-    "code_switch",
-]
+COMMIT_INTERVAL = 100
 
 # ============================================================
 # DB
@@ -30,7 +25,6 @@ PODCAST_IDS = [
 conn = sqlite3.connect(DB_PATH)
 conn.row_factory = sqlite3.Row
 
-# Faster + safer SQLite writes
 conn.execute("PRAGMA journal_mode=WAL")
 conn.execute("PRAGMA synchronous=NORMAL")
 
@@ -38,46 +32,19 @@ conn.execute("PRAGMA synchronous=NORMAL")
 # HELPERS
 # ============================================================
 
-def episode_exists(guid: str) -> bool:
-    return (
-        conn.execute(
-            """
-            SELECT 1
-            FROM episodes
-            WHERE guid = ?
-            """,
-            (guid,),
-        ).fetchone()
-        is not None
-    )
-
-
-def insert_episode(metadata: dict):
+def insert_episode(metadata: dict) -> bool:
     """
-    Insert episode using the CURRENT schema.
-
-    Existing episodes table columns:
-
-        id
-        podcast_id
-        guid
-        title
-        published_at
-        audio_url
-        audio_s3_key
-        duration_seconds
-        storage_tier
-        transcript_status
-        ingested_at
-        updated_at
+    Returns:
+        True  = inserted
+        False = duplicate / ignored
     """
 
     episode_id = metadata["episode_id"]
     guid = metadata.get("guid") or episode_id
 
-    conn.execute(
+    cursor = conn.execute(
         """
-        INSERT INTO episodes (
+        INSERT OR IGNORE INTO episodes (
             id,
             podcast_id,
             guid,
@@ -110,15 +77,17 @@ def insert_episode(metadata: dict):
         ),
     )
 
+    return cursor.rowcount > 0
+
 # ============================================================
 # INDEXING
 # ============================================================
 
-def index_podcast(podcast_id: str):
+def index_podcast(topic: str, podcast_id: str) -> tuple[int, int, int]:
 
     metadata_dir = (
         METADATA_BASE
-        / MASTER_TOPIC
+        / topic
         / podcast_id
     )
 
@@ -127,15 +96,20 @@ def index_podcast(podcast_id: str):
             f"⚠️ Missing metadata folder: "
             f"{metadata_dir}"
         )
-        return
+        return 0, 0, 0
 
     inserted = 0
     skipped = 0
     errors = 0
 
-    print(f"\n🔍 Processing {podcast_id}")
+    files = list(metadata_dir.glob("*.json"))
 
-    for metadata_file in metadata_dir.glob("*.json"):
+    print(
+        f"\n🔍 {topic}/{podcast_id} "
+        f"({len(files)} metadata files)"
+    )
+
+    for metadata_file in files:
 
         try:
 
@@ -146,18 +120,14 @@ def index_podcast(podcast_id: str):
             ) as f:
                 metadata = json.load(f)
 
-            episode_id = metadata["episode_id"]
-            guid = metadata.get("guid") or episode_id
+            was_inserted = insert_episode(metadata)
 
-            if episode_exists(guid):
+            if was_inserted:
+                inserted += 1
+            else:
                 skipped += 1
-                continue
 
-            insert_episode(metadata)
-
-            inserted += 1
-
-            if inserted % 100 == 0:
+            if inserted % COMMIT_INTERVAL == 0:
                 conn.commit()
 
         except Exception as exc:
@@ -165,18 +135,47 @@ def index_podcast(podcast_id: str):
             errors += 1
 
             print(
-                f"❌ Failed: "
-                f"{metadata_file.name} - {exc}"
+                f"❌ Failed "
+                f"{metadata_file.name}: {exc}"
             )
 
     conn.commit()
 
     print(
-        f"✅ {podcast_id}: "
-        f"inserted={inserted}, "
-        f"skipped={skipped}, "
+        f"✅ {topic}/{podcast_id} | "
+        f"inserted={inserted} "
+        f"skipped={skipped} "
         f"errors={errors}"
     )
+
+    return inserted, skipped, errors
+
+# ============================================================
+# DISCOVERY
+# ============================================================
+
+def discover_podcasts():
+
+    discovered = []
+
+    for topic_dir in sorted(METADATA_BASE.iterdir()):
+
+        if not topic_dir.is_dir():
+            continue
+
+        for podcast_dir in sorted(topic_dir.iterdir()):
+
+            if not podcast_dir.is_dir():
+                continue
+
+            discovered.append(
+                (
+                    topic_dir.name,
+                    podcast_dir.name,
+                )
+            )
+
+    return discovered
 
 # ============================================================
 # MAIN
@@ -184,17 +183,49 @@ def index_podcast(podcast_id: str):
 
 def main():
 
-    print("🚀 Starting Metadata → DB indexing")
+    print(
+        "🚀 Starting Metadata → DB indexing"
+    )
+
+    podcasts = discover_podcasts()
+
+    print(
+        f"\nFound {len(podcasts)} podcast folders"
+    )
+
+    total_inserted = 0
+    total_skipped = 0
+    total_errors = 0
 
     try:
 
-        for podcast_id in PODCAST_IDS:
-            index_podcast(podcast_id)
+        for topic, podcast_id in podcasts:
+
+            inserted, skipped, errors = (
+                index_podcast(
+                    topic,
+                    podcast_id,
+                )
+            )
+
+            total_inserted += inserted
+            total_skipped += skipped
+            total_errors += errors
 
     finally:
         conn.close()
 
+    print("\n================================================")
+   
+    print("INDEXING SUMMARY")
+    print("================================================")
+    print(f"Inserted : {total_inserted}")
+    print(f"Skipped  : {total_skipped}")
+    print(f"Errors   : {total_errors}")
+    print("================================================")
+
     print("\n✅ Indexing complete")
+
 
 # ============================================================
 # ENTRY
