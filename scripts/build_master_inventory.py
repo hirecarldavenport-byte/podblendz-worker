@@ -26,19 +26,21 @@ with open(RAW_AUDIO_INVENTORY, "r", encoding="utf-8", errors="ignore") as f:
 
         topic, podcast, episode_hash = m.groups()
 
-        inventory.setdefault(
+        record= inventory.setdefault(
             episode_hash,
             {
                 "topic": topic,
                 "podcast": podcast,
                 "episode_hash": episode_hash,
-                "audio_exists": True,
+                "audio_exists": False,
                 "segment_exists": False,
                 "metadata_exists": False,
                 "title": "",
                 "published": "",
             },
         )
+
+        record["audio_exists"] = True
 
 #
 # SEGMENTS
