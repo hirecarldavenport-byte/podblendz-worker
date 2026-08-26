@@ -4,6 +4,7 @@ import random
 import requests
 import boto3
 import sqlite3
+import csv
 from botocore.exceptions import ClientError
 from collections import Counter, defaultdict
 
@@ -22,7 +23,7 @@ os.environ.get("RUNPOD_ENDPOINT_ID", "")
 
 
 DELAY_BETWEEN_JOBS = 2
-MAX_EPISODES = 1500
+MAX_EPISODES = 10
 
 # ✅ NEW — optional diversity control
 MAX_PER_PODCAST = 50
@@ -61,6 +62,35 @@ def transcript_exists(category, podcast, episode_id):
 # --------------------------------------
 # ✅ FETCH ALL AUDIO FILES
 # --------------------------------------
+def get_ready_for_chunking():
+
+    episodes = []
+
+    with open(
+        "ready_for_chunking.csv",
+        "r",
+        encoding="utf-8"
+    ) as f:
+
+        reader = csv.DictReader(f)
+
+        for row in reader:
+
+            episodes.append({
+                "episode_id": row["episode_hash"],
+                "audio_s3_key":
+                    f"raw_audio/{row['topic']}/{row['podcast']}/{row['episode_hash']}.mp3",
+                "category": row["topic"],
+                "podcast": row["podcast"],
+                "language": "en",
+                "title": row["title"],
+                "published_at": row["published"]
+            })
+
+    print(f"✅ Loaded {len(episodes)} ready episodes")
+
+    return episodes
+
 def get_all_episodes():
     print("🔍 Scanning S3 for audio files...")
 
@@ -200,7 +230,7 @@ def send_job(ep):
 # ✅ MAIN
 # --------------------------------------
 def main():
-    all_episodes = get_all_episodes()
+    all_episodes = get_ready_for_chunking()
 
     print("\n🔍 Filtering out already processed episodes...\n")
 
@@ -208,10 +238,6 @@ def main():
         ep for ep in all_episodes
         if not transcript_exists(ep["category"], ep["podcast"], ep["episode_id"])
     ]
-    new_episodes = [
-        ep for ep in new_episodes
-        if ep["podcast"] == "kevonstage_not_my_best_moment"
-        ]
 
     print(f"✅ New episodes available: {len(new_episodes)}")
 
