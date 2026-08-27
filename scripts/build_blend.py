@@ -350,6 +350,9 @@ def build_blend(query, max_segments=20):
     print(f"\n🎧 Building Blend: {query}\n")
 
     results = search(query, k=500) or []
+    if not results:
+      print("❌ No search results.")
+      return []  
 
     print("\n===== RAW RESULT =====")
     sample = results[0]
@@ -391,6 +394,28 @@ def build_blend(query, max_segments=20):
         print("🔥 PROCESSING SEGMENT")
 
         text = r.get("text", "").strip()
+
+        episode_title = (
+            r.get("episode_title", "")
+            .strip()
+)
+        if not episode_title:
+            print(
+                f"🚫 Missing title: "
+                f"{r.get('episode_id')}"
+            )
+            continue
+        published = (
+            str(r.get("published", ""))
+            .strip()
+        )
+
+        if not published:
+            print(
+                f"🚫 Missing published date: "
+                f"{r.get('episode_id')}"
+            )
+            continue
         start = r.get("start")
         end = r.get("end")
         source = r.get("audio_file")
@@ -448,7 +473,13 @@ def build_blend(query, max_segments=20):
         )
             
 
-        key = dedup_key(text)
+        key = (
+            r.get("episode_id"),
+            round(start),
+            round(end),
+            r.get("episode_title"),
+            text[:100]
+        )
 
         if key in seen:
             rejected_dedupe += 1
@@ -489,7 +520,7 @@ def build_blend(query, max_segments=20):
                 overlap_pct = overlap / shorter
                 if overlap_pct >= threshold:
                     return True
-                return False
+            return False
             
         if overlaps_existing(r, selected_pool):
                 rejected_overlap += 1
