@@ -75,6 +75,11 @@ with open(SEGMENTS_INVENTORY, "r", encoding="utf-8", errors="ignore") as f:
 
         record["segment_exists"] = True
 
+        if episode_hash == "59bdd3a280f9e89c4e4874dff3ed7184":
+            print("SEGMENT MATCH:", record)
+
+        
+
 #
 # METADATA
 #
