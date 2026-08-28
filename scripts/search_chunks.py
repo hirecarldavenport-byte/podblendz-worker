@@ -229,6 +229,11 @@ def fetch_chunk(chunk_id):
                 audio_key
             )
 
+        podcast_title = (
+            chunk.get("podcast_title")
+            or data.get("podcast_title")
+        )
+
         podcast = normalize_podcast(
             chunk.get("podcast")
             or data.get("podcast")
