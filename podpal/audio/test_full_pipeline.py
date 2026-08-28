@@ -154,7 +154,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="When Helping Too Much Becomes a Problem."):
+def run_test(query="When will people finally fight back against AI?"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
