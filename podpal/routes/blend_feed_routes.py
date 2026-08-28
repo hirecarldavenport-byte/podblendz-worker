@@ -141,6 +141,8 @@ def blend_detail(blend_id: str):
 
             "id": blend.id,
 
+            "TEST_DEPLOY": "HELLO_WORLD",
+
             "title": blend.title,
 
             "summary": blend.summary,
