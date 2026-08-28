@@ -396,7 +396,7 @@ def build_blend(query, max_segments=20):
         text = r.get("text", "").strip()
 
         episode_title = (
-            r.get("episode_title", "")
+            str(r.get("episode_title") or "")
             .strip()
 )
         if not episode_title:
@@ -406,7 +406,7 @@ def build_blend(query, max_segments=20):
             )
             continue
         published = (
-            str(r.get("published", ""))
+            str(r.get("published") or "")
             .strip()
         )
 
