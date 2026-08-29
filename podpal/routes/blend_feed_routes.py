@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from podpal.db.database import SessionLocal
+from podpal.db.session import SessionLocal
 
 from podpal.db.blend_store import (
     get_recent_blends,

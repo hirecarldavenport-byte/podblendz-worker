@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Header
-from podpal.db.database import SessionLocal
+from podpal.db.session import SessionLocal
 from podpal.db.models import Blend
 from podpal.db.blend_store import create_blend
 from datetime import datetime
