@@ -390,6 +390,11 @@ def run_test(query="What are the first signs of dementia?"):
             ""
         )
 
+        print("\n====================")
+        print("FULL STEP")
+        print(json.dumps(step, indent=2, default=str))
+        print("====================")
+
         episode_title = step.get(
             "episode_title",
         )
