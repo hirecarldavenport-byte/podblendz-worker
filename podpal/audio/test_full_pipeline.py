@@ -154,7 +154,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="What are the first signs of dementia?"):
+def run_test(query="What are the best places to live?"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
