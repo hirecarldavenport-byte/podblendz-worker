@@ -154,7 +154,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="What are the best places to live?"):
+def run_test(query="The Provider Paradox: How can fathers build financial security without sacrificing connection with their children and partners?"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
