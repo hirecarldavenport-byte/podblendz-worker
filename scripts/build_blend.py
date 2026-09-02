@@ -618,7 +618,7 @@ def build_blend(query, max_segments=20):
         item
         for item in selected_pool
         if not item.get("has_title")
-        and item.get("relevance", 0) >= 75
+        and item.get("relevance", 0) >= 45
     ]
 
     # ✅ Best clips first
