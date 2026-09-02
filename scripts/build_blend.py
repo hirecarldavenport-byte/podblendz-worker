@@ -413,15 +413,24 @@ def build_blend(query, max_segments=20):
             .strip()
         )
 
-        if not published:
+        has_published = bool(published)
+
+        if not has_published:
             print(
-                f"🚫 Missing published date: "
+                f"⚠️ Missing published date: "
                 f"{r.get('episode_id')}"
             )
-            continue
+            r["has_published"] = has_published
         start = r.get("start")
         end = r.get("end")
         source = r.get("audio_file")
+
+        if not source:
+            print(
+                f"🚫 Missing audio file: "
+                f"{r.get('episode_id')}"
+            )
+            continue
 
         source = (
             r.get("podcast_id")
@@ -623,6 +632,10 @@ def build_blend(query, max_segments=20):
         key=lambda x: x.get("relevance", 0),
         reverse=True
     )
+
+    print(f"Titled clips: {len(preferred)}")
+    print(f"Fallback clips: {len(fallback)}")
+    print(f"Usable pool: {len(selected_pool)}")
 
 
     selected = preferred[:max_segments]
