@@ -399,12 +399,15 @@ def build_blend(query, max_segments=20):
             str(r.get("episode_title") or "")
             .strip()
 )
-        if not episode_title:
-            print(
-                f"🚫 Missing title: "
-                f"{r.get('episode_id')}"
-            )
-            continue
+        has_title = bool(episode_title)
+        if not has_title:
+                print(
+                    f"⚠️ Missing title: "
+                    f"{r.get('episode_id')}"
+    )
+
+        r["has_title"] = has_title
+
         published = (
             str(r.get("published") or "")
             .strip()
@@ -591,7 +594,79 @@ def build_blend(query, max_segments=20):
         f"{selected_pool[-1]['relevance']}"
     )
 
-    selected = selected_pool[:max_segments]
+    # =========================
+    # ✅ TIER 1
+    # Title required
+    # =========================
+
+    preferred = [
+        item
+        for item in selected_pool
+        if item.get("has_title")
+    ]
+
+    fallback = [
+        item
+        for item in selected_pool
+        if not item.get("has_title")
+        and item.get("relevance", 0) >= 75
+    ]
+
+    # ✅ Best clips first
+    preferred = sorted(
+        preferred,
+        key=lambda x: x.get("relevance", 0),
+        reverse=True
+    )
+    fallback = sorted(
+        fallback,
+        key=lambda x: x.get("relevance", 0),
+        reverse=True
+    )
+
+
+    selected = preferred[:max_segments]
+
+    total_duration = sum(
+        item["end"] - item["start"]
+        for item in selected
+    )
+
+    print(
+        f"Preferred duration: "
+        f"{round(total_duration, 1)} sec"
+    )
+
+    FIVE_MINUTES = 300
+    fallback_used = False
+
+    if total_duration < FIVE_MINUTES:
+
+        print(
+            "⚠️ Blend under 5 minutes. "
+            "Adding fallback clips."
+        )
+
+        fallback_used = True
+
+        for clip in fallback:
+
+            if len(selected) >= max_segments:
+                break
+
+            selected.append(clip)
+
+            total_duration += (
+                clip["end"] - clip["start"]
+            )
+
+            if total_duration >= FIVE_MINUTES:
+                break
+
+    print(
+        f"Final duration: "
+        f"{round(total_duration, 1)} sec"
+    )
 
     print("\n===== SELECTED CLIPS =====")
     for item in selected:
@@ -609,9 +684,6 @@ def build_blend(query, max_segments=20):
             f"Total clip duration:"
             f" {round(total_duration,1)} sec"
         )
-
-    if len(selected) < 8:
-        selected = selected_pool[:8]
 
     blend = []
 
@@ -881,15 +953,6 @@ if __name__ == "__main__":
     output = render_blend(blend)
 
     print(f"\n✅ FINAL AUDIO FILE: {output}")
-
-
-
-
-
-
-
-
-
 
 
 
