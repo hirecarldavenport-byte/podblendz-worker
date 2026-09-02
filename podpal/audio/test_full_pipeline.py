@@ -154,7 +154,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="The DOGE Effect: How Has It Changed the Economy, Workforce, and Future of the DMV?"):
+def run_test(query="How does sleep affect learning and memory?"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
