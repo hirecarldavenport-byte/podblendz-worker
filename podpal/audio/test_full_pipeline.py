@@ -409,7 +409,11 @@ def run_test(query="How does sleep affect learning and memory?"):
             ""
         )
 
-        if not episode_title and episode_id:
+        if (
+            not episode_title
+            or episode_title == episode_id
+        ) and episode_id:
+
             cur.execute("""
             SELECT title
             FROM episodes
