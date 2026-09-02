@@ -154,7 +154,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="The Provider Paradox: How can fathers build financial security without sacrificing connection with their children and partners?"):
+def run_test(query="How long will the US stay at war with Iran?"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
