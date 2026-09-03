@@ -432,6 +432,11 @@ def run_test(query="How does sleep affect learning and memory?"):
         if episode_title:
             episodes.add(episode_title)
 
+            print("\nADDING EPISODE OBJECT")
+            print("episode_id:", repr(episode_id))
+            print("episode_title:", repr(episode_title))
+            print("published:", repr(published))
+
             episode_objects.append({
                 "episode_id": episode_id,
                 "episode_title": episode_title,
