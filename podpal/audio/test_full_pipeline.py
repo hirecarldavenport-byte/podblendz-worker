@@ -154,7 +154,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="How does sleep affect learning and memory?"):
+def run_test(query="How to deal with grief alone?"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
@@ -423,7 +423,15 @@ def run_test(query="How does sleep affect learning and memory?"):
             row = cur.fetchone()
 
             if row:
+                print("DB ROW:", row)
+                print("DB TITLE:", repr(row[0]))
+
                 episode_title = row[0]
+                # If the DB title is just the episode ID,
+                # treat it as missing metadata.
+                if episode_title == episode_id:
+                    episode_title = None
+
         print(
             "FINAL TITLE:",
             episode_title
