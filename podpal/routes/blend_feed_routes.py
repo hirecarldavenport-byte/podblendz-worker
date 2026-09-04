@@ -54,6 +54,8 @@ def list_blends():
 
                 "title": blend.title,
 
+                "board": blend.board,
+
                 "summary": blend.summary,
 
                 "description": blend.description,
@@ -146,6 +148,8 @@ def blend_detail(blend_id: str):
             "title": blend.title,
 
             "summary": blend.summary,
+
+            "board": blend.board,
 
             "description": blend.description,
 
