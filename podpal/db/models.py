@@ -75,6 +75,11 @@ class Blend(Base):
         primary_key=True
     )
 
+    board = Column(
+    String,
+    nullable=True
+)
+
     title = Column(String)
 
     summary = Column(String)

@@ -481,6 +481,7 @@ def run_test(query="Why is quality sleep important to your help?"):
                 f"A PodBlendz conversation about {query}.",
             "description":
                 f"Generated blend exploring {query}.",
+                "board": "Brain Health",
         "query":
              query,
         "audio_file":

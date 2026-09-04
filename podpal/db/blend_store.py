@@ -30,6 +30,10 @@ def create_blend(
 
         id=metadata["id"],
 
+        board=metadata.get(
+            "board"
+            ),
+
         title=metadata.get(
             "title"
         ),
