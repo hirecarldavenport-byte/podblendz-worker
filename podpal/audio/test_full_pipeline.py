@@ -154,7 +154,7 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="Why is quality sleep important to your help?"):
+def run_test(query="What are the most effective ways to maintain brain health throughout life?"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
