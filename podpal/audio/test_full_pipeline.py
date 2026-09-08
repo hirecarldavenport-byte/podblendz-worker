@@ -154,7 +154,57 @@ Max 15 words.
 # ✅ MAIN PIPELINE
 # =========================
 
-def run_test(query="What are the most effective ways to maintain brain health throughout life?"):
+def classify_board(query):
+
+    q = query.lower()
+
+    if any(word in q for word in [
+        "brain",
+        "sleep",
+        "memory",
+        "dementia",
+        "mental",
+        "cognitive",
+        "alzheimer"
+    ]):
+        return "Brain Health"
+
+    elif any(word in q for word in [
+        "ai",
+        "artificial intelligence",
+        "automation",
+        "robot"
+    ]):
+        return "AI"
+
+    elif any(word in q for word in [
+        "money",
+        "wealth",
+        "retirement",
+        "invest",
+        "finance"
+    ]):
+        return "Finance"
+
+    elif any(word in q for word in [
+        "business",
+        "startup",
+        "entrepreneur",
+        "leadership"
+    ]):
+        return "Business"
+
+    elif any(word in q for word in [
+        "relationship",
+        "marriage",
+        "dating",
+        "love"
+    ]):
+        return "Relationships"
+
+    return "Uncategorized"
+
+def run_test(query="How can couples strengthen relationships?"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
@@ -472,6 +522,10 @@ def run_test(query="What are the most effective ways to maintain brain health th
         text = text.rstrip(".")
         return text
     cleaned_query = clean_query(query)
+
+    board = classify_board(query)
+
+    print("BOARD:", board)
     
     metadata = {
             "id": blend_id,
@@ -481,7 +535,7 @@ def run_test(query="What are the most effective ways to maintain brain health th
                 f"A PodBlendz conversation about {query}.",
             "description":
                 f"Generated blend exploring {query}.",
-                "board": "Brain Health",
+                "board": board,
         "query":
              query,
         "audio_file":
