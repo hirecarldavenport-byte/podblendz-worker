@@ -603,25 +603,51 @@ def run_test(query="What skills will matter most for children graduating in 2040
             )
        
         try:
-                print("🚀 ABOUT TO PUBLISH")
 
-                response = requests.post(
+            print("\n========================")
+            print("🚀 ABOUT TO PUBLISH")
+            print("========================")
+
+            print("URL:")
+            print("https://api.podblendz.com/publish-blend")
+
+            print("\nBLEND ID:")
+            print(safe_metadata.get("id"))
+
+            print("\nTITLE:")
+            print(safe_metadata.get("title"))
+
+            print("\nAUDIO FILE:")
+            print(safe_metadata.get("audio_file"))
+
+            print("\nFULL PAYLOAD:")
+            print(json.dumps(safe_metadata, indent=2))
+
+            response = requests.post(
                     "https://api.podblendz.com/publish-blend",
                     headers={
                         "x-api-key": "change-me"
-                        },
-                        json=safe_metadata,
-                        timeout=60
+                    },
+                    json=safe_metadata,
+                    timeout=60
                 )
 
-                print("🚀 PUBLISH RESPONSE RECEIVED")
-                print(
-                    "🚀 Publish:",
-                    response.status_code,
-                    response.text
-                )
+            print("\n========================")
+            print("🚀 PUBLISH RESPONSE")
+            print("========================")
+
+            print("STATUS:")
+            print(response.status_code)
+
+            print("\nBODY:")
+            print(response.text)
+
+            print("\nHEADERS:")
+            print(response.headers)
+
+
         except Exception as e:
-                    
+                                    
                 print(
                     "⚠️ Publish failed:",
                 str(e)
