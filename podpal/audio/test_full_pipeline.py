@@ -204,7 +204,7 @@ def classify_board(query):
 
     return "Uncategorized"
 
-def run_test(query="What skills will matter most for children graduating in 2040?"):
+def run_test(query="What habits create extraordinary careers over decades?"):
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
