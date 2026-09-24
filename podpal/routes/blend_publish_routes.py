@@ -21,6 +21,9 @@ def publish_blend(
     payload: dict,
     x_api_key: str = Header(default="")
 ):
+    print("\n\n🔥🔥🔥 PUBLISH ROUTE HIT 🔥🔥🔥")
+    print("BLEND ID:", payload.get("id"))
+    print("TITLE:", payload.get("title"))
     """
     Publish a completed Blend into production.
 
@@ -85,6 +88,8 @@ def publish_blend(
             )
 
         print(payload.get("episode_objects"))
+
+        print("🔥 ABOUT TO CALL CREATE_BLEND")
 
         create_blend(
             db,
