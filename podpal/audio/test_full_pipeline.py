@@ -205,6 +205,13 @@ def classify_board(query):
     return "Uncategorized"
 
 def run_test(query="What habits create extraordinary careers over decades?"):
+    print("\n" + "="*80)
+    print("RUN_TEST CALLED")
+    print("QUERY =", query)
+    print("="*80 + "\n")
+
+    
+
     print("🚀 Running PodBlendz test...\n")
 
     blend = build_blend(query)
